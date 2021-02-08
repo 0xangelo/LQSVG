@@ -155,19 +155,29 @@ def test_vector_reset(vector_spec: LQGSpec):
     assert np.allclose(obs, env.curr_states)
 
 
+def swap_row(arr: np.ndarray, in1: int, in2: int):
+    swap = arr[in1].copy()
+    arr[in1] = arr[in2]
+    arr[in2] = swap
+
+
 def test_reset_at(vector_spec: LQGSpec):
     env = RandomVectorLQG(vector_spec)
     rng = np.random.default_rng(vector_spec.gen_seed)
 
     obs = env.vector_reset()
     index = rng.choice(env.num_envs)
-    mask = np.ones(num_envs, dtype=bool)
-    mask[index] = False
-    reset = env.reset_at()
-
+    reset = env.reset_at(index)
     assert reset in env.observation_space
-    assert np.allclose(obs[mask], env.curr_states[mask])
-    assert np.allclose(reset, env.curr_states[index])
+
+    curr_states = env.curr_states
+    if env.num_envs > 1:
+        swap_row(obs, 0, index)
+        curr_states = env.curr_states
+        swap_row(curr_states, 0, index)
+        assert np.allclose(obs[1:], curr_states[1:])
+
+    assert np.allclose(reset, curr_states[0])
 
 
 def test_vector_step(vector_spec: LQGSpec):

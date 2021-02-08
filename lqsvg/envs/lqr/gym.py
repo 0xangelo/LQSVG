@@ -193,31 +193,37 @@ class RandomLQGEnv(LQGEnv):
 class RandomVectorLQG(TorchLQGMixin, VectorEnv):
     """Vectorized implementation of LQG environment."""
 
+    num_envs: int
+    spec: LQGSpec
+
     def __init__(self, spec: LQGSpec):
         assert spec.num_envs is not None
         dynamics, cost = spec.make_lqg()
         init_mean, init_cov = spec.init_params()
         self.setup(dynamics, cost, init_mean=init_mean, init_cov=init_cov)
         self.spec = spec
-        self._curr_states: Optional[Tensor] = None
+        self._curr_states = None
         super().__init__(self.observation_space, self.action_space, spec.num_envs)
 
+    @property
+    def curr_states(self) -> Optional[np.ndarray]:
+        if self._curr_states is None:
+            return None
+        return self._curr_states.numpy().astype(self.observation_space.dtype)
+
     def vector_reset(self) -> List[EnvObsType]:
-        curr_states, _ = self._rho.sample((self.num_envs,))
-        self._curr_states = curr_states.refine_names("B", ...)
-        return self._get_obs(self._curr_states)
+        _curr_states, _ = self._rho.sample((self.num_envs,))
+        self._curr_states = _curr_states.refine_names("B", ...)
+        return self._get_obs(self.curr_states)
 
     @torch.no_grad()
     def reset_at(self, index: int) -> EnvObsType:
-        init_states, _ = self._rho.sample()
-        self._curr_states[index] = nt.unnamed(init_states)[index]
-        return init_states[index].numpy().astype(self.observation_space.dtype)
+        init_state, _ = self._rho.sample()
+        self._curr_states[index] = nt.unnamed(init_state)
+        return init_state.numpy().astype(self.observation_space.dtype)
 
-    def _get_obs(self, states: Tensor) -> List[Obs]:
-        obs = states
-        obs = obs.detach().numpy()
-        obs = obs.astype(self.observation_space.dtype)
-        return [o.squeeze(0) for o in np.vsplit(obs, self.num_envs)]
+    def _get_obs(self, states: np.ndarray) -> List[Obs]:
+        return [o.squeeze(0) for o in np.vsplit(states, self.num_envs)]
 
     @torch.no_grad()
     def vector_step(
@@ -231,16 +237,13 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
         rewards = self._cost(states, actions)
         next_states, _ = self._trans.sample(self._trans(states, actions))
         dones = next_states[..., -1].long() == self.horizon
-
         self._curr_states = next_states
+
+        obs = self._get_obs(self.curr_states)
         rewards = rewards.numpy().tolist()
         dones = dones.numpy().tolist()
-        return (
-            self._get_obs(next_states),
-            rewards,
-            dones,
-            [{} for _ in range(self.num_envs)],
-        )
+        infos = [{} for _ in range(self.num_envs)]
+        return obs, rewards, dones, infos
 
     def get_unwrapped(self) -> List[EnvType]:
         pass
