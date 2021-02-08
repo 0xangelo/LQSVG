@@ -78,23 +78,14 @@ class LQGSpec(DataClassJsonMixin):
             np_random=self.gen_seed,
         )
 
-    def init_params(self, *, vector: bool = False) -> Tuple[Tensor, Tensor]:
+    def init_params(self) -> Tuple[Tensor, Tensor]:
         """Compute parameters of the multivariate Normal for initial states.
-
-        Args:
-            vector: whether to return batched parameters for use in a
-                vectorized environment
 
         Returns:
             A tuple containing mean and covariance tensors
         """
         mean = torch.zeros(self.n_state, names=("R",))
         cov = torch.eye(self.n_state).refine_names("R", "C")
-        if vector and self.num_envs:
-            mean, cov = (
-                x.expand((self.num_envs,) + x.shape).refine_names("B", ...)
-                for x in (mean, cov)
-            )
         return mean, cov
 
 
@@ -205,14 +196,15 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
     def __init__(self, spec: LQGSpec):
         assert spec.num_envs is not None
         dynamics, cost = spec.make_lqg()
-        init_mean, init_cov = spec.init_params(vector=True)
+        init_mean, init_cov = spec.init_params()
         self.setup(dynamics, cost, init_mean=init_mean, init_cov=init_cov)
         self.spec = spec
         self._curr_states: Optional[Tensor] = None
         super().__init__(self.observation_space, self.action_space, spec.num_envs)
 
     def vector_reset(self) -> List[EnvObsType]:
-        self._curr_states, _ = self._rho.sample()
+        curr_states, _ = self._rho.sample((self.num_envs,))
+        self._curr_states = curr_states.refine_names("B", ...)
         return self._get_obs(self._curr_states)
 
     @torch.no_grad()
