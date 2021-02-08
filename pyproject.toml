@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "lqsvg"
+version = "0.1.0"
+description = ""
+authors = ["Ângelo Lovatto <angelolovatto@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+raylab = "^0.15.0"
+
+[tool.poetry.dev-dependencies]
+jupyterlab = "^3.0.7"
+ipywidgets = "^7.6.3"
+tqdm = "^4.56.0"
+ipython = "^7.20.0"
+pre-commit = "^2.10.1"
+wandb = "^0.10.17"
+pylint = "^2.6.0"
+reorder-python-imports = "^2.4.0"
+pytest = "^6.2.2"
+black = "^20.8b1"
+flake8 = "^3.8.4"
+sklearn = "^0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
