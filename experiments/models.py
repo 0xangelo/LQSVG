@@ -159,7 +159,6 @@ def test_lightning_model():
 
     worker = make_worker()
     model = LightningModel(worker.get_policy(), worker.env)
-    assert isinstance(model.rho, InitStateDynamics)
 
     def print_traj(traj):
         obs, act, rew, new_obs = traj
