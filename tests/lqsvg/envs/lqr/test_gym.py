@@ -134,6 +134,14 @@ def vector_spec(spec: LQGSpec, num_envs: int) -> LQGSpec:
 
 
 # Test RandomVectorLQG =========================================================
+def test_vector_init(vector_spec: LQGSpec):
+    env = RandomVectorLQG(vector_spec)
+
+    assert env.num_envs == vector_spec.num_envs
+    assert hasattr(env, "curr_states")
+    assert env.curr_states is None
+
+
 def test_vector_reset(vector_spec: LQGSpec):
     env = RandomVectorLQG(vector_spec)
 
@@ -143,6 +151,23 @@ def test_vector_reset(vector_spec: LQGSpec):
     assert len(obs) == env.num_envs
     assert obs[0] in env.observation_space
     assert all(o in env.observation_space for o in obs)
+
+    assert np.allclose(obs, env.curr_states)
+
+
+def test_reset_at(vector_spec: LQGSpec):
+    env = RandomVectorLQG(vector_spec)
+    rng = np.random.default_rng(vector_spec.gen_seed)
+
+    obs = env.vector_reset()
+    index = rng.choice(env.num_envs)
+    mask = np.ones(num_envs, dtype=bool)
+    mask[index] = False
+    reset = env.reset_at()
+
+    assert reset in env.observation_space
+    assert np.allclose(obs[mask], env.curr_states[mask])
+    assert np.allclose(reset, env.curr_states[index])
 
 
 def test_vector_step(vector_spec: LQGSpec):
