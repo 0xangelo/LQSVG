@@ -47,6 +47,7 @@ repos:
       - id: reorder-python-imports
         stages: [commit, push]
         args: [--separate-relative]
+        exclude: ^experiments/
 
     - repo: https://gitlab.com/pycqa/flake8
       rev: 3.8.3
@@ -77,8 +78,7 @@ repos:
         language: system
         types: [python]
         stages: [commit]
-        args: [-j 0]
-        files: ^lqsvg/|^experiments/
+        files: (^lqsvg/)|(^experiments/)
 
     - repo: local
       hooks:
