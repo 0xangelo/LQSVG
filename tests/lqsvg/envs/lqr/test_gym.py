@@ -74,9 +74,33 @@ def test_spaces(env_creator, spec):
     assert env.action_space.shape[0] == spec.n_ctrl
 
 
+def test_properties(env_creator, spec):
+    env = env_creator(spec)
+
+    assert env.horizon == spec.horizon
+    assert env.n_state == spec.n_state
+    assert env.n_ctrl == spec.n_ctrl
+
+
+def test_solution(env_creator, spec):
+    env = env_creator(spec)
+
+    pistar, qstar, vstar = env.solution()
+    assert pistar[0].names == tuple("H R C".split())
+    assert pistar[1].names == tuple("H R".split())
+
+    assert qstar[0].names == tuple("H R C".split())
+    assert qstar[1].names == tuple("H R".split())
+    assert qstar[2].names == tuple("H".split())
+
+    assert vstar[0].names == tuple("H R C".split())
+    assert vstar[1].names == tuple("H R".split())
+    assert vstar[2].names == tuple("H".split())
+
+
 # ==============================================================================
 # Test RandomLQGEnv ============================================================
-def test_reset(spec):
+def test_reset(spec: LQGSpec):
     env = RandomLQGEnv(spec)
 
     obs = env.reset()
@@ -84,7 +108,7 @@ def test_reset(spec):
     assert obs in env.observation_space  # pylint:disable=unsupported-membership-test
 
 
-def test_step(spec):
+def test_step(spec: LQGSpec):
     env = RandomLQGEnv(spec)
 
     env.reset()
