@@ -1,0 +1,45 @@
+# pylint:disable=missing-module-docstring
+from typing import Tuple
+
+import numpy as np
+from gym.spaces import Box
+from torch import Tensor
+
+from lqsvg.np_util import np_expand
+
+
+def np_expand_horizon(arr: np.ndarray, horizon: int) -> np.ndarray:
+    """Expand a numpy array with a leading horizon dimension."""
+    return np_expand(arr, (horizon,) + arr.shape)
+
+
+def spaces_from_dims(n_state: int, n_ctrl: int, horizon: int) -> Tuple[Box, Box]:
+    """Constructs Gym spaces from LQR dimensions."""
+    state_low = np.full(n_state, fill_value=-np.inf, dtype=np.single)
+    state_high = -state_low
+    observation_space = Box(
+        low=np.append(state_low, np.single(0)),
+        high=np.append(state_high, np.single(horizon)),
+    )
+
+    action_low = np.full(n_ctrl, fill_value=-np.inf, dtype=np.single)
+    action_space = Box(low=action_low, high=-action_low)
+    return observation_space, action_space
+
+
+def dims_from_spaces(obs_space: Box, action_space: Box) -> Tuple[int, int, int]:
+    """Extracts LQR dimensions from Gym spaces."""
+    n_state = obs_space.shape[0] - 1
+    n_ctrl = action_space.shape[0]
+    horizon = int(obs_space.high[-1])
+    return n_state, n_ctrl, horizon
+
+
+def unpack_obs(obs: Tensor) -> Tuple[Tensor, Tensor]:
+    """Unpack observation into state variables and time.
+
+    Expects observation as a named 'vector' tensor.
+    """
+    state, time = obs[..., :-1], obs[..., -1:]
+    time = time.long()
+    return state, time
