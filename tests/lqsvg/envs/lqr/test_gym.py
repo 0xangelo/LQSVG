@@ -12,6 +12,8 @@ from lqsvg.envs.lqr.gym import RandomVectorLQG
 from lqsvg.envs.lqr.types import LinSDynamics
 from lqsvg.envs.lqr.types import QuadCost
 
+from .utils import allclose_dynamics, allclose_cost
+
 
 def standard_fixture(params: Iterable[Any], name: str) -> callable:
     @pytest.fixture(params=params, ids=lambda x: f"{name}:{x}")
@@ -28,14 +30,16 @@ gen_seed = standard_fixture((1, 2, 3), "Seed")
 
 
 @pytest.fixture
-def spec_cls():
+def spec_cls() -> Type[LQGSpec]:
     return LQGSpec
 
 
 @pytest.fixture
-def spec(spec_cls: Type[LQGSpec], n_state, n_ctrl, horizon, gen_seed):
+def spec(
+    spec_cls: Type[LQGSpec], n_state: int, n_ctrl: int, horizon: int, gen_seed: int
+) -> LQGSpec:
     return spec_cls(
-        n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, gen_seed=gen_seed, num_envs=4
+        n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, gen_seed=gen_seed, num_envs=1
     )
 
 
@@ -44,21 +48,12 @@ def env_creator(request):
     return request.param
 
 
+# Test common TorchLQGMixin interface ==========================================
 def test_spec(spec: LQGSpec, n_state, n_ctrl, horizon, gen_seed):
     assert spec.n_state == n_state
     assert spec.n_ctrl == n_ctrl
     assert spec.horizon == horizon
     assert spec.gen_seed == gen_seed
-
-
-def allclose_dynamics(dyn1: LinSDynamics, dyn2: LinSDynamics) -> bool:
-    equal = [nt.allclose(d1, d2) for d1, d2 in zip(dyn1, dyn2)]
-    return all(equal)
-
-
-def allclose_cost(cost1: QuadCost, cost2: QuadCost) -> bool:
-    equal = [nt.allclose(c1, c2) for c1, c2 in zip(cost1, cost2)]
-    return all(equal)
 
 
 def test_gen_seed(env_creator, spec):
@@ -79,6 +74,8 @@ def test_spaces(env_creator, spec):
     assert env.action_space.shape[0] == spec.n_ctrl
 
 
+# ==============================================================================
+# Test RandomLQGEnv ============================================================
 def test_reset(spec):
     env = RandomLQGEnv(spec)
 
@@ -87,8 +84,34 @@ def test_reset(spec):
     assert obs in env.observation_space  # pylint:disable=unsupported-membership-test
 
 
-def test_vector_reset(spec):
-    env = RandomVectorLQG(spec)
+def test_step(spec):
+    env = RandomLQGEnv(spec)
+
+    env.reset()
+    act = env.action_space.sample()
+    new_obs, rew, done, info = env.step(act)
+
+    assert new_obs in env.observation_space
+    assert isinstance(rew, float)
+    assert isinstance(done, bool)
+    assert isinstance(info, dict)
+
+
+# ==============================================================================
+
+
+num_envs = standard_fixture((1, 2, 4), "NEnvs")
+
+
+@pytest.fixture
+def vector_spec(spec: LQGSpec, num_envs: int) -> LQGSpec:
+    spec.num_envs = num_envs
+    return spec
+
+
+# Test RandomVectorLQG =========================================================
+def test_vector_reset(vector_spec: LQGSpec):
+    env = RandomVectorLQG(vector_spec)
 
     obs = env.vector_reset()
     assert hasattr(env, "num_envs")
@@ -98,8 +121,8 @@ def test_vector_reset(spec):
     assert all(o in env.observation_space for o in obs)
 
 
-def test_vector_step(spec):
-    env = RandomVectorLQG(spec)
+def test_vector_step(vector_spec: LQGSpec):
+    env = RandomVectorLQG(vector_spec)
 
     env.vector_reset()
     acts = [env.action_space.sample() for _ in range(env.num_envs)]
