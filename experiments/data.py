@@ -105,34 +105,6 @@ class TrajectoryData(pl.LightningDataModule):
         )
         return dataloader
 
-    def check_dataloaders(self):
-        """For testing only."""
-        env = self.worker.env
-        horizon = env.horizon
-        n_state = env.n_state
-        n_ctrl = env.n_ctrl
-
-        for dataloader in self.train_dataloader(), self.val_dataloader():
-            batch_size = min(self.spec.batch_size, len(dataloader.dataset))
-            batch = next(iter(dataloader))
-            assert len(batch) == 3
-            obs, act, new_obs = batch
-            assert obs.shape == (
-                batch_size,
-                horizon,
-                n_state + 1,
-            ), f"{obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
-            assert act.shape == (
-                batch_size,
-                horizon,
-                n_ctrl,
-            ), f"{act.shape}, B: {batch_size}, H: {horizon}, dim(A): {n_ctrl}"
-            assert new_obs.shape == (
-                batch_size,
-                horizon,
-                n_state + 1,
-            ), f"{new_obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
-
     @staticmethod
     def trajectory_dataset(trajs: List[SampleBatch]) -> TensorDataset:
         """Concat and convert a list of trajectories into a tensor dataset."""
@@ -154,6 +126,35 @@ def build_datamodule(worker: RolloutWorker, **kwargs):
     return datamodule
 
 
+def check_dataloaders(datamodule):
+    """For testing only."""
+    env = datamodule.worker.env
+    horizon = env.horizon
+    n_state = env.n_state
+    n_ctrl = env.n_ctrl
+
+    for dataloader in datamodule.train_dataloader(), datamodule.val_dataloader():
+        batch_size = min(datamodule.spec.batch_size, len(dataloader.dataset))
+        batch = next(iter(dataloader))
+        assert len(batch) == 3
+        obs, act, new_obs = batch
+        assert obs.shape == (
+            batch_size,
+            horizon,
+            n_state + 1,
+        ), f"{obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
+        assert act.shape == (
+            batch_size,
+            horizon,
+            n_ctrl,
+        ), f"{act.shape}, B: {batch_size}, H: {horizon}, dim(A): {n_ctrl}"
+        assert new_obs.shape == (
+            batch_size,
+            horizon,
+            n_state + 1,
+        ), f"{new_obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
+
+
 def test_datamodule():
     # pylint:disable=missing-function-docstring,import-outside-toplevel
     from policy import make_worker
@@ -161,7 +162,7 @@ def test_datamodule():
     # Create and initialize
     worker = make_worker()
     datamodule = build_datamodule(worker)
-    datamodule.check_dataloaders()
+    check_dataloaders(datamodule)
 
 
 if __name__ == "__main__":
