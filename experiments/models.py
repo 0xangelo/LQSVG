@@ -72,7 +72,7 @@ class LightningModel(pl.LightningModule):
 
         self.dynamics = env.dynamics
         self.cost = env.cost
-        self.rho = env._rho
+        self.rho = env.rho
 
         self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
 
@@ -146,20 +146,12 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info()
 
     def value_gradient_info(self):
-        module = self.module
-        policy, dynamics, cost, rho = (
-            x.standard_form()
-            for x in (
-                module.actor,
-                module.trans_model,
-                module.rew_model,
-                module.init_model,
-            )
-        )
-        self.log("learned_loss", self.policy_loss(policy, dynamics, cost, rho))
-        self.log(
-            "true_loss", self.policy_loss(policy, self.dynamics, self.cost, self.rho)
-        )
+        policy, dynamics, cost, rho = self.module.standard_form()
+
+        model = dynamics, cost, rho
+        ground_truth = self.dynamics, self.cost, self.rho
+        self.log("learned_loss", self.policy_loss(policy, *model))
+        self.log("true_loss", self.policy_loss(policy, *ground_truth))
 
 
 def test_lightning_model():

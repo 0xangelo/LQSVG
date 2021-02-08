@@ -108,14 +108,15 @@ class TorchLQGMixin:
         init_mean: Tensor,
         init_cov: Tensor,
     ):
-        self.dynamics = dynamics
-        self.cost = cost
-
-        self.observation_space, self.action_space = self._setup_spaces()
-
         self._trans = TVLinearDynamics(dynamics)
         self._cost = QuadraticCost(cost)
         self._rho = InitStateDynamics(init_mean, init_cov)
+
+        self.dynamics, self.cost, self.rho = (
+            x.standard_form() for x in (self._trans, self._cost, self._rho)
+        )
+
+        self.observation_space, self.action_space = self._setup_spaces()
 
     @property
     def horizon(self):

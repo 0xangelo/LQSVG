@@ -1,5 +1,6 @@
 # pylint:disable=missing-docstring,invalid-name
 from functools import cached_property
+from typing import Any
 from typing import Tuple
 
 import torch
@@ -100,6 +101,12 @@ class TimeVaryingLinear(nn.Module):
         self.init_model = InitStateModel(n_state=n_state, seed=config.get("seed", None))
         self.trans_model = TVLinearModel(n_state, n_ctrl, horizon)
         self.rew_model = QuadraticReward(n_state, n_ctrl, horizon)
+
+    def standard_form(self) -> Tuple[Any, Any, Any]:
+        return tuple(
+            x.standard_form()
+            for x in (self.actor, self.trans_model, self.rew_model, self.init_model)
+        )
 
 
 # noinspection PyAbstractClass
