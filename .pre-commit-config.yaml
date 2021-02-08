@@ -78,7 +78,7 @@ repos:
         types: [python]
         stages: [commit]
         args: [-j 0]
-        files: ^addons/
+        files: ^lqsvg/|^experiments/
 
     - repo: local
       hooks:
