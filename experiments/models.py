@@ -10,12 +10,12 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules import InitStateDynamics
-
-from policy import LQGPolicy  # pylint:disable=wrong-import-order
 
 
 # noinspection PyMethodMayBeStatic
+from lqsvg.policy.time_varying_linear import LQGPolicy
+
+
 class ExpectedValue(nn.Module):
     # pylint:disable=invalid-name,no-self-use
     def forward(self, rho: Tuple[Tensor, Tensor], vval: lqr.Quadratic):

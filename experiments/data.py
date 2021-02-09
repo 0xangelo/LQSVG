@@ -1,6 +1,6 @@
 """Utilities for data collection in LQG envs."""
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union, Any
 from typing import Optional
 
 import pytorch_lightning as pl
@@ -47,7 +47,6 @@ def batched(trajs: List[SampleBatch], key: str) -> Tensor:
 class TrajectoryData(pl.LightningDataModule):
     """Data module for on-policy trajectory data in LQG envs."""
 
-    # pylint:disable=abstract-method
     spec_cls = DataModuleSpec
 
     def __init__(self, rollout_worker: RolloutWorker, spec: DataModuleSpec):
@@ -115,6 +114,15 @@ class TrajectoryData(pl.LightningDataModule):
         )
         assert len(dataset) == len(trajs)
         return dataset
+
+    def transfer_batch_to_device(self, batch: Any, device: torch.device) -> Any:
+        pass
+
+    def test_dataloader(self, *args, **kwargs) -> Union[DataLoader, List[DataLoader]]:
+        pass
+
+    def prepare_data(self, *args, **kwargs):
+        pass
 
 
 def build_datamodule(worker: RolloutWorker, **kwargs):
