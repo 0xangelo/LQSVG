@@ -14,8 +14,6 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import unpack_obs
-from lqsvg.np_util import make_spd_matrix
-from lqsvg.torch.utils import as_float_tensor
 
 
 def softplusinv(tensor: Tensor) -> Tensor:
@@ -176,22 +174,6 @@ class TVLinearDynamics(StochasticModel):
         return self.params.as_linsdynamics()
 
 
-class TVLinearModel(TVLinearDynamics):
-    """Time-varying linear Gaussian dynamics model."""
-
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        n_tau = n_state + n_ctrl
-        dynamics = lqr.LinSDynamics(
-            F=torch.randn(horizon, n_state, n_tau),
-            f=torch.randn(horizon, n_state),
-            W=torch.as_tensor(
-                make_spd_matrix(n_dim=n_state, sample_shape=(horizon,)),
-                dtype=torch.float32,
-            ),
-        )
-        super().__init__(dynamics)
-
-
 class InitStateDynamics(ptd.Distribution):
     """Initial state distribution as a multivariate Normal.
 
@@ -242,12 +224,3 @@ class InitStateDynamics(ptd.Distribution):
         scale_tril = self.scale_tril()
         covariance_matrix = scale_tril @ nt.transpose(scale_tril)
         return nt.vector(self.loc), covariance_matrix
-
-
-class InitStateModel(InitStateDynamics):
-    """Gaussian initial state distribution model."""
-
-    def __init__(self, n_state: int, seed: Optional[int] = None):
-        loc = torch.zeros(n_state)
-        covariance_matrix = as_float_tensor(make_spd_matrix(n_state, rng=seed))
-        super().__init__(loc, covariance_matrix)

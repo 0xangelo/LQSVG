@@ -5,7 +5,6 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.utils import unpack_obs
 
 
@@ -43,10 +42,3 @@ class QuadraticCost(nn.Module):
 
     def standard_form(self) -> lqr.QuadCost:
         return self._named_quadcost()
-
-
-class QuadraticReward(QuadraticCost):
-    # pylint:disable=abstract-method,invalid-name,missing-docstring
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        cost = make_quadcost(n_state, n_ctrl, horizon, stationary=False)
-        super().__init__(cost)

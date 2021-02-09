@@ -1,6 +1,6 @@
 # pylint:disable=missing-docstring,invalid-name
 from functools import cached_property
-from typing import Any
+from typing import Any, Optional
 from typing import Tuple
 
 import torch
@@ -16,14 +16,16 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.gym import RandomVectorLQG
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules import InitStateModel
-from lqsvg.envs.lqr.modules import QuadraticReward
-from lqsvg.envs.lqr.modules import TVLinearModel
+from lqsvg.envs.lqr.modules import TVLinearDynamics, InitStateDynamics
+from lqsvg.envs.lqr.modules import QuadraticCost
 from lqsvg.envs.lqr.utils import unpack_obs
 
 # from lqsvg.policy import RandomPolicy
+from lqsvg.np_util import make_spd_matrix
+from lqsvg.torch.utils import as_float_tensor
 
 
 class TVLinearFeedback(nn.Module):
@@ -90,6 +92,38 @@ class TVLinearPolicy(DeterministicPolicy):
         return self.action_linear.gains()
 
 
+class TVLinearTransModel(TVLinearDynamics):
+    """Time-varying linear Gaussian dynamics model."""
+
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
+        n_tau = n_state + n_ctrl
+        dynamics = lqr.LinSDynamics(
+            F=torch.randn(horizon, n_state, n_tau),
+            f=torch.randn(horizon, n_state),
+            W=torch.as_tensor(
+                make_spd_matrix(n_dim=n_state, sample_shape=(horizon,)),
+                dtype=torch.float32,
+            ),
+        )
+        super().__init__(dynamics)
+
+
+class QuadraticReward(QuadraticCost):
+    # pylint:disable=abstract-method,missing-docstring
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
+        cost = make_quadcost(n_state, n_ctrl, horizon, stationary=False)
+        super().__init__(cost)
+
+
+class InitStateModel(InitStateDynamics):
+    """Gaussian initial state distribution model."""
+
+    def __init__(self, n_state: int, seed: Optional[int] = None):
+        loc = torch.zeros(n_state)
+        covariance_matrix = as_float_tensor(make_spd_matrix(n_state, rng=seed))
+        super().__init__(loc, covariance_matrix)
+
+
 class TimeVaryingLinear(nn.Module):
     # pylint:disable=abstract-method
     def __init__(self, obs_space: Box, action_space: Box, config: dict):
@@ -99,7 +133,7 @@ class TimeVaryingLinear(nn.Module):
 
         n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
         self.init_model = InitStateModel(n_state=n_state, seed=config.get("seed", None))
-        self.trans_model = TVLinearModel(n_state, n_ctrl, horizon)
+        self.trans_model = TVLinearTransModel(n_state, n_ctrl, horizon)
         self.rew_model = QuadraticReward(n_state, n_ctrl, horizon)
 
     def standard_form(self) -> Tuple[Any, Any, Any]:
