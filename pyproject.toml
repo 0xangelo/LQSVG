@@ -23,6 +23,7 @@ pytest = "^6.2.2"
 black = {extras = ["d"], version = "^20.8b1"}
 flake8 = "^3.8.4"
 sklearn = "^0.0"
+matplotlib = "^3.3.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
