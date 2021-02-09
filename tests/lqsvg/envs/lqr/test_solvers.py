@@ -2,6 +2,7 @@
 import pytest
 import torch
 
+import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinDynamics
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr import NamedLQGControl
@@ -9,8 +10,6 @@ from lqsvg.envs.lqr import NamedLQGPrediction
 from lqsvg.envs.lqr import NamedLQRControl
 from lqsvg.envs.lqr import NamedLQRPrediction
 from lqsvg.envs.lqr import QuadCost
-from lqsvg.envs.lqr.named import MATRIX_NAMES
-from lqsvg.envs.lqr.named import VECTOR_NAMES
 from lqsvg.np_util import make_spd_matrix
 
 
@@ -19,13 +18,15 @@ def stationary_stochastic_dynamics(n_state, n_tau, horizon, seed):
     torch.manual_seed(seed)
     F = torch.randn(n_state, n_tau).expand(horizon, 1, n_state, n_tau)
     f = torch.randn(n_state).expand(horizon, 1, n_state)
-    w = torch.randn(n_state, 1)
-    W = (w @ w.T).expand(horizon, 1, n_state, n_state)
-    # W = torch.randn(n_state, n_state).expand(horizon, 1, n_state, n_state)
+    W = (
+        torch.from_numpy(make_spd_matrix(n_state, rng=seed))
+        .float()
+        .expand(horizon, 1, n_state, n_state)
+    )
     return LinSDynamics(
-        F=F.refine_names(*MATRIX_NAMES),
-        f=f.refine_names(*VECTOR_NAMES),
-        W=W.refine_names(*MATRIX_NAMES),
+        F=nt.horizon(nt.matrix(F)),
+        f=nt.horizon(nt.vector(f)),
+        W=nt.horizon(nt.matrix(W)),
     )
 
 
@@ -44,7 +45,7 @@ def stationary_cost(n_tau, horizon, seed):
         .expand(horizon, 1, n_tau, n_tau)
     )
     c = torch.randn(n_tau).expand(horizon, 1, n_tau)
-    return QuadCost(C=C.refine_names(*MATRIX_NAMES), c=c.refine_names(*VECTOR_NAMES))
+    return QuadCost(C=nt.horizon(nt.matrix(C)), c=nt.horizon(nt.vector(c)))
 
 
 @pytest.fixture(params=(True, False), ids=lambda x: f"TorchScript:{x}")

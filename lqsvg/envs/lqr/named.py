@@ -4,16 +4,13 @@ from typing import Union
 
 from torch import Tensor
 
+import lqsvg.torch.named as nt
+
 from .types import LinDynamics
 from .types import Linear
 from .types import LinSDynamics
 from .types import QuadCost
 from .types import Quadratic
-
-
-MATRIX_NAMES = ("H", ..., "R", "C")
-VECTOR_NAMES = MATRIX_NAMES[:-1]
-SCALAR_NAMES = MATRIX_NAMES[:-2]
 
 
 def unnamed(
@@ -26,89 +23,53 @@ def unnamed(
     return cls(gen)
 
 
-def matrix(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(*MATRIX_NAMES)
-
-
-def vector(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(*VECTOR_NAMES)
-
-
-def scalar(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(*SCALAR_NAMES)
-
-
-def matrix_to_vector(tensor: Tensor) -> Tensor:
-    return matrix(tensor).squeeze("C")
-
-
-def matrix_to_scalar(tensor: Tensor) -> Tensor:
-    return matrix(tensor).squeeze("R").squeeze("C")
-
-
-def vector_to_matrix(tensor: Tensor) -> Tensor:
-    return vector(tensor).align_to(..., "R", "C")
-
-
-def vector_to_scalar(tensor: Tensor) -> Tensor:
-    return vector(tensor).squeeze("R")
-
-
-def scalar_to_matrix(tensor: Tensor) -> Tensor:
-    return scalar(tensor).align_to(..., "R", "C")
-
-
-def scalar_to_vector(tensor: Tensor) -> Tensor:
-    return scalar(tensor).align_to(..., "R")
-
-
 def refine_linear_input(linear: Linear):
     K, k = linear
-    K = matrix(K)
-    k = vector_to_matrix(k)
+    K = nt.horizon(nt.matrix(K))
+    k = nt.horizon(nt.vector_to_matrix(k))
     return K, k
 
 
 def refine_dynamics_input(dynamics: LinDynamics):
     F, f = dynamics
-    F = matrix(F)
-    f = vector_to_matrix(f)
+    F = nt.horizon(nt.matrix(F))
+    f = nt.horizon(nt.vector_to_matrix(f))
     return LinDynamics(F, f)
 
 
 def refine_sdynamics_input(dynamics: LinSDynamics):
     F, f, W = dynamics
     F, f = refine_dynamics_input((F, f))
-    W = matrix(W)
+    W = nt.horizon(nt.matrix(W))
     return LinSDynamics(F, f, W)
 
 
 def refine_cost_input(cost: QuadCost):
     C, c = cost
-    C = matrix(C)
-    c = vector_to_matrix(c)
+    C = nt.horizon(nt.matrix(C))
+    c = nt.horizon(nt.vector_to_matrix(c))
     return QuadCost(C, c)
 
 
 def refine_linear_output(linear: Linear):
     K, k = linear
-    K = matrix(K)
-    k = matrix_to_vector(k)
+    K = nt.horizon(nt.matrix(K))
+    k = nt.horizon(nt.matrix_to_vector(k))
     return K, k
 
 
 def refine_quadratic_output(quadratic: Quadratic):
     A, b, c = quadratic
-    A = matrix(A)
-    b = matrix_to_vector(b)
-    c = matrix_to_scalar(c)
+    A = nt.horizon(nt.matrix(A))
+    b = nt.horizon(nt.matrix_to_vector(b))
+    c = nt.horizon(nt.matrix_to_scalar(c))
     return A, b, c
 
 
 def refine_cost_ouput(cost: QuadCost) -> QuadCost:
     C, c = cost
-    C = matrix(C)
-    c = matrix_to_vector(c)
+    C = nt.horizon(nt.matrix(C))
+    c = nt.horizon(nt.matrix_to_vector(c))
     return QuadCost(C, c)
 
 
@@ -124,8 +85,8 @@ def refine_lqr(dynamics: LinDynamics, cost: QuadCost) -> Tuple[LinDynamics, Quad
     """
     F, f = dynamics
     C, c = cost
-    F = F.refine_names("H", "R", "C")
-    f = f.refine_names("H", "R")
-    C = C.refine_names("H", "R", "C")
-    c = c.refine_names("H", "R")
+    F = nt.horizon(nt.matrix(F))
+    f = nt.horizon(nt.vector(f))
+    C = nt.horizon(nt.matrix(C))
+    c = nt.horizon(nt.vector(c))
     return LinDynamics(F, f), QuadCost(C, c)
