@@ -27,3 +27,4 @@ QuadCost = namedtuple("QuadCost", "C c")
 LinDynamics = namedtuple("LinDynamics", "F f")
 LinSDynamics = namedtuple("LinSDynamics", "F f W")
 AnyDynamics = Union[LinDynamics, LinSDynamics]
+GaussInit = namedtuple("GaussInit", "mu sig")
