@@ -5,14 +5,12 @@ from typing import Type
 import numpy as np
 import pytest
 
-import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.gym import LQGSpec
 from lqsvg.envs.lqr.gym import RandomLQGEnv
 from lqsvg.envs.lqr.gym import RandomVectorLQG
-from lqsvg.envs.lqr.types import LinSDynamics
-from lqsvg.envs.lqr.types import QuadCost
 
-from .utils import allclose_dynamics, allclose_cost
+from .utils import allclose_cost
+from .utils import allclose_dynamics
 
 
 def standard_fixture(params: Iterable[Any], name: str) -> callable:
@@ -115,6 +113,7 @@ def test_step(spec: LQGSpec):
     act = env.action_space.sample()
     new_obs, rew, done, info = env.step(act)
 
+    # pylint:disable=unsupported-membership-test
     assert new_obs in env.observation_space
     assert isinstance(rew, float)
     assert isinstance(done, bool)

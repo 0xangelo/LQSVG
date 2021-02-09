@@ -69,25 +69,28 @@ class LQGSpec(DataClassJsonMixin):
     gen_seed: Optional[int] = None
     num_envs: Optional[int] = None
 
-    def make_lqg(self) -> Tuple[LinSDynamics, QuadCost]:
-        """Returns random LQG transition kernel and cost function"""
-        return make_lqg(
+    def make_lqg(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
+        """Generates random LQG parameters.
+
+        Generates a transition kernel, cost function and initial state
+        distribution parameters.
+
+        Returns:
+            A tuple containing parameters for linear stochastic dynamics,
+            quadratic costs, and Normal inital state distribution.
+        """
+        dynamics, cost = make_lqg(
             state_size=self.n_state,
             ctrl_size=self.n_ctrl,
             horizon=self.horizon,
             stationary=self.stationary,
             np_random=self.gen_seed,
         )
-
-    def init_params(self) -> GaussInit:
-        """Compute parameters of the multivariate Normal for initial states.
-
-        Returns:
-            A tuple containing mean and covariance tensors
-        """
-        mean = torch.zeros(self.n_state, names=("R",))
-        cov = torch.eye(self.n_state).refine_names("R", "C")
-        return GaussInit(mean, cov)
+        init = GaussInit(
+            mu=torch.zeros(self.n_state, names=("R",)),
+            sig=torch.eye(self.n_state).refine_names("R", "C"),
+        )
+        return dynamics, cost, init
 
 
 # noinspection PyAttributeOutsideInit
@@ -177,8 +180,7 @@ class RandomLQGEnv(LQGEnv):
 
     # pylint:disable=abstract-method
     def __init__(self, spec: LQGSpec):
-        dynamics, cost = spec.make_lqg()
-        init = spec.init_params()
+        dynamics, cost, init = spec.make_lqg()
         super().__init__(dynamics=dynamics, cost=cost, init=init)
 
 
@@ -190,8 +192,7 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
 
     def __init__(self, spec: LQGSpec):
         assert spec.num_envs is not None
-        dynamics, cost = spec.make_lqg()
-        init = spec.init_params()
+        dynamics, cost, init = spec.make_lqg()
         self.setup(dynamics, cost, init)
         self.spec = spec
         self._curr_states = None
