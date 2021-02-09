@@ -118,6 +118,7 @@ node_modules/
 # W&B
 wandb/
 artifacts/
+checkpoints/
 
 # Pytorch Lightning
 lightning_logs/
