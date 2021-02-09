@@ -1,6 +1,5 @@
 """Gaussian initial state dynamics as a PyTorch module."""
 from typing import List
-from typing import Tuple
 
 import raylab.torch.nn.distributions as ptd
 import torch
@@ -10,6 +9,7 @@ from raylab.torch.nn.distributions.types import SampleLogp
 from torch import Tensor
 
 import lqsvg.torch.named as nt
+from lqsvg.envs import lqr
 
 from .common import assemble_scale_tril
 from .common import disassemble_covariance
@@ -28,8 +28,9 @@ class InitStateDynamics(ptd.Distribution):
     """
 
     # pylint:disable=missing-class-docstring
-    def __init__(self, loc: Tensor, covariance_matrix: Tensor):
+    def __init__(self, init: lqr.GaussInit):
         super().__init__()
+        loc, covariance_matrix = init
         self.dist = TVMultivariateNormal()
         self.loc = nn.Parameter(nt.unnamed(loc))
         self.ltril, self.pre_diag = nt.unnamed(
@@ -61,8 +62,9 @@ class InitStateDynamics(ptd.Distribution):
         params = self()
         return self.dist.log_prob(value, params)
 
-    def standard_form(self) -> Tuple[Tensor, Tensor]:
+    def standard_form(self) -> lqr.GaussInit:
         # pylint:disable=missing-function-docstring
+        loc = nt.vector(self.loc)
         scale_tril = self.scale_tril()
         covariance_matrix = scale_tril @ nt.transpose(scale_tril)
-        return nt.vector(self.loc), covariance_matrix
+        return lqr.GaussInit(loc, covariance_matrix)

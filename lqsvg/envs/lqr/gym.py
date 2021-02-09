@@ -22,6 +22,7 @@ from .modules import InitStateDynamics
 from .modules import QuadraticCost
 from .modules import TVLinearDynamics
 from .solvers import NamedLQGControl
+from .types import GaussInit
 from .types import Linear
 from .types import LinSDynamics
 from .types import QuadCost
@@ -78,7 +79,7 @@ class LQGSpec(DataClassJsonMixin):
             np_random=self.gen_seed,
         )
 
-    def init_params(self) -> Tuple[Tensor, Tensor]:
+    def init_params(self) -> GaussInit:
         """Compute parameters of the multivariate Normal for initial states.
 
         Returns:
@@ -86,7 +87,7 @@ class LQGSpec(DataClassJsonMixin):
         """
         mean = torch.zeros(self.n_state, names=("R",))
         cov = torch.eye(self.n_state).refine_names("R", "C")
-        return mean, cov
+        return GaussInit(mean, cov)
 
 
 # noinspection PyAttributeOutsideInit
@@ -96,12 +97,11 @@ class TorchLQGMixin:
         self,
         dynamics: LinSDynamics,
         cost: QuadCost,
-        init_mean: Tensor,
-        init_cov: Tensor,
+        init: GaussInit,
     ):
         self._trans = TVLinearDynamics(dynamics)
         self._cost = QuadraticCost(cost)
-        self._rho = InitStateDynamics(init_mean, init_cov)
+        self._rho = InitStateDynamics(init)
 
         self.dynamics, self.cost, self.rho = (
             x.standard_form() for x in (self._trans, self._cost, self._rho)
@@ -143,14 +143,8 @@ class LQGEnv(TorchLQGMixin, gym.Env):
     """Linear Quadratic Gaussian for OpenAI Gym."""
 
     # pylint:disable=abstract-method,invalid-name,missing-function-docstring
-    def __init__(
-        self,
-        dynamics: LinSDynamics,
-        cost: QuadCost,
-        init_mean: Tensor,
-        init_cov: Tensor,
-    ):
-        self.setup(dynamics, cost, init_mean, init_cov)
+    def __init__(self, dynamics: LinSDynamics, cost: QuadCost, init: GaussInit):
+        self.setup(dynamics, cost, init)
         self._curr_state: Optional[Tensor] = None
 
     @torch.no_grad()
@@ -184,10 +178,8 @@ class RandomLQGEnv(LQGEnv):
     # pylint:disable=abstract-method
     def __init__(self, spec: LQGSpec):
         dynamics, cost = spec.make_lqg()
-        init_mean, init_cov = spec.init_params()
-        super().__init__(
-            dynamics=dynamics, cost=cost, init_mean=init_mean, init_cov=init_cov
-        )
+        init = spec.init_params()
+        super().__init__(dynamics=dynamics, cost=cost, init=init)
 
 
 class RandomVectorLQG(TorchLQGMixin, VectorEnv):
@@ -199,14 +191,15 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
     def __init__(self, spec: LQGSpec):
         assert spec.num_envs is not None
         dynamics, cost = spec.make_lqg()
-        init_mean, init_cov = spec.init_params()
-        self.setup(dynamics, cost, init_mean=init_mean, init_cov=init_cov)
+        init = spec.init_params()
+        self.setup(dynamics, cost, init)
         self.spec = spec
         self._curr_states = None
         super().__init__(self.observation_space, self.action_space, spec.num_envs)
 
     @property
     def curr_states(self) -> Optional[np.ndarray]:
+        """Current vectorized state as numpy array."""
         if self._curr_states is None:
             return None
         return self._curr_states.numpy().astype(self.observation_space.dtype)

@@ -15,6 +15,7 @@ __all__ = [
     "LinDynamics",
     "LinSDynamics",
     "AnyDynamics",
+    "GaussInit",
 ]
 
 LQR = Tuple[Tensor, Tensor, Tensor, Tensor]

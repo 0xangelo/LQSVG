@@ -1,6 +1,5 @@
 # pylint:disable=missing-docstring,invalid-name
 from functools import cached_property
-from typing import Any
 from typing import Optional
 from typing import Tuple
 
@@ -119,7 +118,7 @@ class InitStateModel(InitStateDynamics):
     def __init__(self, n_state: int, seed: Optional[int] = None):
         loc = torch.zeros(n_state)
         covariance_matrix = as_float_tensor(make_spd_matrix(n_state, rng=seed))
-        super().__init__(loc, covariance_matrix)
+        super().__init__(lqr.GaussInit(loc, covariance_matrix))
 
 
 class TimeVaryingLinear(nn.Module):
@@ -134,7 +133,9 @@ class TimeVaryingLinear(nn.Module):
         self.trans_model = TVLinearTransModel(n_state, n_ctrl, horizon)
         self.rew_model = QuadraticReward(n_state, n_ctrl, horizon)
 
-    def standard_form(self) -> Tuple[Any, Any, Any]:
+    def standard_form(
+        self,
+    ) -> Tuple[lqr.Linear, lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
         return tuple(
             x.standard_form()
             for x in (self.actor, self.trans_model, self.rew_model, self.init_model)
