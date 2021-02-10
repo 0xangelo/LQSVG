@@ -191,7 +191,7 @@ class LQRPrediction(BuildQuadraticMixin, nn.Module):
         return V, v, vc
 
 
-# noinspection PyPep8Naming
+# noinspection PyPep8Naming,PyMethodOverriding
 class LQRControl(BuildLinearMixin, LQRPrediction):
     """Linear Quadratic Regulator control.
 
@@ -288,9 +288,13 @@ class LQGMixin:
             transpose(f) @ V @ f / 2
             + transpose(f) @ v
             + vc
-            + torch.diagonal(W @ V, dim1=-2, dim2=-1).sum(-1) / 2
+            + self.matrix_trace(W @ V) / 2
         )
         return Q, q, qc
+
+    def matrix_trace(self, mat: Tensor) -> Tensor:
+        """Returns the trace of a matrix as a unitary matrix (keeps dims)."""
+        return torch.diagonal(mat, dim1=-2, dim2=-1).sum(-1, keepdim=True).unsqueeze(-1)
 
 
 # noinspection PyPep8Naming
