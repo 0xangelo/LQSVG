@@ -10,24 +10,20 @@ from lqsvg.envs.lqr import NamedLQGPrediction
 from lqsvg.envs.lqr import NamedLQRControl
 from lqsvg.envs.lqr import NamedLQRPrediction
 from lqsvg.envs.lqr import QuadCost
-from lqsvg.np_util import make_spd_matrix
+from lqsvg.envs.lqr.generators import make_linsdynamics
+from lqsvg.envs.lqr.generators import make_quadcost
 
 
 @pytest.fixture
-def stationary_stochastic_dynamics(n_state, n_tau, horizon, seed):
-    torch.manual_seed(seed)
-    F = torch.randn(n_state, n_tau).expand(horizon, 1, n_state, n_tau)
-    f = torch.randn(n_state).expand(horizon, 1, n_state)
-    W = (
-        torch.from_numpy(make_spd_matrix(n_state, rng=seed))
-        .float()
-        .expand(horizon, 1, n_state, n_state)
+def stationary_stochastic_dynamics(n_state, n_ctrl, horizon, seed):
+    dynamics = make_linsdynamics(
+        state_size=n_state,
+        ctrl_size=n_ctrl,
+        horizon=horizon,
+        stationary=True,
+        np_random=seed,
     )
-    return LinSDynamics(
-        F=nt.horizon(nt.matrix(F)),
-        f=nt.horizon(nt.vector(f)),
-        W=nt.horizon(nt.matrix(W)),
-    )
+    return dynamics
 
 
 @pytest.fixture
@@ -37,15 +33,15 @@ def stationary_deterministic_dynamics(stationary_stochastic_dynamics):
 
 
 @pytest.fixture
-def stationary_cost(n_tau, horizon, seed):
-    torch.manual_seed(seed)
-    C = (
-        torch.from_numpy(make_spd_matrix(n_tau, rng=seed))
-        .float()
-        .expand(horizon, 1, n_tau, n_tau)
+def stationary_cost(n_state, n_ctrl, horizon, seed):
+    cost = make_quadcost(
+        state_size=n_state,
+        ctrl_size=n_ctrl,
+        horizon=horizon,
+        stationary=True,
+        np_random=seed,
     )
-    c = torch.randn(n_tau).expand(horizon, 1, n_tau)
-    return QuadCost(C=nt.horizon(nt.matrix(C)), c=nt.horizon(nt.vector(c)))
+    return cost
 
 
 @pytest.fixture(params=(True, False), ids=lambda x: f"TorchScript:{x}")
@@ -75,9 +71,9 @@ def check_quadratic(quadratic, horizon, size):
     assert is_tensor(b)
     assert is_tensor(c)
 
-    assert A.shape == (horizon, 1, size, size)
-    assert b.shape == (horizon, 1, size)
-    assert c.shape == (horizon, 1)
+    assert A.shape == (horizon, size, size)
+    assert b.shape == (horizon, size)
+    assert c.shape == (horizon,)
 
     assert ~A.isnan().any()
     assert ~b.isnan().any()
@@ -90,8 +86,8 @@ def check_linear(linear, horizon, n1, n2):
     assert is_tensor(K)
     assert is_tensor(k)
 
-    assert K.shape == (horizon, 1, n1, n2)
-    assert k.shape == (horizon, 1, n1)
+    assert K.shape == (horizon, n1, n2)
+    assert k.shape == (horizon, n1)
 
     assert ~K.isnan().any()
     assert ~k.isnan().any()
@@ -136,8 +132,8 @@ def rand_policy(
     policy, _, _ = lqr_control(stationary_deterministic_dynamics, stationary_cost)
     K, k = policy
     torch.manual_seed(seed)
-    K = K + torch.rand_like(K) * 0.1
-    k = k + torch.rand_like(k) * 0.1
+    K = K + torch.rand_like(K) * 0.2 - 0.1
+    k = k + torch.rand_like(k) * 0.2 - 0.1
     return K, k
 
 
@@ -209,10 +205,6 @@ def test_lqg_control(
     check_linear(Pi, horizon, n_ctrl, n_state)
 
 
-def map_unname(*tensors):
-    return map(lambda x: x.rename(None), tensors)
-
-
 def test_stationary_pred_equality(
     lqr_control: NamedLQRControl,
     lqg_prediction: NamedLQGPrediction,
@@ -222,7 +214,7 @@ def test_stationary_pred_equality(
     n_state: int,
 ):
     lqr_pi, _, lqr_val = lqr_control(stationary_deterministic_dynamics, stationary_cost)
-    lqr_V, lqr_v, lqr_vc = map_unname(*lqr_val)
+    lqr_V, lqr_v, lqr_vc = nt.unnamed(*lqr_val)
 
     _, lqg_val = lqg_prediction(
         # Insert batch dimension and use column vector
@@ -230,11 +222,11 @@ def test_stationary_pred_equality(
         LinSDynamics(
             F=stationary_deterministic_dynamics.F,
             f=stationary_deterministic_dynamics.f,
-            W=torch.zeros(horizon, 1, n_state, n_state),
+            W=torch.zeros(horizon, n_state, n_state),
         ),
         stationary_cost,
     )
-    lqg_V, lqg_v, lqg_vc = map_unname(*lqg_val)
+    lqg_V, lqg_v, lqg_vc = nt.unnamed(*lqg_val)
 
     assert torch.allclose(lqr_V, lqg_V)
     assert torch.allclose(lqr_v, lqg_v)
@@ -254,13 +246,13 @@ def test_stationary_ctrl_equality(
         LinSDynamics(
             F=stationary_deterministic_dynamics.F,
             f=stationary_deterministic_dynamics.f,
-            W=torch.zeros(horizon, 1, n_state, n_state),
+            W=torch.zeros(horizon, n_state, n_state),
         ),
         stationary_cost,
     )
 
-    lqr_K, lqr_k = map_unname(*lqr_pi)
-    lqg_K, lqg_k = map_unname(*lqg_pi)
+    lqr_K, lqr_k = nt.unnamed(*lqr_pi)
+    lqg_K, lqg_k = nt.unnamed(*lqg_pi)
 
     assert lqr_K.shape == lqg_K.shape
     assert lqr_k.shape == lqg_k.shape
