@@ -56,7 +56,8 @@ class LQGSpec(DataClassJsonMixin):
         gen_seed: integer seed for random number generator used in
             initializing LQG parameters
         num_envs: how many environments to simulate in parallel. Effectively
-            the initial state distribution batched.
+            tells the environment to sample batches from the initial state
+            distribution.
     """
 
     # pylint:disable=too-many-instance-attributes
