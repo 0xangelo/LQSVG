@@ -13,6 +13,11 @@ from lqsvg.envs.lqr.types import LinDynamics
 from lqsvg.envs.lqr.types import LinSDynamics
 from lqsvg.envs.lqr.types import QuadCost
 
+from .utils import standard_fixture
+
+
+stationary = standard_fixture((True, False), "Stationary")
+
 
 @pytest.fixture
 def timestep():
@@ -76,18 +81,25 @@ def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=True)
 
 
-@pytest.fixture(params=(True, False), ids=lambda x: f"Stationnary:{x}")
-def stationary(request):
-    return request.param
-
-
 def test_make_lqr(n_state, n_ctrl, horizon, stationary, seed):
-    dynamics, cost = make_lqr(n_state, n_ctrl, horizon, stationary, seed)
+    dynamics, cost = make_lqr(
+        state_size=n_state,
+        ctrl_size=n_ctrl,
+        horizon=horizon,
+        stationary=stationary,
+        np_random=seed,
+    )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=stationary)
 
 
 def test_make_lqg(n_state, n_ctrl, horizon, stationary, seed):
-    dynamics, cost = make_lqg(n_state, n_ctrl, horizon, stationary, seed)
+    dynamics, cost = make_lqg(
+        state_size=n_state,
+        ctrl_size=n_ctrl,
+        horizon=horizon,
+        stationary=stationary,
+        np_random=seed,
+    )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary)
 
 
@@ -121,3 +133,39 @@ def test_stack_lqs(n_state, n_ctrl, horizon, seed):
     assert cost.C.names == mat_names
     assert cost.c.names == vec_names
     assert all(x.size("B") == 1 for y in (dynamics, cost) for x in y)
+
+
+# Batched LQs =================================================================
+n_batch = standard_fixture((None, 1, 10), "Batch")
+
+
+def test_batched_lqgs(n_state, n_ctrl, horizon, stationary, n_batch):
+    dynamics, cost = make_lqg(
+        state_size=n_state,
+        ctrl_size=n_ctrl,
+        horizon=horizon,
+        stationary=stationary,
+        n_batch=n_batch,
+    )
+    assert isinstance(dynamics, LinSDynamics)
+    assert isinstance(cost, QuadCost)
+
+    mat_names = tuple("H B R C".split()) if n_batch else tuple("H R C".split())
+    vec_names = tuple("H B R".split()) if n_batch else tuple("H R".split())
+
+    assert dynamics.F.names == mat_names
+    assert dynamics.f.names == vec_names
+    assert dynamics.W.names == mat_names
+
+    assert cost.C.names == mat_names
+    assert cost.c.names == vec_names
+
+    n_tau = n_state + n_ctrl
+    sample_shape = (horizon,) + ((n_batch,) if n_batch else ())
+
+    assert dynamics.F.shape == sample_shape + (n_state, n_tau)
+    assert dynamics.f.shape == sample_shape + (n_state,)
+    assert dynamics.W.shape == sample_shape + (n_state, n_state)
+
+    assert cost.C.shape == sample_shape + (n_tau, n_tau)
+    assert cost.c.shape == sample_shape + (n_tau,)

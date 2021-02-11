@@ -1,5 +1,3 @@
-from typing import Any
-from typing import Iterable
 from typing import Type
 
 import numpy as np
@@ -11,14 +9,7 @@ from lqsvg.envs.lqr.gym import RandomVectorLQG
 
 from .utils import allclose_cost
 from .utils import allclose_dynamics
-
-
-def standard_fixture(params: Iterable[Any], name: str) -> callable:
-    @pytest.fixture(params=params, ids=lambda x: f"{name}:{x}")
-    def func(request):
-        return request.param
-
-    return func
+from .utils import standard_fixture
 
 
 n_state = standard_fixture((1, 2, 4), "NState")
