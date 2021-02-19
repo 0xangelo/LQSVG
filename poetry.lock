@@ -2358,7 +2358,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 
 [[package]]
 name = "wandb"
-version = "0.10.18"
+version = "0.10.19"
 description = "A CLI and library for interacting with the Weights and Biases API."
 category = "dev"
 optional = false
@@ -2474,7 +2474,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "1a5bb74220c4ebc81d128192ac70e8c95e83ba73c5f51fc9e42265d3275dac04"
+content-hash = "f9a1ec124a7f8221631988abb39761e5d356d66178fb008b0db306be3f04291d"
 
 [metadata.files]
 absl-py = [
@@ -4087,8 +4087,8 @@ virtualenv = [
     {file = "virtualenv-20.4.2.tar.gz", hash = "sha256:147b43894e51dd6bba882cf9c282447f780e2251cd35172403745fc381a0a80d"},
 ]
 wandb = [
-    {file = "wandb-0.10.18-py2.py3-none-any.whl", hash = "sha256:bb7340e603ba6ae76594be6689541daf9d9200fa08f54c8fde99533ca3b949e8"},
-    {file = "wandb-0.10.18.tar.gz", hash = "sha256:c0be20d833d1b9169a62197fcba021b557efbb1b42a603f9445c5f683dfe7739"},
+    {file = "wandb-0.10.19-py2.py3-none-any.whl", hash = "sha256:6be23c10fb18773621f5b0d2372b0db58f993cba7c81c9b090368fa15873a8c9"},
+    {file = "wandb-0.10.19.tar.gz", hash = "sha256:c308cd478b9a7e26be50524e9dd7cc348068411fac273ea9710f7999ab66a046"},
 ]
 watchdog = [
     {file = "watchdog-1.0.2-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:e2a531e71be7b5cc3499ae2d1494d51b6a26684bcc7c3146f63c810c00e8a3cc"},
