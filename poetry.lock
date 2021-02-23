@@ -929,8 +929,22 @@ pywin32 = {version = ">=1.0", markers = "sys_platform == \"win32\""}
 traitlets = "*"
 
 [[package]]
+name = "jupyter-packaging"
+version = "0.7.12"
+description = "Jupyter Packaging Utilities"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+packaging = "*"
+
+[package.extras]
+test = ["pytest"]
+
+[[package]]
 name = "jupyter-server"
-version = "1.3.0"
+version = "1.4.1"
 description = "The backend—i.e. core services, APIs, and REST endpoints—to Jupyter web applications."
 category = "dev"
 optional = false
@@ -957,7 +971,7 @@ test = ["coverage", "requests", "pytest", "pytest-cov", "pytest-tornasync", "pyt
 
 [[package]]
 name = "jupyterlab"
-version = "3.0.8"
+version = "3.0.9"
 description = "The JupyterLab server extension."
 category = "dev"
 optional = false
@@ -967,8 +981,9 @@ python-versions = ">=3.6"
 ipython = "*"
 jinja2 = ">=2.10"
 jupyter-core = "*"
-jupyter-server = ">=1.2,<2.0"
-jupyterlab-server = ">=2.0,<3.0"
+jupyter-packaging = ">=0.7.3,<0.8.0"
+jupyter-server = ">=1.4,<2.0"
+jupyterlab-server = ">=2.3,<3.0"
 nbclassic = ">=0.2,<1.0"
 packaging = "*"
 tornado = ">=6.1.0"
@@ -990,7 +1005,7 @@ pygments = ">=2.4.1,<3"
 
 [[package]]
 name = "jupyterlab-server"
-version = "2.2.0"
+version = "2.3.0"
 description = "JupyterLab Server"
 category = "dev"
 optional = false
@@ -1001,7 +1016,7 @@ babel = "*"
 jinja2 = ">=2.10"
 json5 = "*"
 jsonschema = ">=3.0.1"
-jupyter-server = ">=1.1,<2.0"
+jupyter-server = ">=1.4,<2.0"
 packaging = "*"
 requests = "*"
 
@@ -2474,7 +2489,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "f9a1ec124a7f8221631988abb39761e5d356d66178fb008b0db306be3f04291d"
+content-hash = "cf1d5e224859c84b3dfc724747a60b50ddaf83730ed231132f578414657a27ee"
 
 [metadata.files]
 absl-py = [
@@ -2963,21 +2978,25 @@ jupyter-core = [
     {file = "jupyter_core-4.7.1-py3-none-any.whl", hash = "sha256:8c6c0cac5c1b563622ad49321d5ec47017bd18b94facb381c6973a0486395f8e"},
     {file = "jupyter_core-4.7.1.tar.gz", hash = "sha256:79025cb3225efcd36847d0840f3fc672c0abd7afd0de83ba8a1d3837619122b4"},
 ]
+jupyter-packaging = [
+    {file = "jupyter-packaging-0.7.12.tar.gz", hash = "sha256:b140325771881a7df7b7f2d14997b619063fe75ae756b9025852e4346000bbb8"},
+    {file = "jupyter_packaging-0.7.12-py2.py3-none-any.whl", hash = "sha256:e36efa5edd52b302f0b784ff2a4d1f2cd50f7058af331151315e98b73f947b8d"},
+]
 jupyter-server = [
-    {file = "jupyter_server-1.3.0-py3-none-any.whl", hash = "sha256:ae992e84f9ce38af804b5487e44ec5fd10f60d0d4c79a40eb46d66697b7cea89"},
-    {file = "jupyter_server-1.3.0.tar.gz", hash = "sha256:b9d32d102df25f66ec3c1fe508c62cd0c856123452d973741da84fee4be01912"},
+    {file = "jupyter_server-1.4.1-py3-none-any.whl", hash = "sha256:af518ce295bfaa0d5c05031f963bdcfcd2ab156cb2223c0a70665219aed338da"},
+    {file = "jupyter_server-1.4.1.tar.gz", hash = "sha256:b0126f237f679533eec46244cfc66d61e3a1f8ec0fad2d47352fa19d3e754e47"},
 ]
 jupyterlab = [
-    {file = "jupyterlab-3.0.8-py3-none-any.whl", hash = "sha256:50da506d8881fb9137928341f8d7509d5d4110c94bed43116e14ec10de9e9e60"},
-    {file = "jupyterlab-3.0.8.tar.gz", hash = "sha256:e2250dec8042bb824d9dd5381f38b2b34eff7f93bed693bd486b252abafddcbe"},
+    {file = "jupyterlab-3.0.9-py3-none-any.whl", hash = "sha256:03dc942696eeb6ecebe3482dec1973a8287f1a3973aca04fb64f13497029280b"},
+    {file = "jupyterlab-3.0.9.tar.gz", hash = "sha256:70aa808a1adc06e35701500a0b1cd2f472ad55b8d890153cb8bdfbd30b279646"},
 ]
 jupyterlab-pygments = [
     {file = "jupyterlab_pygments-0.1.2-py2.py3-none-any.whl", hash = "sha256:abfb880fd1561987efaefcb2d2ac75145d2a5d0139b1876d5be806e32f630008"},
     {file = "jupyterlab_pygments-0.1.2.tar.gz", hash = "sha256:cfcda0873626150932f438eccf0f8bf22bfa92345b814890ab360d666b254146"},
 ]
 jupyterlab-server = [
-    {file = "jupyterlab_server-2.2.0-py3-none-any.whl", hash = "sha256:8bb220b1926a418c80869337f79096cae487ac579f304f574b970ed37c84e31c"},
-    {file = "jupyterlab_server-2.2.0.tar.gz", hash = "sha256:68b9322eee2561c89a22fcdf755c57fd750e8132f18fda81d47ca336d1f9b066"},
+    {file = "jupyterlab_server-2.3.0-py3-none-any.whl", hash = "sha256:653cb811739e59f2f6998f659b4635a90c110a128e0245ce27dc3fe02c46543a"},
+    {file = "jupyterlab_server-2.3.0.tar.gz", hash = "sha256:e7a0245aa3de23a1803de2eff401e4ca4594538d9f59806134f30419a6d8b6a3"},
 ]
 jupyterlab-widgets = [
     {file = "jupyterlab_widgets-1.0.0-py3-none-any.whl", hash = "sha256:caeaf3e6103180e654e7d8d2b81b7d645e59e432487c1d35a41d6d3ee56b3fef"},
