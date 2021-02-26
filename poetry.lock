@@ -513,7 +513,7 @@ pyflakes = ">=2.2.0,<2.3.0"
 
 [[package]]
 name = "fsspec"
-version = "0.8.5"
+version = "0.8.7"
 description = "File-system specification"
 category = "main"
 optional = false
@@ -521,6 +521,7 @@ python-versions = ">3.6"
 
 [package.dependencies]
 aiohttp = {version = "*", optional = true, markers = "extra == \"http\""}
+importlib-metadata = {version = "*", markers = "python_version < \"3.8\""}
 requests = {version = "*", optional = true, markers = "extra == \"http\""}
 
 [package.extras]
@@ -2373,7 +2374,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 
 [[package]]
 name = "wandb"
-version = "0.10.19"
+version = "0.10.20"
 description = "A CLI and library for interacting with the Weights and Biases API."
 category = "dev"
 optional = false
@@ -2489,7 +2490,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "cf1d5e224859c84b3dfc724747a60b50ddaf83730ed231132f578414657a27ee"
+content-hash = "44ecb0fe5d995c82493f1e7b88fddaa44f1d660583c5033ec706a18a91ac22a6"
 
 [metadata.files]
 absl-py = [
@@ -2782,8 +2783,8 @@ flake8 = [
     {file = "flake8-3.8.4.tar.gz", hash = "sha256:aadae8761ec651813c24be05c6f7b4680857ef6afaae4651a4eccaef97ce6c3b"},
 ]
 fsspec = [
-    {file = "fsspec-0.8.5-py3-none-any.whl", hash = "sha256:5629dc945800873cb2092df806c854e74c2799f4854247bce37ca7171000a7ec"},
-    {file = "fsspec-0.8.5.tar.gz", hash = "sha256:890c6ce9325030f03bd2eae81389ddcbcee53bdd475334ca064595e1e45f92a6"},
+    {file = "fsspec-0.8.7-py3-none-any.whl", hash = "sha256:65dbf8244a3a3d23342109925f9f588c7551b2b01a5f47e555043b17e2b32d62"},
+    {file = "fsspec-0.8.7.tar.gz", hash = "sha256:4b11557a90ac637089b10afa4c77adf42080c0696f6f2771c41ce92d73c41432"},
 ]
 future = [
     {file = "future-0.18.2.tar.gz", hash = "sha256:b1bead90b70cf6ec3f0710ae53a525360fa360d306a86583adc6bf83a4db537d"},
@@ -4106,8 +4107,8 @@ virtualenv = [
     {file = "virtualenv-20.4.2.tar.gz", hash = "sha256:147b43894e51dd6bba882cf9c282447f780e2251cd35172403745fc381a0a80d"},
 ]
 wandb = [
-    {file = "wandb-0.10.19-py2.py3-none-any.whl", hash = "sha256:6be23c10fb18773621f5b0d2372b0db58f993cba7c81c9b090368fa15873a8c9"},
-    {file = "wandb-0.10.19.tar.gz", hash = "sha256:c308cd478b9a7e26be50524e9dd7cc348068411fac273ea9710f7999ab66a046"},
+    {file = "wandb-0.10.20-py2.py3-none-any.whl", hash = "sha256:a73caefb98ac74c93eb759ecb9da02545bedadd440da53dbf3d981c7c04afb41"},
+    {file = "wandb-0.10.20.tar.gz", hash = "sha256:fd4f373da24d70ec19970515414af32ecd205465b5d724b24b4b5b7c4f01c34b"},
 ]
 watchdog = [
     {file = "watchdog-1.0.2-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:e2a531e71be7b5cc3499ae2d1494d51b6a26684bcc7c3146f63c810c00e8a3cc"},
