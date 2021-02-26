@@ -17,7 +17,7 @@ tqdm = "^4.58.0"
 ipython = "^7.20.0"
 pre-commit = "^2.10.1"
 wandb = "^0.10.20"
-pylint = "^2.6.0"
+pylint = "^2.7.1"
 reorder-python-imports = "^2.4.0"
 pytest = "^6.2.2"
 black = {extras = ["d"], version = "^20.8b1"}
