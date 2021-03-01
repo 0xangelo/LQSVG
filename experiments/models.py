@@ -1,6 +1,5 @@
-# pylint:disable=missing-docstring
-from typing import List
-from typing import Tuple
+# pylint:disable=missing-docstring,unsubscriptable-object
+from __future__ import annotations
 
 import pytorch_lightning as pl
 import torch
@@ -10,15 +9,13 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-
-
-# noinspection PyMethodMayBeStatic
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 
 class ExpectedValue(nn.Module):
     # pylint:disable=invalid-name,no-self-use
-    def forward(self, rho: Tuple[Tensor, Tensor], vval: lqr.Quadratic):
+    # noinspection PyMethodMayBeStatic
+    def forward(self, rho: tuple[Tensor, Tensor], vval: lqr.Quadratic):
         """Expected cost given mean and covariance matrix of the initial state.
 
         https://en.wikipedia.org/wiki/Quadratic_form_(statistics)#Expectation.
@@ -56,7 +53,7 @@ class PolicyLoss(nn.Module):
         policy: lqr.Linear,
         dynamics: lqr.LinDynamics,
         cost: lqr.QuadCost,
-        rho: Tuple[Tensor, Tensor],
+        rho: tuple[Tensor, Tensor],
     ):
         _, vval = self.predict(policy, dynamics, cost)
         vval = tuple(x.select("H", 0) for x in vval)
@@ -68,45 +65,33 @@ class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
         super().__init__()
-        self.module = policy.module
+        self.actor = policy.module.actor
+        self.model = policy.module.model
 
-        self.dynamics = env.dynamics
-        self.cost = env.cost
-        self.rho = env.rho
-
+        self._mdp = env.module
         self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
         # pylint:disable=arguments-differ
-        obs, act, new_obs = (x.align_to("H", ..., "R") for x in (obs, act, new_obs))
-
-        init_logp = self.module.init_model.log_prob(obs.select(dim="H", index=0))
-        trans_params = self.module.trans_model(obs, act)
-        trans_logp = self.module.trans_model.log_prob(new_obs, trans_params).sum(
-            dim="H"
-        )
-
-        return init_logp + trans_logp
+        return self.model.log_prob(obs, act, new_obs)
 
     def rsample(
-        self, sample_shape: List[int] = ()
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        self, sample_shape: list[int] = ()
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Sample trajectory for Stochastic Value Gradients.
 
         Sample trajectory using model with reparameterization trick and
         deterministic actor.
         """
-        horizon = self.module.trans_model.params.F.size(0)
+        horizon = self.model.trans.params.F.size(0)
         batch = []
-        obs, _ = self.module.init_model.rsample(sample_shape)
+        obs, _ = self.model.init.rsample(sample_shape)
         for _ in range(horizon):
-            act = self.module.actor(obs)
-            rew = self.module.rew_model(obs, act)
-            # No sample_shape needed, already handled via batch of initial states
-            new_obs, _ = self.module.trans_model.rsample(
-                self.module.trans_model(obs, act)
-            )
+            act = self.actor(obs)
+            rew = self.model.reward(obs, act)
+            # No sample_shape needed since initial states are batched
+            new_obs, _ = self.model.trans.rsample(self.model.trans(obs, act))
 
             batch += [(obs, act, rew, new_obs)]
             obs = new_obs
@@ -116,17 +101,13 @@ class LightningModel(pl.LightningModule):
 
     def configure_optimizers(self):
         params = nn.ParameterList(
-            [
-                p
-                for m in (self.module.init_model, self.module.trans_model)
-                for p in m.parameters()
-            ]
+            list(self.model.trans.parameters()) + list(self.model.init.parameters())
         )
         optim = torch.optim.Adam(params, lr=1e-3)
         return optim
 
     def training_step(
-        self, batch: Tuple[Tensor, Tensor, Tensor], batch_idx: int
+        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
@@ -135,7 +116,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(
-        self, batch: Tuple[Tensor, Tensor, Tensor], batch_idx: int
+        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
         return self.training_step(batch, batch_idx)
@@ -146,10 +127,9 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info()
 
     def value_gradient_info(self):
-        policy, dynamics, cost, rho = self.module.standard_form()
-
-        model = dynamics, cost, rho
-        ground_truth = self.dynamics, self.cost, self.rho
+        policy = self.actor.standard_form()
+        model = self.model.standard_form()
+        ground_truth = self._mdp.standard_form()
         self.log("learned_loss", self.policy_loss(policy, *model))
         self.log("true_loss", self.policy_loss(policy, *ground_truth))
 
