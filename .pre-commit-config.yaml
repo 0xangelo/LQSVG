@@ -78,6 +78,7 @@ repos:
         language: system
         types: [python]
         stages: [commit]
+        args: [-d similarities]
         files: (^lqsvg/)|(^experiments/)
 
     - repo: local
