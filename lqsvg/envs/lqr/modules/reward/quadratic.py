@@ -8,7 +8,7 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import unpack_obs
 
 
-class QuadraticCost(nn.Module):
+class QuadraticReward(nn.Module):
     # pylint:disable=abstract-method,invalid-name,missing-docstring
     def __init__(self, cost: lqr.QuadCost):
         super().__init__()

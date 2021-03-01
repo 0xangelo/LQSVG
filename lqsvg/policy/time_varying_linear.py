@@ -1,7 +1,8 @@
-# pylint:disable=missing-docstring,invalid-name
+# pylint:disable=missing-docstring,invalid-name,unsubscriptable-object
+from __future__ import annotations
+
 from functools import cached_property
 from typing import Optional
-from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -18,7 +19,8 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules import InitStateDynamics
-from lqsvg.envs.lqr.modules import QuadraticCost
+from lqsvg.envs.lqr.modules import LQGModule
+from lqsvg.envs.lqr.modules import QuadraticReward
 from lqsvg.envs.lqr.modules import TVLinearDynamics
 from lqsvg.envs.lqr.utils import unpack_obs
 from lqsvg.np_util import make_spd_matrix
@@ -32,7 +34,7 @@ class TVLinearFeedback(nn.Module):
         k = torch.randn(horizon, n_ctrl)
         self.K, self.k = (nn.Parameter(x) for x in (K, k))
 
-    def _gains_at(self, index: Tensor) -> Tuple[Tensor, Tensor]:
+    def _gains_at(self, index: Tensor) -> tuple[Tensor, Tensor]:
         K = nt.horizon(nt.matrix(self.K))
         k = nt.horizon(nt.vector(self.k))
         K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
@@ -105,7 +107,7 @@ class TVLinearTransModel(TVLinearDynamics):
         super().__init__(dynamics)
 
 
-class QuadraticReward(QuadraticCost):
+class QuadRewardModel(QuadraticReward):
     # pylint:disable=abstract-method,missing-docstring
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         cost = make_quadcost(n_state, n_ctrl, horizon, stationary=False)
@@ -123,23 +125,28 @@ class InitStateModel(InitStateDynamics):
 
 class TimeVaryingLinear(nn.Module):
     # pylint:disable=abstract-method
+    actor: TVLinearPolicy
+    behavior: TVLinearPolicy
+    model: LQGModule
+
     def __init__(self, obs_space: Box, action_space: Box, config: dict):
         super().__init__()
         self.actor = TVLinearPolicy(obs_space, action_space)
         self.behavior = self.actor
 
         n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
-        self.init_model = InitStateModel(n_state=n_state, seed=config.get("seed", None))
-        self.trans_model = TVLinearTransModel(n_state, n_ctrl, horizon)
-        self.rew_model = QuadraticReward(n_state, n_ctrl, horizon)
+        self.model = LQGModule(
+            TVLinearTransModel(n_state, n_ctrl, horizon),
+            QuadRewardModel(n_state, n_ctrl, horizon),
+            InitStateModel(n_state=n_state, seed=config.get("seed", None)),
+        )
 
     def standard_form(
         self,
-    ) -> Tuple[lqr.Linear, lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
-        return tuple(
-            x.standard_form()
-            for x in (self.actor, self.trans_model, self.rew_model, self.init_model)
-        )
+    ) -> tuple[lqr.Linear, lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
+        actor = self.actor.standard_form()
+        trans, rew, init = self.model.standard_form()
+        return actor, trans, rew, init
 
 
 # noinspection PyAbstractClass
@@ -171,7 +178,7 @@ class LQGPolicy(TorchPolicy):
     def initialize_from_lqg(self, env: TorchLQGMixin):
         optimal: lqr.Linear = env.solution()[0]
         self.module.actor.initialize_from_optimal(optimal)
-        self.module.rew_model.copy(env.cost)
+        self.module.model.reward.copy(env.cost)
 
     def _make_module(
         self, obs_space: Box, action_space: Box, config: dict

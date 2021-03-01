@@ -19,7 +19,8 @@ import lqsvg.torch.named as nt
 
 from .generators import make_lqg
 from .modules import InitStateDynamics
-from .modules import QuadraticCost
+from .modules import LQGModule
+from .modules import QuadraticReward
 from .modules import TVLinearDynamics
 from .solvers import NamedLQGControl
 from .types import GaussInit
@@ -97,20 +98,21 @@ class LQGSpec(DataClassJsonMixin):
 # noinspection PyAttributeOutsideInit
 class TorchLQGMixin:
     # pylint:disable=too-many-instance-attributes,missing-docstring
+    module: LQGModule
+    dynamics: LinSDynamics
+    cost: QuadCost
+    rho: GaussInit
+
     def setup(
         self,
         dynamics: LinSDynamics,
         cost: QuadCost,
         init: GaussInit,
     ):
-        self._trans = TVLinearDynamics(dynamics)
-        self._cost = QuadraticCost(cost)
-        self._rho = InitStateDynamics(init)
-
-        self.dynamics, self.cost, self.rho = (
-            x.standard_form() for x in (self._trans, self._cost, self._rho)
+        self.module = LQGModule(
+            TVLinearDynamics(dynamics), QuadraticReward(cost), InitStateDynamics(init)
         )
-
+        self.dynamics, self.cost, self.rho = self.module.standard_form()
         self.observation_space, self.action_space = self._setup_spaces()
 
     @property
@@ -153,7 +155,7 @@ class LQGEnv(TorchLQGMixin, gym.Env):
 
     @torch.no_grad()
     def reset(self) -> Obs:
-        self._curr_state, _ = self._rho.sample()
+        self._curr_state, _ = self.module.init.sample()
         return self._get_obs()
 
     @torch.no_grad()
@@ -162,8 +164,8 @@ class LQGEnv(TorchLQGMixin, gym.Env):
         action = torch.as_tensor(action, dtype=torch.float32)
         action = nt.vector(action)
 
-        reward = self._cost(state, action)
-        next_state, _ = self._trans.sample(self._trans(state, action))
+        reward = self.module.reward(state, action)
+        next_state, _ = self.module.trans.sample(self.module.trans(state, action))
 
         self._curr_state = next_state
         done = next_state[-1].long() == self.horizon
@@ -207,13 +209,13 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
         return self._curr_states.numpy().astype(self.observation_space.dtype)
 
     def vector_reset(self) -> List[EnvObsType]:
-        _curr_states, _ = self._rho.sample((self.num_envs,))
+        _curr_states, _ = self.module.init.sample((self.num_envs,))
         self._curr_states = _curr_states.refine_names("B", ...)
         return self._get_obs(self.curr_states)
 
     @torch.no_grad()
     def reset_at(self, index: int) -> EnvObsType:
-        init_state, _ = self._rho.sample()
+        init_state, _ = self.module.init.sample()
         self._curr_states[index] = nt.unnamed(init_state)
         return init_state.numpy().astype(self.observation_space.dtype)
 
@@ -229,8 +231,8 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
         actions = torch.from_numpy(actions)
         actions = nt.vector(actions)
 
-        rewards = self._cost(states, actions)
-        next_states, _ = self._trans.sample(self._trans(states, actions))
+        rewards = self.module.reward(states, actions)
+        next_states, _ = self.module.trans.sample(self.module.trans(states, actions))
         dones = next_states[..., -1].long() == self.horizon
         self._curr_states = next_states
 
