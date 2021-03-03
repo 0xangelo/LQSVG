@@ -19,6 +19,11 @@ class LQGModule(nn.Module):
         self, trans: TVLinearDynamics, reward: QuadraticReward, init: InitStateDynamics
     ):
         super().__init__()
+        self.n_state, self.n_ctrl, self.horizon = (
+            trans.n_state,
+            trans.n_ctrl,
+            trans.horizon,
+        )
         self.trans = trans
         self.reward = reward
         self.init = init

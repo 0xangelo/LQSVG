@@ -87,7 +87,12 @@ class TVLinearNormalParams(nn.Module):
 class TVLinearDynamics(StochasticModel):
     """Time-varying linear stochastic model from dynamics."""
 
+    n_state: int
+    n_ctrl: int
+    horizon: int
+
     def __init__(self, dynamics: lqr.LinSDynamics):
+        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
         params = TVLinearNormalParams(*dynamics)
         dist = TVMultivariateNormal()
         super().__init__(params, dist)

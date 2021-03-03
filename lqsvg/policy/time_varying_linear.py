@@ -97,11 +97,15 @@ class TVLinearTransModel(TVLinearDynamics):
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         n_tau = n_state + n_ctrl
         dynamics = lqr.LinSDynamics(
-            F=torch.randn(horizon, n_state, n_tau),
-            f=torch.randn(horizon, n_state),
-            W=torch.as_tensor(
-                make_spd_matrix(n_dim=n_state, sample_shape=(horizon,)),
-                dtype=torch.float32,
+            F=nt.horizon(nt.matrix(torch.randn(horizon, n_state, n_tau))),
+            f=nt.horizon(nt.vector(torch.randn(horizon, n_state))),
+            W=nt.horizon(
+                nt.matrix(
+                    torch.as_tensor(
+                        make_spd_matrix(n_dim=n_state, sample_shape=(horizon,)),
+                        dtype=torch.float32,
+                    )
+                )
             ),
         )
         super().__init__(dynamics)

@@ -67,8 +67,7 @@ class LightningModel(pl.LightningModule):
         super().__init__()
         self.actor = policy.module.actor
         self.model = policy.module.model
-
-        self._mdp = env.module
+        self.mdp = env.module
         self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
@@ -84,7 +83,7 @@ class LightningModel(pl.LightningModule):
         Sample trajectory using model with reparameterization trick and
         deterministic actor.
         """
-        horizon = self.model.trans.params.F.size(0)
+        horizon = self.model.horizon
         batch = []
         obs, _ = self.model.init.rsample(sample_shape)
         for _ in range(horizon):
