@@ -4,6 +4,7 @@ from __future__ import annotations
 from functools import cached_property
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
 from gym.spaces import Box
@@ -25,6 +26,23 @@ from lqsvg.envs.lqr.modules import TVLinearDynamics
 from lqsvg.envs.lqr.utils import unpack_obs
 from lqsvg.np_util import make_spd_matrix
 from lqsvg.torch.utils import as_float_tensor
+
+
+def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
+    """Perturb policy parameters to derive sub-optimal policies.
+
+    Adds white noise to optimal policy parameters.
+
+    Args:
+        policy: optimal policy parameters
+
+    Returns:
+        Perturbed policy parameters
+    """
+    # pylint:disable=invalid-name
+    n_state, n_ctrl, _ = lqr.dims_from_policy(policy)
+    K, k = (g + 0.5 * torch.randn_like(g) / (n_state + np.sqrt(n_ctrl)) for g in policy)
+    return K, k
 
 
 class TVLinearFeedback(nn.Module):
@@ -53,10 +71,7 @@ class TVLinearFeedback(nn.Module):
 
     @classmethod
     def from_existing(cls, policy: lqr.Linear):
-        K, _ = policy
-        n_state = K.size("C")
-        n_ctrl = K.size("R")
-        horizon = K.size("H")
+        n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
         new = cls(n_state, n_ctrl, horizon)
         new.copy(policy)
         return new
@@ -84,8 +99,8 @@ class TVLinearPolicy(DeterministicPolicy):
         )
 
     def initialize_from_optimal(self, optimal: lqr.Linear):
-        K, k = map(lambda x: x + torch.randn_like(x) * 0.5, optimal)
-        self.action_linear.copy((K, k))
+        policy = perturb_policy(optimal)
+        self.action_linear.copy(policy)
 
     def standard_form(self) -> lqr.Linear:
         return self.action_linear.gains()

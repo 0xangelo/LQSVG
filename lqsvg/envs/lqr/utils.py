@@ -7,6 +7,7 @@ from torch import Tensor
 
 from lqsvg.np_util import np_expand
 
+from .types import Linear
 from .types import LinSDynamics
 
 
@@ -15,6 +16,23 @@ def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
     n_state = dynamics.F.size("R")
     n_ctrl = dynamics.F.size("C") - n_state
     horizon = dynamics.F.size("H")
+    return n_state, n_ctrl, horizon
+
+
+def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
+    """Retrieve LQG dimensions from linear feedback policy.
+
+    Args:
+        policy: linear feedback policy
+
+    Returns:
+        A tuple with state, control and horizon sizes respectively
+    """
+    # pylint:disable=invalid-name
+    K, _ = policy
+    n_state = K.size("C")
+    n_ctrl = K.size("R")
+    horizon = K.size("H")
     return n_state, n_ctrl, horizon
 
 

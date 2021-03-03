@@ -15,5 +15,6 @@ from .solvers import NamedLQRControl
 from .solvers import NamedLQRPrediction
 from .types import *
 from .utils import dims_from_dynamics
+from .utils import dims_from_policy
 from .utils import dims_from_spaces
 from .utils import spaces_from_dims
