@@ -1,6 +1,8 @@
 # pylint:disable=missing-docstring,unsubscriptable-object
 from __future__ import annotations
 
+from typing import Iterable
+
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -75,17 +77,25 @@ class LightningModel(pl.LightningModule):
         # pylint:disable=arguments-differ
         return self.model.log_prob(obs, act, new_obs)
 
-    def rsample(
-        self, sample_shape: list[int] = ()
+    def rsample_trajectory(
+        self, sample_shape: torch.Size = torch.Size()
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Sample trajectory for Stochastic Value Gradients.
 
         Sample trajectory using model with reparameterization trick and
         deterministic actor.
+
+        Args:
+            sample_shape: shape for batched trajectory samples
+
+        Returns:
+            Trajectory sample following the policy
         """
+        sample_shape = torch.Size(sample_shape)
         horizon = self.model.horizon
         batch = []
         obs, _ = self.model.init.rsample(sample_shape)
+        obs = obs.refine_names(*(f"B{i+1}" for i in range(len(sample_shape))), ...)
         for _ in range(horizon):
             act = self.actor(obs)
             rew = self.model.reward(obs, act)
@@ -97,6 +107,94 @@ class LightningModel(pl.LightningModule):
 
         obs, act, rew, new_obs = (nt.stack_horizon(*x) for x in zip(*batch))
         return obs, act, rew, new_obs
+
+    def rsample_return(self, sample_shape: torch.Size = torch.Size()) -> Tensor:
+        """Sample return for Stochastic Value Gradients.
+
+        Sample reparameterized trajectory and compute empirical return.
+
+        Args:
+            sample_shape: shape for batched return samples
+
+        Returns:
+            Sample of the policy return
+        """
+        _, _, rew, _ = self.rsample_trajectory(sample_shape)
+        # Reduce over horizon
+        ret = rew.sum("H")
+        return ret
+
+    def monte_carlo_value(self, samples: int = 1) -> Tensor:
+        """Monte Carlo estimate of the Stochastic Value.
+
+        Args:
+            samples: number of samples
+
+        Returns:
+            A tensor representing the Monte Carlo estimate of the policy's
+            expected return
+        """
+        rets = self.rsample_return((samples,))
+        # Reduce over the first (and only) batch dimension
+        mc_performance = rets.mean("B1")
+        return mc_performance
+
+    def analytic_value(self, ground_truth: bool = False) -> Tensor:
+        """Compute the analytic policy performance using the value function.
+
+        Solves the prediction problem for the current policy and uses the
+        resulting state-value function to compute the expected return.
+
+        Args:
+            ground_truth: whether to use the dynamics of the MDP to derive
+               the true value (gold standard)
+
+        Returns:
+            A tensor representing the policy's expected return
+        """
+        policy = self.actor.standard_form()
+        model = self.mdp.standard_form() if ground_truth else self.model.standard_form()
+        value = -self.policy_loss(policy, *model)
+        return value
+
+    def monte_carlo_svg(self, samples: int = 1) -> tuple[Tensor, Iterable[Tensor]]:
+        """Monte Carlo estimate of the Stochastic Value Gradient.
+
+        Args:
+            samples: number of samples
+
+        Returns:
+            A tuple with the expected policy return (as a tensor) and an
+            iterable of gradients of the expected return with respect to
+            each policy parameter
+        """
+        mc_performance = self.monte_carlo_value(samples)
+        mc_performance.backward()
+        grads = [p.grad for p in self.actor.parameters()]
+        return mc_performance, grads
+
+    def analytic_svg(
+        self, ground_truth: bool = False
+    ) -> tuple[Tensor, Iterable[Tensor]]:
+        """Compute the analytic SVG using the value function.
+
+        Solves the prediction problem for the current policy and uses the
+        resulting state-value function to compute the expected return and its
+        gradient w.r.t. policy parameters.
+
+        Args:
+            ground_truth: whether to use the dynamics of the MDP to derive
+               the true SVG (gold standard)
+
+        Returns:
+            A tuple with the expected policy return (as a tensor) and an
+            iterable of gradients of the expected return w.r.t. each policy
+            parameter
+        """
+        value = self.analytic_value(ground_truth=ground_truth)
+        value.backward()
+        svg = [p.grad for p in self.actor.parameters()]
+        return value, svg
 
     def configure_optimizers(self):
         params = nn.ParameterList(
@@ -126,11 +224,9 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info()
 
     def value_gradient_info(self):
-        policy = self.actor.standard_form()
-        model = self.model.standard_form()
-        ground_truth = self._mdp.standard_form()
-        self.log("learned_loss", self.policy_loss(policy, *model))
-        self.log("true_loss", self.policy_loss(policy, *ground_truth))
+        self.log("monte_carlo_value", self.monte_carlo_value(samples=1000))
+        self.log("analytic_value", self.analytic_value(ground_truth=False))
+        self.log("true_value", self.analytic_value(ground_truth=True))
 
 
 def test_lightning_model():
@@ -146,16 +242,20 @@ def test_lightning_model():
         Obs: {obs.shape}, {obs.names}
         Act: {act.shape}, {act.names}
         Rew: {rew.shape}, {rew.names}
-        New Obs: {new_obs.shape}, {new_obs.names}
+        New Obs: {new_obs.shape}, {new_obs.names}\
         """
         )
 
-    print_traj(model.rsample(()))
-    print_traj(model.rsample((10,)))
+    print_traj(model.rsample_trajectory([]))
+    print_traj(model.rsample_trajectory([10]))
 
-    obs, act, _, new_obs = model.rsample((100,))
+    obs, act, _, new_obs = model.rsample_trajectory([100])
     traj_logp = model(obs, act, new_obs)
-    print(f"Traj logp: {traj_logp}, {traj_logp.shape}, {traj_logp.names}")
+    print(f"Traj logp: {traj_logp}, {traj_logp.shape}")
+
+    print("Monte Carlo value:", model.monte_carlo_value(samples=1000))
+    print("Analytic value:", model.analytic_value(ground_truth=False))
+    print("True value:", model.analytic_value(ground_truth=True))
 
 
 if __name__ == "__main__":
