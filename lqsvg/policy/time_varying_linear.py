@@ -82,9 +82,8 @@ class TVLinearFeedback(nn.Module):
         self.k.data.copy_(nt.matrix_to_vector(k))
 
     def gains(self, named: bool = True) -> lqr.Linear:
-        K, k = self.K.clone(), self.k.clone()
-        K = nt.horizon(nt.matrix(K))
-        k = nt.horizon(nt.vector(k))
+        K = nt.horizon(nt.matrix(self.K))
+        k = nt.horizon(nt.vector(self.k))
         if not named:
             K, k = nt.unnamed(K, k)
         return K, k
