@@ -1,6 +1,21 @@
 """Utilities for handling sample batches in RLlib."""
+import warnings
+from contextlib import contextmanager
+
 import numpy as np
 from ray.rllib import SampleBatch
+
+
+@contextmanager
+def suppress_dataloader_warning():
+    """Ignore PyTorch Lightning warnings regarding num of dataloader workers."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Consider increasing the value of the `num_workers`.*",
+            module="pytorch_lightning.utilities.distributed",
+        )
+        yield
 
 
 def group_batch_episodes(samples: SampleBatch) -> SampleBatch:
