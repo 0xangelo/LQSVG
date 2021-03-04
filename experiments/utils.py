@@ -3,7 +3,32 @@ import warnings
 from contextlib import contextmanager
 
 import numpy as np
+import torch
 from ray.rllib import SampleBatch
+from torch import Tensor
+
+import lqsvg.torch.named as nt
+from lqsvg.envs import lqr
+
+
+def linear_feedback_norm(linear: lqr.Linear) -> Tensor:
+    """Returns the norm of the parameters of a linear (affine) function.
+
+    Args:
+        linear: tuple of affine function parameters (weight matrix and bias
+        column vector)
+
+    Returns:
+        Norm of the affine function's parameters
+    """
+    # pylint:disable=invalid-name
+    K, k = linear
+    K_norm = torch.linalg.norm(nt.unnamed(K), dim=(-2, -1))
+    k_norm = torch.linalg.norm(nt.unnamed(k), dim=-1)
+    # Following PyTorch's clip_grad_norm_ implementation
+    # Reduce by horizon
+    total_norm = torch.linalg.norm(torch.cat((K_norm, k_norm), dim=0), dim=0)
+    return total_norm
 
 
 @contextmanager
