@@ -12,17 +12,15 @@ def group_batch_episodes(samples: SampleBatch) -> SampleBatch:
         Modifies the sample batch in-place
     """
     # Assume "t" is the timestep key in the sample batch
-    sort_ts_idx = np.argsort(
-        samples["t"]
-    )  # line too loooooooooooooooooooooooooooooooooooooooooooooooong
+    sorted_timestep_idxs = np.argsort(samples["t"])
     for key, val in samples.items():
-        samples[key] = val[sort_ts_idx]
+        samples[key] = val[sorted_timestep_idxs]
 
     # Stable sort is important so that we don't alter the order
     # of timesteps
-    sort_eps_idx = np.argsort(samples[SampleBatch.EPS_ID], kind="stable")
+    sorted_episode_idxs = np.argsort(samples[SampleBatch.EPS_ID], kind="stable")
     for key, val in samples.items():
-        samples[key] = val[sort_eps_idx]
+        samples[key] = val[sorted_episode_idxs]
 
     return samples
 
@@ -31,5 +29,7 @@ def num_complete_episodes(samples: SampleBatch) -> int:
     """Return the number of complete episodes in a SampleBatch."""
     num_eps = len(np.unique(samples[SampleBatch.EPS_ID]))
     num_dones = np.sum(samples[SampleBatch.DONES])
-    assert num_dones <= num_eps, (num_dones, num_eps)
+    assert (
+        num_dones <= num_eps
+    ), f"More done flags than episodes: dones={num_dones}, episodes={num_eps}"
     return num_dones
