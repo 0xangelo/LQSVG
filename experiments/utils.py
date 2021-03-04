@@ -12,7 +12,12 @@ from lqsvg.envs import lqr
 
 
 def linear_feedback_norm(linear: lqr.Linear) -> Tensor:
-    """Returns the norm of the parameters of a linear (affine) function.
+    """Norm of the parameters of a linear (affine) function.
+
+    Uses the default norms for vectors and matrices chosen by PyTorch:
+    frobenius for matrices and L2 for vectors.
+
+    Equivalent to the norm of the flattened parameter vector.
 
     Args:
         linear: tuple of affine function parameters (weight matrix and bias
@@ -29,6 +34,22 @@ def linear_feedback_norm(linear: lqr.Linear) -> Tensor:
     # Reduce by horizon
     total_norm = torch.linalg.norm(torch.cat((K_norm, k_norm), dim=0), dim=0)
     return total_norm
+
+
+def linear_feedback_distance(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tensor:
+    """Distance between the parameters of linear (affine) functions.
+
+    Args:
+        linear_a: tuple of affine function parameters
+        linear_b: tuple of affine function parameters
+
+    Returns:
+        Norm of the difference between the parameters
+    """
+    # pylint:disable=invalid-name
+    Ka, ka = linear_a
+    Kb, kb = linear_b
+    return linear_feedback_norm((Ka - Kb, ka - kb))
 
 
 @contextmanager
