@@ -1,8 +1,11 @@
 """Utilities for data collection in LQG envs."""
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Union, Any
+from typing import Any
 from typing import Optional
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from dataclasses_json import DataClassJsonMixin
@@ -25,21 +28,23 @@ class DataModuleSpec(DataClassJsonMixin):
 
     Attributes:
         total_trajs: Number of trajectories for the full dataset
-        holdout_ratio: Fraction of trajectories to use as validation dataset
-        max_holdout: Maximum number of trajectories to use as validation dataset
+        train_val_test_split: Fractions of the dataset for training, validation
+            and testing respectively
         batch_size: Size of minibatch for dynamics model training
         shuffle: set to ``True`` to have the data reshuffled
             at every epoch (default: ``True``).
     """
 
     total_trajs: int = 100
-    holdout_ratio: float = 0.2
-    max_holdout: Optional[int] = None
+    train_val_test_split: tuple[float, float, float] = (0.7, 0.2, 0.1)
     batch_size: int = 64
     shuffle: bool = True
 
+    def __post_init__(self):
+        assert np.allclose(sum(self.train_val_test_split), 1.0), "Invalid dataset split"
 
-def batched(trajs: List[SampleBatch], key: str) -> Tensor:
+
+def batched(trajs: list[SampleBatch], key: str) -> Tensor:
     """Automatically stack sample rows and convert to tensor."""
     return torch.stack([torch.from_numpy(traj[key]) for traj in trajs], dim=0)
 
@@ -61,12 +66,11 @@ class TrajectoryData(pl.LightningDataModule):
 
         self.spec = spec
         self.full_dataset = None
-        self.train_dataset, self.val_dataset = None, None
+        self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
     def collect_trajectories(self):
         """Sample trajectories with rollout worker and build dataset."""
         sample_batch = collect_with_progress(self.worker, self.spec.total_trajs)
-
         sample_batch = group_batch_episodes(sample_batch)
 
         trajs = sample_batch.split_by_episode()
@@ -77,16 +81,30 @@ class TrajectoryData(pl.LightningDataModule):
 
         self.full_dataset = self.trajectory_dataset(trajs)
 
+    @staticmethod
+    def trajectory_dataset(trajs: list[SampleBatch]) -> TensorDataset:
+        """Concat and convert a list of trajectories into a tensor dataset."""
+        dataset = TensorDataset(
+            batched(trajs, SampleBatch.CUR_OBS),
+            batched(trajs, SampleBatch.ACTIONS),
+            batched(trajs, SampleBatch.NEXT_OBS),
+        )
+        assert len(dataset) == len(trajs)
+        return dataset
+
     def setup(self, stage: Optional[str] = None):
         del stage
         spec = self.spec
-        val_trajs = min(
-            int(spec.holdout_ratio * spec.total_trajs),
-            spec.max_holdout or spec.total_trajs,
+        train_trajs = int(spec.train_val_test_split[0] * spec.total_trajs)
+        holdout_trajs = spec.total_trajs - train_trajs
+        val_trajs = int(
+            (spec.train_val_test_split[1] / sum(spec.train_val_test_split[1:]))
+            * holdout_trajs
         )
-        train_trajs = spec.total_trajs - val_trajs
-        self.train_dataset, self.val_dataset = random_split(
-            self.full_dataset, (train_trajs, val_trajs)
+        test_trajs = holdout_trajs - val_trajs
+
+        self.train_dataset, self.val_dataset, self.test_dataset = random_split(
+            self.full_dataset, (train_trajs, val_trajs, test_trajs)
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -104,21 +122,14 @@ class TrajectoryData(pl.LightningDataModule):
         )
         return dataloader
 
-    @staticmethod
-    def trajectory_dataset(trajs: List[SampleBatch]) -> TensorDataset:
-        """Concat and convert a list of trajectories into a tensor dataset."""
-        dataset = TensorDataset(
-            batched(trajs, SampleBatch.CUR_OBS),
-            batched(trajs, SampleBatch.ACTIONS),
-            batched(trajs, SampleBatch.NEXT_OBS),
+    def test_dataloader(self) -> DataLoader:
+        # pylint:disable=arguments-differ
+        dataloader = DataLoader(
+            self.test_dataset, shuffle=False, batch_size=self.spec.batch_size
         )
-        assert len(dataset) == len(trajs)
-        return dataset
+        return dataloader
 
     def transfer_batch_to_device(self, batch: Any, device: torch.device) -> Any:
-        pass
-
-    def test_dataloader(self, *args, **kwargs) -> Union[DataLoader, List[DataLoader]]:
         pass
 
     def prepare_data(self, *args, **kwargs):
@@ -141,26 +152,26 @@ def check_dataloaders(datamodule):
     n_state = env.n_state
     n_ctrl = env.n_ctrl
 
-    for dataloader in datamodule.train_dataloader(), datamodule.val_dataloader():
-        batch_size = min(datamodule.spec.batch_size, len(dataloader.dataset))
-        batch = next(iter(dataloader))
+    for loader in (
+        datamodule.train_dataloader(),
+        datamodule.val_dataloader(),
+        datamodule.test_dataloader(),
+    ):
+        batch_size = min(datamodule.spec.batch_size, len(loader.dataset))
+        batch = next(iter(loader))
         assert len(batch) == 3
         obs, act, new_obs = batch
-        assert obs.shape == (
-            batch_size,
-            horizon,
-            n_state + 1,
-        ), f"{obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
-        assert act.shape == (
-            batch_size,
-            horizon,
-            n_ctrl,
-        ), f"{act.shape}, B: {batch_size}, H: {horizon}, dim(A): {n_ctrl}"
-        assert new_obs.shape == (
-            batch_size,
-            horizon,
-            n_state + 1,
-        ), f"{new_obs.shape}, B: {batch_size}, H: {horizon}, dim(S): {n_state}"
+
+        def tensor_info(tensor: Tensor, dim: int, batch_size: int = batch_size) -> str:
+            return f"{tensor.shape}, B: {batch_size}, H: {horizon}, dim: {dim}"
+
+        assert obs.shape == (batch_size, horizon, n_state + 1), tensor_info(
+            obs, n_state
+        )
+        assert act.shape == (batch_size, horizon, n_ctrl), tensor_info(act, n_ctrl)
+        assert new_obs.shape == (batch_size, horizon, n_state + 1), tensor_info(
+            new_obs, n_state
+        )
 
 
 def test_datamodule():
