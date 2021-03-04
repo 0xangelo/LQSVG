@@ -1,6 +1,9 @@
 """Utilities for named tensors."""
 # pylint:disable=invalid-name,missing-function-docstring
-from typing import Tuple
+from __future__ import annotations
+
+import warnings
+from contextlib import contextmanager
 from typing import Union
 
 import torch
@@ -13,7 +16,19 @@ VECTOR_NAMES = MATRIX_NAMES[:-1]
 SCALAR_NAMES = MATRIX_NAMES[:-2]
 
 
-def unnamed(*tensors: Tensor) -> Union[Tensor, Tuple[Tensor, ...]]:
+@contextmanager
+def suppress_named_tensor_warning():
+    """Ignore PyTorch warning regarding experimental state of named tensors."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Named tensors .+are an experimental feature.*",
+            module="torch.tensor",
+        )
+        yield
+
+
+def unnamed(*tensors: Tensor) -> Union[Tensor, tuple[Tensor, ...]]:
     result = tuple(t.rename(None) for t in tensors)
     return result[0] if len(result) == 1 else result
 
@@ -140,7 +155,7 @@ def where(
     )
 
 
-def split(tensor: Tensor, split_size_or_sections, dim: str) -> Tuple[Tensor, ...]:
+def split(tensor: Tensor, split_size_or_sections, dim: str) -> tuple[Tensor, ...]:
     permuted = tensor.align_to(..., dim)
     tensors = torch.split(permuted, split_size_or_sections, dim=-1)
     return tuple(
