@@ -13,6 +13,8 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
+from utils import linear_feedback_norm  # pylint:disable=wrong-import-order
+
 
 class ExpectedValue(nn.Module):
     # pylint:disable=invalid-name,no-self-use
@@ -65,6 +67,10 @@ class PolicyLoss(nn.Module):
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
+    actor: nn.Module
+    model: nn.Module
+    mdp: nn.Module
+    policy_loss: nn.Module
     early_stop_on: str = "early_stop_on"
 
     def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
@@ -171,8 +177,7 @@ class LightningModel(pl.LightningModule):
             each policy parameter
         """
         mc_performance = self.monte_carlo_value(samples)
-        mc_performance.backward()
-        svg = self._current_policy_svg()
+        svg = self._current_policy_svg(mc_performance)
         return mc_performance, svg
 
     def analytic_svg(self, ground_truth: bool = False) -> tuple[Tensor, lqr.Linear]:
@@ -192,14 +197,15 @@ class LightningModel(pl.LightningModule):
             parameter
         """
         value = self.analytic_value(ground_truth=ground_truth)
-        value.backward()
-        svg = self._current_policy_svg()
+        svg = self._current_policy_svg(value)
         return value, svg
 
-    def _current_policy_svg(self) -> lqr.Linear:
+    def _current_policy_svg(self, value: Tensor) -> lqr.Linear:
         # pylint:disable=invalid-name
+        self.actor.zero_grad(set_to_none=True)
+        value.backward()
         K, k = self.actor.standard_form()
-        return K.grad, k.grad
+        return K.grad.clone(), k.grad.clone()
 
     def configure_optimizers(self):
         params = nn.ParameterList(
@@ -251,10 +257,17 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: Optional[str] = None):
+        mc_val, mc_svg = self.monte_carlo_svg(samples=1000)
+        analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
+        true_val, true_svg = self.analytic_svg(ground_truth=False)
+
         prfx = "" if prefix is None else prefix + "/"
-        self.log(prfx + "monte_carlo_value", self.monte_carlo_value(samples=1000))
-        self.log(prfx + "analytic_value", self.analytic_value(ground_truth=False))
-        self.log(prfx + "true_value", self.analytic_value(ground_truth=True))
+        self.log(prfx + "monte_carlo_value", mc_val)
+        self.log(prfx + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
+        self.log(prfx + "analytic_value", analytic_val)
+        self.log(prfx + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
+        self.log(prfx + "true_value", true_val)
+        self.log(prfx + "true_svg_norm", linear_feedback_norm(true_svg))
 
 
 def test_lightning_model():
