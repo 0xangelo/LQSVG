@@ -7,7 +7,7 @@ from lqsvg.policy.time_varying_linear import LQGPolicy
 # from lqsvg.policy import RandomPolicy
 
 
-def make_worker(num_envs: int = 1) -> RolloutWorker:
+def make_worker(env_config: dict) -> RolloutWorker:
     # pylint:disable=import-outside-toplevel
     import lqsvg
     from raylab.envs import get_env_creator
@@ -15,22 +15,14 @@ def make_worker(num_envs: int = 1) -> RolloutWorker:
     lqsvg.register_all()
 
     # Create and initialize
-    n_state, n_ctrl, horizon = 2, 2, 100
-    seed = 42
+    num_envs = env_config["num_envs"]
     worker = RolloutWorker(
         env_creator=get_env_creator("RandomVectorLQG"),
-        env_config={
-            "n_state": n_state,
-            "n_ctrl": n_ctrl,
-            "horizon": horizon,
-            "gen_seed": seed,
-            "num_envs": num_envs,
-        },
+        env_config=env_config,
         num_envs=num_envs,
         policy_spec=LQGPolicy,
-        # policy_spec=RandomPolicy,
         policy_config={},
-        rollout_fragment_length=horizon,
+        rollout_fragment_length=env_config["horizon"],
         batch_mode="truncate_episodes",
         _use_trajectory_view_api=False,
     )
@@ -44,7 +36,9 @@ def test_worker():
     # pylint:disable=import-outside-toplevel
     import numpy as np
 
-    worker = make_worker(4)
+    worker = make_worker(
+        dict(n_state=2, n_ctrl=2, horizon=100, num_envs=4, gen_seed=42)
+    )
     samples = worker.sample()
     print("Count:", samples.count)
     idxs = np.random.permutation(samples.count)[:10]
