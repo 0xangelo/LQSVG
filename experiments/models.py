@@ -257,9 +257,10 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: Optional[str] = None):
-        mc_val, mc_svg = self.monte_carlo_svg(samples=1000)
-        analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
-        true_val, true_svg = self.analytic_svg(ground_truth=False)
+        with torch.set_grad_enabled(True):
+            mc_val, mc_svg = self.monte_carlo_svg(samples=1000)
+            analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
+            true_val, true_svg = self.analytic_svg(ground_truth=False)
 
         prfx = "" if prefix is None else prefix + "/"
         self.log(prfx + "monte_carlo_value", mc_val)
