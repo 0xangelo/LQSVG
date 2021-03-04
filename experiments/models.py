@@ -1,7 +1,7 @@
 # pylint:disable=missing-docstring,unsubscriptable-object
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -65,6 +65,8 @@ class PolicyLoss(nn.Module):
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
+    early_stop_on: str = "early_stop_on"
+
     def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
         super().__init__()
         self.actor = policy.module.actor
@@ -203,36 +205,59 @@ class LightningModel(pl.LightningModule):
         optim = torch.optim.Adam(params, lr=1e-3)
         return optim
 
+    def _compute_loss_on_batch(self, batch: tuple[Tensor, Tensor, Tensor]) -> Tensor:
+        obs, act, new_obs = (x.refine_names("B", "H", "R") for x in batch)
+        return -self(obs, act, new_obs).mean()
+
     def training_step(
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
-        obs, act, new_obs = (x.refine_names("B", "H", "R") for x in batch)
-        loss = -self(obs, act, new_obs).mean()
+        loss = self._compute_loss_on_batch(batch)
+        self.log("train/loss", loss)
+        self.log(self.early_stop_on, loss)
         return loss
 
     def validation_step(
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
-        return self.training_step(batch, batch_idx)
+        del batch_idx
+        loss = self._compute_loss_on_batch(batch)
+        self.log("val/loss", loss)
+        self.log(self.early_stop_on, loss)
+        return loss
 
     def validation_epoch_end(self, validation_step_outputs):
         # pylint:disable=arguments-differ
         del validation_step_outputs
-        self.value_gradient_info()
+        self.value_gradient_info("val")
 
-    def value_gradient_info(self):
-        self.log("monte_carlo_value", self.monte_carlo_value(samples=1000))
-        self.log("analytic_value", self.analytic_value(ground_truth=False))
-        self.log("true_value", self.analytic_value(ground_truth=True))
+    def test_step(
+        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int, dataloader_idx: int
+    ):
+        # pylint:disable=arguments-differ
+        del batch_idx, dataloader_idx
+        loss = self._compute_loss_on_batch(batch)
+        self.log("test/loss", loss)
+
+    def test_epoch_end(self, test_step_outputs):
+        # pylint:disable=arguments-differ
+        del test_step_outputs
+        self.value_gradient_info("test")
+
+    def value_gradient_info(self, prefix: Optional[str] = None):
+        prfx = "" if prefix is None else prefix + "/"
+        self.log(prfx + "monte_carlo_value", self.monte_carlo_value(samples=1000))
+        self.log(prfx + "analytic_value", self.analytic_value(ground_truth=False))
+        self.log(prfx + "true_value", self.analytic_value(ground_truth=True))
 
 
 def test_lightning_model():
     from policy import make_worker
 
-    worker = make_worker()
+    worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
     model = LightningModel(worker.get_policy(), worker.env)
 
     def print_traj(traj):
