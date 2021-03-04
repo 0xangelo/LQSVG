@@ -1,7 +1,7 @@
 # pylint:disable=missing-docstring,unsubscriptable-object
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Optional
 
 import pytorch_lightning as pl
 import torch
@@ -159,7 +159,7 @@ class LightningModel(pl.LightningModule):
         value = -self.policy_loss(policy, *model)
         return value
 
-    def monte_carlo_svg(self, samples: int = 1) -> tuple[Tensor, Iterable[Tensor]]:
+    def monte_carlo_svg(self, samples: int = 1) -> tuple[Tensor, lqr.Linear]:
         """Monte Carlo estimate of the Stochastic Value Gradient.
 
         Args:
@@ -172,12 +172,10 @@ class LightningModel(pl.LightningModule):
         """
         mc_performance = self.monte_carlo_value(samples)
         mc_performance.backward()
-        grads = [p.grad for p in self.actor.parameters()]
-        return mc_performance, grads
+        svg = self._current_policy_svg()
+        return mc_performance, svg
 
-    def analytic_svg(
-        self, ground_truth: bool = False
-    ) -> tuple[Tensor, Iterable[Tensor]]:
+    def analytic_svg(self, ground_truth: bool = False) -> tuple[Tensor, lqr.Linear]:
         """Compute the analytic SVG using the value function.
 
         Solves the prediction problem for the current policy and uses the
@@ -195,8 +193,13 @@ class LightningModel(pl.LightningModule):
         """
         value = self.analytic_value(ground_truth=ground_truth)
         value.backward()
-        svg = [p.grad for p in self.actor.parameters()]
+        svg = self._current_policy_svg()
         return value, svg
+
+    def _current_policy_svg(self) -> lqr.Linear:
+        # pylint:disable=invalid-name
+        K, k = self.actor.standard_form()
+        return K.grad, k.grad
 
     def configure_optimizers(self):
         params = nn.ParameterList(
