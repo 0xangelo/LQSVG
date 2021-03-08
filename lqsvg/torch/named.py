@@ -168,7 +168,9 @@ def where(
     )
 
 
-def split(tensor: Tensor, split_size_or_sections, dim: str) -> tuple[Tensor, ...]:
+def split(
+    tensor: Tensor, split_size_or_sections: Union[int, list[int]], dim: str
+) -> tuple[Tensor, ...]:
     permuted = tensor.align_to(..., dim)
     tensors = torch.split(permuted, split_size_or_sections, dim=-1)
     return tuple(
