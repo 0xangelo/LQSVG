@@ -8,6 +8,8 @@ from typing import Union
 
 import torch
 import torch.nn.functional as F
+from torch import IntTensor
+from torch import LongTensor
 from torch import Tensor
 
 
@@ -114,11 +116,22 @@ def stack_horizon(*tensors: Tensor) -> Tensor:
     return torch.cat([t.align_to("H", ...) for t in tensors], dim="H")
 
 
-def index_by(tensor: Tensor, dim: str, index: Tensor) -> Tensor:
-    permuted = tensor.align_to(dim, ...)
-    selected = unnamed(permuted)[unnamed(index)]
-    selected = selected.refine_names(..., *permuted.names[1:])
-    return selected.align_to(*(... if n == dim else n for n in tensor.names))
+def index_select(
+    tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]
+) -> Tensor:
+    aligned = tensor.align_to(dim, ...)
+    selected = torch.index_select(unnamed(aligned), dim=0, index=unnamed(index))
+    refined = selected.refine_names(*aligned.names)
+    return refined.align_to(*tensor.names)
+
+
+def index_by(tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]) -> Tensor:
+    aligned = tensor.align_to(dim, ...)
+    vector_index = unnamed(index).reshape(-1)
+    selected = torch.index_select(unnamed(aligned), dim=0, index=vector_index)
+    reshaped = selected.reshape(*(index.shape + aligned.shape[1:]))
+    refined = reshaped.refine_names(*(index.names + aligned.names[1:]))
+    return refined.align_to(*(n if n != dim else ... for n in tensor.names))
 
 
 def diagonal(tensor: Tensor, *args, dim1: str = "R", dim2: str = "C", **kwargs):
