@@ -5,6 +5,7 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 from raylab.policy.modules.model import StochasticModel
+from torch import IntTensor
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -22,23 +23,21 @@ class CovCholeskyFactor(nn.Module):
     # pylint:disable=abstract-method
     def __init__(self, sigma: Tensor):
         super().__init__()
-        sigma = sigma.refine_names("H", "R", "C")
+        sigma = nt.horizon(nt.matrix(sigma))
         self.ltril, self.pre_diag = (
             nn.Parameter(x) for x in nt.unnamed(*disassemble_covariance(sigma))
         )
 
     def _named_factors(self) -> Tuple[Tensor, Tensor]:
-        return self.ltril.refine_names("H", "R", "C"), self.pre_diag.refine_names(
-            "H", "R"
-        )
+        return nt.horizon(nt.matrix(self.ltril)), nt.horizon(nt.vector(self.pre_diag))
 
-    def forward(self, time: Optional[Tensor] = None) -> Tensor:
+    def forward(self, time: Optional[IntTensor] = None) -> Tensor:
         # pylint:disable=missing-function-docstring
         ltril, pre_diag = self._named_factors()
         if time is not None:
             ltril = nt.index_by(ltril, dim="H", index=time)
             pre_diag = nt.index_by(pre_diag, dim="H", index=time)
-        return nt.refine_matrix_output(assemble_scale_tril(ltril, pre_diag))
+        return nt.matrix(assemble_scale_tril(ltril, pre_diag))
 
 
 class TVLinearNormalParams(nn.Module):
