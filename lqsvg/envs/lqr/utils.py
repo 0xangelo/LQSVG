@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 from gym.spaces import Box
+from torch import IntTensor
 from torch import Tensor
 
 from lqsvg.np_util import np_expand
@@ -63,11 +64,11 @@ def dims_from_spaces(obs_space: Box, action_space: Box) -> tuple[int, int, int]:
     return n_state, n_ctrl, horizon
 
 
-def unpack_obs(obs: Tensor) -> tuple[Tensor, Tensor]:
+def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
     """Unpack observation into state variables and time.
 
     Expects observation as a named 'vector' tensor.
     """
     state, time = obs[..., :-1], obs[..., -1:]
-    time = time.long()
+    time = time.int()
     return state, time
