@@ -214,7 +214,10 @@ class LightningModel(pl.LightningModule):
         optim = torch.optim.Adam(params, lr=1e-3)
         return optim
 
-    def _compute_loss_on_batch(self, batch: tuple[Tensor, Tensor, Tensor]) -> Tensor:
+    def _compute_loss_on_batch(
+        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
+    ) -> Tensor:
+        del batch_idx
         obs, act, new_obs = (x.refine_names("B", "H", "R") for x in batch)
         return -self(obs, act, new_obs).mean()
 
@@ -222,8 +225,7 @@ class LightningModel(pl.LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
-        del batch_idx
-        loss = self._compute_loss_on_batch(batch)
+        loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("train/loss", loss)
         self.log(self.early_stop_on, loss)
         return loss
@@ -232,8 +234,7 @@ class LightningModel(pl.LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
-        del batch_idx
-        loss = self._compute_loss_on_batch(batch)
+        loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("val/loss", loss)
         self.log(self.early_stop_on, loss)
         return loss
@@ -247,8 +248,8 @@ class LightningModel(pl.LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int, dataloader_idx: int
     ):
         # pylint:disable=arguments-differ
-        del batch_idx, dataloader_idx
-        loss = self._compute_loss_on_batch(batch)
+        del dataloader_idx
+        loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("test/loss", loss)
 
     def test_epoch_end(self, test_step_outputs):
