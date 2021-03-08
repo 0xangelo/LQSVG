@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from functools import cached_property
 from typing import Optional
+from typing import Union
 
 import numpy as np
 import torch
@@ -13,6 +14,8 @@ from raylab.options import option
 from raylab.policy import TorchPolicy
 from raylab.policy.action_dist import WrapDeterministicPolicy
 from raylab.policy.modules.actor import DeterministicPolicy
+from torch import IntTensor
+from torch import LongTensor
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -52,7 +55,7 @@ class TVLinearFeedback(nn.Module):
         k = torch.randn(horizon, n_ctrl)
         self.K, self.k = (nn.Parameter(x) for x in (K, k))
 
-    def _gains_at(self, index: Tensor) -> tuple[Tensor, Tensor]:
+    def _gains_at(self, index: Union[IntTensor, LongTensor]) -> tuple[Tensor, Tensor]:
         K = nt.horizon(nt.matrix(self.K))
         k = nt.horizon(nt.vector(self.k))
         K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
@@ -82,10 +85,11 @@ class TVLinearFeedback(nn.Module):
         self.k.data.copy_(nt.matrix_to_vector(k))
 
     def gains(self, named: bool = True) -> lqr.Linear:
-        K = nt.horizon(nt.matrix(self.K))
-        k = nt.horizon(nt.vector(self.k))
-        if not named:
-            K, k = nt.unnamed(K, k)
+        K, k = self.K, self.k
+        if named:
+            K = nt.horizon(nt.matrix(K))
+            k = nt.horizon(nt.vector(k))
+        K.grad, k.grad = self.K.grad, self.k.grad
         return K, k
 
 
