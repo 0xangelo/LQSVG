@@ -24,7 +24,7 @@ def test_softplusinv(n_dim: int, beta: float):
     softplus = nt.softplus(vec, beta=beta)
 
     assert (softplus > 0).all()
-    assert nt.allclose(softplusinv(softplus, beta=beta), vec)
+    assert nt.allclose(softplusinv(softplus, beta=beta), vec, atol=1e-6)
 
 
 @pytest.fixture
