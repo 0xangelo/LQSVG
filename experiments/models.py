@@ -86,8 +86,8 @@ class LightningModel(pl.LightningModule):
         return self.model.log_prob(obs, act, new_obs)
 
     def rsample_trajectory(
-        self, sample_shape: torch.Size = torch.Size()
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        self, sample_shape: torch.Size = torch.Size(), ground_truth: bool = False
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Sample trajectory for Stochastic Value Gradients.
 
         Sample trajectory using model with reparameterization trick and
@@ -95,26 +95,31 @@ class LightningModel(pl.LightningModule):
 
         Args:
             sample_shape: shape for batched trajectory samples
+            ground_truth: whether to use the dynamics of the MDP to
+                sample trajectories
 
         Returns:
-            Trajectory sample following the policy
+            Trajectory sample following the policy and its corresponding
+            log-likelihood under the model
         """
         sample_shape = torch.Size(sample_shape)
-        horizon = self.model.horizon
+        model = self.mdp if ground_truth else self.model
+
         batch = []
-        obs, _ = self.model.init.rsample(sample_shape)
-        obs = obs.refine_names(*(f"B{i+1}" for i in range(len(sample_shape))), ...)
-        for _ in range(horizon):
+        obs, logp = model.init.rsample(sample_shape)
+        obs = obs.refine_names(*(f"B{i+1}" for i, _ in enumerate(sample_shape)), ...)
+        for _ in range(model.horizon):
             act = self.actor(obs)
-            rew = self.model.reward(obs, act)
+            rew = model.reward(obs, act)
             # No sample_shape needed since initial states are batched
-            new_obs, _ = self.model.trans.rsample(self.model.trans(obs, act))
+            new_obs, logp_t = model.trans.rsample(model.trans(obs, act))
 
             batch += [(obs, act, rew, new_obs)]
+            logp = logp + logp_t
             obs = new_obs
 
         obs, act, rew, new_obs = (nt.stack_horizon(*x) for x in zip(*batch))
-        return obs, act, rew, new_obs
+        return obs, act, rew, new_obs, logp
 
     def rsample_return(self, sample_shape: torch.Size = torch.Size()) -> Tensor:
         """Sample return for Stochastic Value Gradients.
@@ -127,7 +132,7 @@ class LightningModel(pl.LightningModule):
         Returns:
             Sample of the policy return
         """
-        _, _, rew, _ = self.rsample_trajectory(sample_shape)
+        _, _, rew, _, _ = self.rsample_trajectory(sample_shape)
         # Reduce over horizon
         ret = rew.sum("H")
         return ret
@@ -272,6 +277,7 @@ class LightningModel(pl.LightningModule):
         self.log(prfx + "true_svg_norm", linear_feedback_norm(true_svg))
 
 
+@nt.suppress_named_tensor_warning()
 def test_lightning_model():
     from policy import make_worker
 
@@ -279,22 +285,32 @@ def test_lightning_model():
     model = LightningModel(worker.get_policy(), worker.env)
 
     def print_traj(traj):
-        obs, act, rew, new_obs = traj
+        obs, act, rew, new_obs, logp = traj
         print(
             f"""\
         Obs: {obs.shape}, {obs.names}
         Act: {act.shape}, {act.names}
         Rew: {rew.shape}, {rew.names}
-        New Obs: {new_obs.shape}, {new_obs.names}\
+        New Obs: {new_obs.shape}, {new_obs.names}
+        Logp: {logp.shape}, {logp.names}\
         """
         )
 
+    print("Model sample:")
     print_traj(model.rsample_trajectory([]))
+    print("Batched model sample:")
     print_traj(model.rsample_trajectory([10]))
+    print("MDP sample:")
+    print_traj(model.rsample_trajectory([], ground_truth=True))
 
-    obs, act, _, new_obs = model.rsample_trajectory([100])
+    obs, act, _, new_obs, sample_logp = model.rsample_trajectory([10])
+    print(f"RSample logp: {sample_logp}, {sample_logp.shape}")
     traj_logp = model(obs, act, new_obs)
     print(f"Traj logp: {traj_logp}, {traj_logp.shape}")
+    print("Model logp of MDP sample:")
+    obs, act, _, new_obs, _ = model.rsample_trajectory([10], ground_truth=True)
+    traj_logp = model(obs, act, new_obs)
+    print(traj_logp, traj_logp.shape)
 
     print("Monte Carlo value:", model.monte_carlo_value(samples=1000))
     print("Analytic value:", model.analytic_value(ground_truth=False))
