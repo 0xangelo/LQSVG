@@ -15,6 +15,7 @@ from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 from utils import linear_feedback_norm  # pylint:disable=wrong-import-order
+from utils import linear_feedback_cossim  # pylint:disable=wrong-import-order
 
 
 class ExpectedValue(nn.Module):
@@ -279,6 +280,13 @@ class LightningModel(pl.LightningModule):
         self.log(prfx + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
         self.log(prfx + "true_value", true_val)
         self.log(prfx + "true_svg_norm", linear_feedback_norm(true_svg))
+
+        self.log(prfx + "monte_carlo_diff", mc_val - true_val)
+        self.log(prfx + "analytic_diff", analytic_val - true_val)
+        self.log(prfx + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg))
+        self.log(
+            prfx + "analytic_cossim", linear_feedback_cossim(analytic_svg, true_svg)
+        )
 
 
 @nt.suppress_named_tensor_warning()
