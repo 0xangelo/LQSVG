@@ -142,7 +142,7 @@ class InitStateModel(InitStateDynamics):
     def __init__(self, n_state: int, seed: Optional[int] = None):
         loc = torch.zeros(n_state)
         covariance_matrix = as_float_tensor(make_spd_matrix(n_state, rng=seed))
-        super().__init__(lqr.GaussInit(loc, covariance_matrix))
+        super().__init__(lqr.GaussInit(nt.vector(loc), nt.matrix(covariance_matrix)))
 
 
 class TimeVaryingLinear(nn.Module):
