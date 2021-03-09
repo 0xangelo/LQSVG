@@ -14,12 +14,17 @@ def n_dim(request):
     return request.param
 
 
-def test_softplusinv(n_dim: int):
-    vec = nt.vector(torch.randn(n_dim))
-    softplus = nt.softplus(vec)
+@pytest.fixture(params=(1.0, 0.2, 0.5), ids=lambda x: f"Beta:{x}")
+def beta(request) -> float:
+    return request.param
 
-    assert (softplus >= 0).all()
-    assert nt.allclose(softplusinv(softplus), vec)
+
+def test_softplusinv(n_dim: int, beta: float):
+    vec = nt.vector(torch.randn(n_dim))
+    softplus = nt.softplus(vec, beta=beta)
+
+    assert (softplus > 0).all()
+    assert nt.allclose(softplusinv(softplus, beta=beta), vec)
 
 
 @pytest.fixture

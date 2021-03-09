@@ -21,12 +21,13 @@ class CovCholeskyFactor(nn.Module):
     """Covariance Cholesky factor."""
 
     # pylint:disable=abstract-method
+    beta: float = 0.2
+
     def __init__(self, sigma: Tensor):
         super().__init__()
         sigma = nt.horizon(nt.matrix(sigma))
-        self.ltril, self.pre_diag = (
-            nn.Parameter(x) for x in nt.unnamed(*disassemble_covariance(sigma))
-        )
+        ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
+        self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
 
     def _named_factors(self) -> Tuple[Tensor, Tensor]:
         return nt.horizon(nt.matrix(self.ltril)), nt.horizon(nt.vector(self.pre_diag))
@@ -37,7 +38,7 @@ class CovCholeskyFactor(nn.Module):
         if time is not None:
             ltril = nt.index_by(ltril, dim="H", index=time)
             pre_diag = nt.index_by(pre_diag, dim="H", index=time)
-        return nt.matrix(assemble_scale_tril(ltril, pre_diag))
+        return nt.matrix(assemble_scale_tril(ltril, pre_diag, beta=self.beta))
 
 
 class TVLinearNormalParams(nn.Module):
@@ -62,9 +63,8 @@ class TVLinearNormalParams(nn.Module):
         obs, action = (nt.vector(x) for x in (obs, action))
         state, time = unpack_obs(obs)
         index = nt.vector_to_scalar(time)
-        F, f = (
-            nt.index_by(x, dim="H", index=index) for x in self._transition_factors()
-        )
+        F, f = self._transition_factors()
+        F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
         scale_tril = self.scale_tril(index)
 
         tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))

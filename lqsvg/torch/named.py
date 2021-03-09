@@ -150,8 +150,8 @@ def cholesky(tensor: Tensor, *args, **kwargs) -> Tensor:
     return torch.cholesky(unnamed(tensor), *args, **kwargs).refine_names(*tensor.names)
 
 
-def softplus(tensor: Tensor) -> Tensor:
-    return F.softplus(unnamed(tensor)).refine_names(*tensor.names)
+def softplus(tensor: Tensor, *, beta: float = 1) -> Tensor:
+    return F.softplus(unnamed(tensor), beta=beta).refine_names(*tensor.names)
 
 
 def allclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> bool:

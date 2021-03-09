@@ -12,22 +12,22 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.utils import unpack_obs
 
 
-def softplusinv(tensor: Tensor) -> Tensor:
+def softplusinv(tensor: Tensor, *, beta: float = 1) -> Tensor:
     """Returns the inverse softplus transformation."""
-    return torch.log(tensor.exp() - 1)
+    return torch.log(torch.exp(beta * tensor) - 1) / beta
 
 
-def disassemble_covariance(tensor: Tensor) -> Tuple[Tensor, Tensor]:
+def disassemble_covariance(tensor: Tensor, *, beta: float = 1) -> Tuple[Tensor, Tensor]:
     """Compute cholesky factor and break it into unconstrained parameters."""
     tril = nt.cholesky(tensor, upper=False)
     ltril = nt.tril(tril, diagonal=-1)
-    pre_diag = softplusinv(nt.diagonal(tril, dim1="R", dim2="C"))
+    pre_diag = softplusinv(nt.diagonal(tril, dim1="R", dim2="C"), beta=beta)
     return ltril, pre_diag
 
 
-def assemble_scale_tril(ltril: Tensor, pre_diag: Tensor) -> Tensor:
+def assemble_scale_tril(ltril: Tensor, pre_diag: Tensor, *, beta: float = 1) -> Tensor:
     """Transform uncostrained parameters into covariance cholesky factor."""
-    return ltril + torch.diag_embed(nt.softplus(pre_diag))
+    return ltril + torch.diag_embed(nt.softplus(pre_diag, beta=beta))
 
 
 class TVMultivariateNormal(ptd.ConditionalDistribution):
