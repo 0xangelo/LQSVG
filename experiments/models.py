@@ -1,6 +1,7 @@
 # pylint:disable=missing-docstring,unsubscriptable-object
 from __future__ import annotations
 
+import itertools
 from typing import Optional
 
 import pytorch_lightning as pl
@@ -79,6 +80,8 @@ class LightningModel(pl.LightningModule):
         self.model = policy.module.model
         self.mdp = env.module
         self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
+
+        self.hparams.learning_rate = 1e-3
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
@@ -214,9 +217,9 @@ class LightningModel(pl.LightningModule):
 
     def configure_optimizers(self):
         params = nn.ParameterList(
-            list(self.model.trans.parameters()) + list(self.model.init.parameters())
+            itertools.chain(self.model.trans.parameters(), self.model.init.parameters())
         )
-        optim = torch.optim.Adam(params, lr=1e-3)
+        optim = torch.optim.Adam(params, lr=self.hparams.learning_rate)
         return optim
 
     def _compute_loss_on_batch(
