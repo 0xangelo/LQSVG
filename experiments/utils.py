@@ -11,6 +11,24 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 
 
+def linear_feedback_cossim(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tensor:
+    """Cosine similarity between the parameters of linear (affine) functions.
+
+    Args:
+        linear_a: tuple of affine function parameters
+        linear_b: tuple of affine function parameters
+
+    Returns:
+        Tensor representing the (scalar) cosine similarity.
+    """
+    # pylint:disable=invalid-name
+    Ka, ka = linear_a
+    Kb, kb = linear_b
+    dot_product = torch.sum(Ka * Kb) + torch.sum(ka * kb)
+    norm_prod = linear_feedback_norm(linear_a) * linear_feedback_norm(linear_b)
+    return dot_product / norm_prod
+
+
 def linear_feedback_norm(linear: lqr.Linear) -> Tensor:
     """Norm of the parameters of a linear (affine) function.
 
