@@ -59,8 +59,10 @@ def _unpack_params(
     loc = params["loc"]
     scale_tril = params["scale_tril"]
     time = params["time"]
-    loc, scale_tril, time = map(
-        lambda x: x.expand(sample_shape + x.shape), (loc, scale_tril, time)
+    sample_names = tuple(f"B{i+1}" for i, _ in enumerate(sample_shape))
+    loc, scale_tril, time = (
+        x.expand(sample_shape + x.shape).refine_names(*sample_names, ...)
+        for x in (loc, scale_tril, time)
     )
     return loc, scale_tril, time
 
