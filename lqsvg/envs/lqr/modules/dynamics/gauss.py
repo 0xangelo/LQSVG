@@ -22,20 +22,19 @@ class InitStateDynamics(ptd.Distribution):
     All outputs are named Tensors.
 
     Args:
-        loc: location of the distribution
-        covariance_matrix: covariance matrix of the distribution. May be
-            non-diagonal.
+        init: pair of named tensors containing the location of
+            the distribution and the (possibly non-diagonal)
+            covariance matrix of the distribution.
     """
 
     # pylint:disable=missing-class-docstring
     def __init__(self, init: lqr.GaussInit):
         super().__init__()
-        loc, covariance_matrix = init
+        loc, sigma = init
         self.dist = TVMultivariateNormal()
         self.loc = nn.Parameter(nt.unnamed(loc))
-        self.ltril, self.pre_diag = nt.unnamed(
-            *disassemble_covariance(nt.matrix(covariance_matrix))
-        )
+        ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma))
+        self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
 
     def scale_tril(self) -> Tensor:
         # pylint:disable=missing-function-docstring
@@ -46,7 +45,7 @@ class InitStateDynamics(ptd.Distribution):
         return {
             "loc": nt.vector(self.loc),
             "scale_tril": self.scale_tril(),
-            "time": nt.vector(torch.zeros_like(self.loc[..., -1:], dtype=torch.long)),
+            "time": nt.vector(torch.zeros_like(self.loc[..., -1:], dtype=torch.int)),
         }
 
     def sample(self, sample_shape: List[int] = ()) -> SampleLogp:

@@ -89,8 +89,8 @@ class LQGSpec(DataClassJsonMixin):
             np_random=self.gen_seed,
         )
         init = GaussInit(
-            mu=torch.zeros(self.n_state, names=("R",)),
-            sig=torch.eye(self.n_state).refine_names("R", "C"),
+            mu=nt.vector(torch.zeros(self.n_state)),
+            sig=nt.matrix(torch.eye(self.n_state)),
         )
         return dynamics, cost, init
 
