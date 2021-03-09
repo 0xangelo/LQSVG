@@ -6,7 +6,6 @@ from gym.spaces import Box
 from torch import IntTensor
 from torch import Tensor
 
-import lqsvg.torch.named as nt
 from lqsvg.np_util import np_expand
 
 from .types import Linear
@@ -70,6 +69,7 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
 
     Expects observation as a named 'vector' tensor.
     """
-    state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
+    # state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
+    state, time = obs[..., :-1], obs[..., -1:]
     time = time.int()
     return state, time
