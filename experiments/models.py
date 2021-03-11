@@ -253,11 +253,8 @@ class LightningModel(pl.LightningModule):
         del validation_step_outputs
         self.value_gradient_info("val")
 
-    def test_step(
-        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int, dataloader_idx: int
-    ):
+    def test_step(self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int):
         # pylint:disable=arguments-differ
-        del dataloader_idx
         loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("test/loss", loss)
 
