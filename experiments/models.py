@@ -73,7 +73,7 @@ class LightningModel(pl.LightningModule):
     model: nn.Module
     mdp: nn.Module
     policy_loss: nn.Module
-    early_stop_on: str = "early_stop_on"
+    early_stop_on: str = "val/loss"
 
     def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
         super().__init__()
@@ -236,7 +236,6 @@ class LightningModel(pl.LightningModule):
         # pylint:disable=arguments-differ
         loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("train/loss", loss)
-        self.log(self.early_stop_on, loss)
         return loss
 
     def validation_step(
@@ -245,7 +244,6 @@ class LightningModel(pl.LightningModule):
         # pylint:disable=arguments-differ
         loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("val/loss", loss)
-        self.log(self.early_stop_on, loss)
         return loss
 
     def validation_epoch_end(self, validation_step_outputs):
