@@ -84,6 +84,8 @@ class LightningModel(pl.LightningModule):
 
         self.hparams.learning_rate = 1e-3
 
+        self._gold_standard = self.analytic_svg(ground_truth=True)
+
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
         # pylint:disable=arguments-differ
@@ -262,10 +264,10 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: Optional[str] = None):
+        true_val, true_svg = self._gold_standard
         with torch.enable_grad():
             mc_val, mc_svg = self.monte_carlo_svg(samples=1000)
             analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
-            true_val, true_svg = self.analytic_svg(ground_truth=True)
         self.zero_grad(set_to_none=True)
 
         prfx = "" if prefix is None else prefix + "/"
