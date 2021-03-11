@@ -275,8 +275,6 @@ class LightningModel(pl.LightningModule):
         self.log(prfx + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
         self.log(prfx + "analytic_value", analytic_val)
         self.log(prfx + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
-        self.log(prfx + "true_value", true_val)
-        self.log(prfx + "true_svg_norm", linear_feedback_norm(true_svg))
 
         self.log(prfx + "monte_carlo_diff", mc_val - true_val)
         self.log(prfx + "analytic_diff", analytic_val - true_val)
@@ -284,6 +282,20 @@ class LightningModel(pl.LightningModule):
         self.log(
             prfx + "analytic_cossim", linear_feedback_cossim(analytic_svg, true_svg)
         )
+
+    def log_gold_standard(self):
+        """Logs gold standard value and gradient."""
+        true_val, true_svg = self._gold_standard
+        self.log("true_value", true_val)
+        self.log("true_svg_norm", linear_feedback_norm(true_svg))
+
+
+class LogGoldStandard(pl.Callback):
+    """Simple callback to log true value and gradient."""
+
+    def on_train_start(self, trainer: pl.Trainer, pl_module: LightningModel):
+        del trainer
+        pl_module.log_gold_standard()
 
 
 @nt.suppress_named_tensor_warning()
