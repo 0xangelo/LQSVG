@@ -1,6 +1,6 @@
 # pylint:disable=all
 from ray.rllib import SampleBatch
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from utils import num_complete_episodes  # pylint:disable=wrong-import-order
 
