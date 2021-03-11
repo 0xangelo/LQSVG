@@ -12,6 +12,7 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
+from lqsvg.envs.lqr.modules import TVLinearNormalParams
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 from utils import linear_feedback_norm  # pylint:disable=wrong-import-order
@@ -85,6 +86,15 @@ class LightningModel(pl.LightningModule):
         self.hparams.learning_rate = 1e-3
 
         self._gold_standard = self.analytic_svg(ground_truth=True)
+        self._init_model()
+
+    def _init_model(self):
+        def initialize(module: nn.Module):
+            if isinstance(module, TVLinearNormalParams):
+                nn.init.xavier_uniform_(module.F)
+                nn.init.constant_(module.f, 0.0)
+
+        self.model.apply(initialize)
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
@@ -326,7 +336,7 @@ def test_lightning_model():
     traj_logp = model(obs, act, new_obs)
     print(traj_logp, traj_logp.shape)
 
-    print("Monte Carlo value:", model.monte_carlo_value(samples=1000))
+    print("Monte Carlo value:", model.monte_carlo_value(samples=256))
     print("Analytic value:", model.analytic_value(ground_truth=False))
     print("True value:", model.analytic_value(ground_truth=True))
 
