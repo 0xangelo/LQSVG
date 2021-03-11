@@ -261,6 +261,7 @@ class LightningModel(pl.LightningModule):
     def test_epoch_end(self, test_step_outputs):
         # pylint:disable=arguments-differ
         del test_step_outputs
+        self.log_gold_standard()
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: Optional[str] = None):
@@ -288,14 +289,6 @@ class LightningModel(pl.LightningModule):
         true_val, true_svg = self._gold_standard
         self.log("true_value", true_val)
         self.log("true_svg_norm", linear_feedback_norm(true_svg))
-
-
-class LogGoldStandard(pl.Callback):
-    """Simple callback to log true value and gradient."""
-
-    def on_train_start(self, trainer: pl.Trainer, pl_module: LightningModel):
-        del trainer
-        pl_module.log_gold_standard()
 
 
 @nt.suppress_named_tensor_warning()
