@@ -345,9 +345,8 @@ def make_lqr_linear_navigation(
     c = np.concatenate([-2.0 * goal, np.zeros((ctrl_size,))], axis=0)
     c = np_expand_horizon(c, horizon)
 
-    bounds: Box = tuple(
-        map(as_float_tensor, (s * np.ones_like(ctrl_size) for s in (-1, 1)))
-    )
-    F, f, C, c = map(as_float_tensor, (F, f, C, c))
+    bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
+    # Avoid tensor writing to un-writable np.array
+    F, f, C, c = map(lambda x: as_float_tensor(x.copy()), (F, f, C, c))
     dynamics, cost = refine_lqr((F, f), (C, c))
     return dynamics, cost, bounds
