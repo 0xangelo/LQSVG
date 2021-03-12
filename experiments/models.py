@@ -84,6 +84,7 @@ class LightningModel(pl.LightningModule):
         self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
 
         self.hparams.learning_rate = 1e-3
+        self.hparams.mc_samples = 256
 
         self._gold_standard = self.analytic_svg(ground_truth=True)
         self._init_model()
@@ -277,7 +278,7 @@ class LightningModel(pl.LightningModule):
     def value_gradient_info(self, prefix: Optional[str] = None):
         true_val, true_svg = self._gold_standard
         with torch.enable_grad():
-            mc_val, mc_svg = self.monte_carlo_svg(samples=1000)
+            mc_val, mc_svg = self.monte_carlo_svg(samples=self.hparams.mc_samples)
             analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
         self.zero_grad(set_to_none=True)
 
