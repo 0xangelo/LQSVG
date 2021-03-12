@@ -17,6 +17,7 @@ from lqsvg.torch.utils import as_float_tensor
 from .named import refine_lqr
 from .types import AnyDynamics
 from .types import Box
+from .types import GaussInit
 from .types import LinDynamics
 from .types import LinSDynamics
 from .types import QuadCost
@@ -103,14 +104,25 @@ def _box_ddp_random_cost(
 
 
 def expand_and_refine(
-    tensor: Tensor, horizon: int, n_batch: Optional[int], base_shape: tuple[int, ...]
+    tensor: Tensor,
+    base_shape: tuple[int, ...],
+    horizon: Optional[int] = None,
+    n_batch: Optional[int] = None,
 ) -> Tensor:
     """Expand and refine tensor names with horizon and batch size information."""
     assert (
         n_batch is None or n_batch > 0
     ), f"Batch size must be null or positive, got {n_batch}"
-    final_shape = (horizon,) + (() if n_batch is None else (n_batch,)) + base_shape
-    names = ("H",) + (() if n_batch is None else ("B",)) + (...,)
+    final_shape = (
+        (() if horizon is None else (horizon,))
+        + (() if n_batch is None else (n_batch,))
+        + base_shape
+    )
+    names = (
+        (() if horizon is None else ("H",))
+        + (() if n_batch is None else ("B",))
+        + (...,)
+    )
     tensor = tensor.expand(*final_shape).refine_names(*names)
     return tensor
 
@@ -137,8 +149,8 @@ def make_lindynamics(
     f = np_random.normal(size=horizon_shape + batch_shape + vec_shape)
 
     F, f = map(as_float_tensor, (F, f))
-    F = expand_and_refine(nt.matrix(F), horizon, n_batch, mat_shape)
-    f = expand_and_refine(nt.vector(f), horizon, n_batch, vec_shape)
+    F = expand_and_refine(nt.matrix(F), mat_shape, horizon=horizon, n_batch=n_batch)
+    f = expand_and_refine(nt.vector(f), vec_shape, horizon=horizon, n_batch=n_batch)
     return LinDynamics(F, f)
 
 
@@ -166,7 +178,7 @@ def make_linsdynamics(
     sample_shape = (() if stationary else (horizon,)) + batch_shape
     W = make_spd_matrix(state_size, sample_shape=sample_shape, rng=np_random)
     W = nt.matrix(as_float_tensor(W))
-    W = expand_and_refine(W, horizon, n_batch, (state_size, state_size))
+    W = expand_and_refine(W, (state_size, state_size), horizon=horizon, n_batch=n_batch)
 
     return LinSDynamics(F, f, W)
 
@@ -196,9 +208,35 @@ def make_quadcost(
     c = np_random.normal(size=horizon_shape + batch_shape + vec_shape)
 
     C, c = map(as_float_tensor, (C, c))
-    C = expand_and_refine(nt.matrix(C), horizon, n_batch, mat_shape)
-    c = expand_and_refine(nt.vector(c), horizon, n_batch, vec_shape)
+    C = expand_and_refine(nt.matrix(C), mat_shape, horizon=horizon, n_batch=n_batch)
+    c = expand_and_refine(nt.vector(c), vec_shape, horizon=horizon, n_batch=n_batch)
     return QuadCost(C, c)
+
+
+def make_gaussinit(
+    state_size: int,
+    n_batch: Optional[int] = None,
+    sample_covariance: bool = False,
+    np_random: Optional[Union[Generator, int]] = None,
+) -> GaussInit:
+    """Generate parameters for Gaussian initial state distribution."""
+    # pylint:disable=invalid-name
+    vec_shape = (state_size,)
+    mat_shape = vec_shape * 2
+    batch_shape = () if n_batch is None else (n_batch,)
+
+    mu = torch.zeros(batch_shape + vec_shape)
+    if sample_covariance:
+        sig = as_float_tensor(
+            make_spd_matrix(state_size, sample_shape=batch_shape, rng=np_random)
+        )
+    else:
+        sig = torch.eye(state_size)
+
+    return GaussInit(
+        mu=expand_and_refine(nt.vector(mu), vec_shape, n_batch=n_batch),
+        sig=expand_and_refine(nt.matrix(sig), mat_shape, n_batch=n_batch),
+    )
 
 
 def make_lqr(

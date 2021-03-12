@@ -17,6 +17,7 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 
+from .generators import make_gaussinit
 from .generators import make_lqg
 from .modules import InitStateDynamics
 from .modules import LQGModule
@@ -88,10 +89,7 @@ class LQGSpec(DataClassJsonMixin):
             stationary=self.stationary,
             np_random=self.gen_seed,
         )
-        init = GaussInit(
-            mu=nt.vector(torch.zeros(self.n_state)),
-            sig=nt.matrix(torch.eye(self.n_state)),
-        )
+        init = make_gaussinit(state_size=self.n_state, np_random=self.gen_seed)
         return dynamics, cost, init
 
 

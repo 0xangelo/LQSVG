@@ -20,6 +20,8 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import make_gaussinit
+from lqsvg.envs.lqr.generators import make_linsdynamics
 from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules import InitStateDynamics
@@ -27,8 +29,6 @@ from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.modules import QuadraticReward
 from lqsvg.envs.lqr.modules import TVLinearDynamics
 from lqsvg.envs.lqr.utils import unpack_obs
-from lqsvg.np_util import make_spd_matrix
-from lqsvg.torch.utils import as_float_tensor
 
 
 def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
@@ -113,24 +113,13 @@ class TVLinearTransModel(TVLinearDynamics):
     """Time-varying linear Gaussian dynamics model."""
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        n_tau = n_state + n_ctrl
-        dynamics = lqr.LinSDynamics(
-            F=nt.horizon(nt.matrix(torch.randn(horizon, n_state, n_tau))),
-            f=nt.horizon(nt.vector(torch.randn(horizon, n_state))),
-            W=nt.horizon(
-                nt.matrix(
-                    torch.as_tensor(
-                        make_spd_matrix(n_dim=n_state, sample_shape=(horizon,)),
-                        dtype=torch.float32,
-                    )
-                )
-            ),
-        )
+        dynamics = make_linsdynamics(n_state, n_ctrl, horizon, stationary=False)
         super().__init__(dynamics)
 
 
 class QuadRewardModel(QuadraticReward):
-    # pylint:disable=abstract-method,missing-docstring
+    """Time-varying quadratic reward model."""
+
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         cost = make_quadcost(n_state, n_ctrl, horizon, stationary=False)
         super().__init__(cost)
@@ -140,9 +129,8 @@ class InitStateModel(InitStateDynamics):
     """Gaussian initial state distribution model."""
 
     def __init__(self, n_state: int, seed: Optional[int] = None):
-        loc = torch.zeros(n_state)
-        covariance_matrix = as_float_tensor(make_spd_matrix(n_state, rng=seed))
-        super().__init__(lqr.GaussInit(nt.vector(loc), nt.matrix(covariance_matrix)))
+        init = make_gaussinit(n_state, sample_covariance=True, np_random=seed)
+        super().__init__(init)
 
 
 class TimeVaryingLinear(nn.Module):
