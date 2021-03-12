@@ -7,12 +7,13 @@ from typing import Optional
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+from raylab.policy.modules.actor import DeterministicPolicy
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules import TVLinearNormalParams
+from lqsvg.envs.lqr.modules import TVLinearNormalParams, LQGModule
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 from utils import linear_feedback_norm  # pylint:disable=wrong-import-order
@@ -20,20 +21,18 @@ from utils import linear_feedback_cossim  # pylint:disable=wrong-import-order
 
 
 class ExpectedValue(nn.Module):
-    # pylint:disable=invalid-name,no-self-use
     # noinspection PyMethodMayBeStatic
-    def forward(self, rho: tuple[Tensor, Tensor], vval: lqr.Quadratic):
+    def forward(self, rho: lqr.GaussInit, vval: lqr.Quadratic):
         """Expected cost given mean and covariance matrix of the initial state.
 
         https://en.wikipedia.org/wiki/Quadratic_form_(statistics)#Expectation.
         """
+        # pylint:disable=invalid-name,no-self-use
         V, v, c = vval
-        V = nt.refine_matrix_input(V)
-        v = nt.refine_vector_input(v)
-        c = nt.refine_scalar_input(c)
+        v = nt.vector_to_matrix(v)
+        c = nt.scalar_to_matrix(c)
         mean, cov = rho
-        mean = nt.refine_vector_input(mean)
-        cov = nt.refine_matrix_input(cov)
+        mean = nt.vector_to_matrix(mean)
 
         value = (
             nt.trace(cov @ V).align_to(..., "R", "C") / 2
@@ -41,16 +40,11 @@ class ExpectedValue(nn.Module):
             + nt.transpose(v) @ mean
             + c
         )
-        return nt.refine_scalar_output(value)
+        return nt.matrix_to_scalar(value)
 
 
 class PolicyLoss(nn.Module):
-    def __init__(
-        self,
-        n_state: int,
-        n_ctrl: int,
-        horizon: int,
-    ):
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         super().__init__()
         self.predict = lqr.NamedLQGPrediction(n_state, n_ctrl, horizon)
         self.expected = ExpectedValue()
@@ -58,9 +52,9 @@ class PolicyLoss(nn.Module):
     def forward(
         self,
         policy: lqr.Linear,
-        dynamics: lqr.LinDynamics,
+        dynamics: lqr.LinSDynamics,
         cost: lqr.QuadCost,
-        rho: tuple[Tensor, Tensor],
+        rho: lqr.GaussInit,
     ):
         _, vval = self.predict(policy, dynamics, cost)
         vval = tuple(x.select("H", 0) for x in vval)
@@ -68,42 +62,25 @@ class PolicyLoss(nn.Module):
         return cost
 
 
-class LightningModel(pl.LightningModule):
-    # pylint:disable=too-many-ancestors
-    actor: nn.Module
-    model: nn.Module
-    mdp: nn.Module
-    policy_loss: nn.Module
-    early_stop_on: str = "val/loss"
+def policy_svg(policy: DeterministicPolicy, value: Tensor) -> lqr.Linear:
+    """Computes the policy SVG from the estimated return."""
+    # pylint:disable=invalid-name
+    policy.zero_grad(set_to_none=True)
+    value.backward()
+    K, k = policy.standard_form()
+    return K.grad.clone(), k.grad.clone()
 
-    def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
+
+class MonteCarloSVG(nn.Module):
+    """Computes the Monte Carlo aproximation for SVGs."""
+
+    def __init__(self, policy: DeterministicPolicy, model: LQGModule):
         super().__init__()
-        self.actor = policy.module.actor
-        self.model = policy.module.model
-        self.mdp = env.module
-        self.policy_loss = PolicyLoss(env.n_state, env.n_ctrl, env.horizon)
-
-        self.hparams.learning_rate = 1e-3
-        self.hparams.mc_samples = 256
-
-        self._gold_standard = self.analytic_svg(ground_truth=True)
-        self._init_model()
-
-    def _init_model(self):
-        def initialize(module: nn.Module):
-            if isinstance(module, TVLinearNormalParams):
-                nn.init.xavier_uniform_(module.F)
-                nn.init.constant_(module.f, 0.0)
-
-        self.model.apply(initialize)
-
-    def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
-        """Batched trajectory log prob."""
-        # pylint:disable=arguments-differ
-        return self.model.log_prob(obs, act, new_obs)
+        self.policy = policy
+        self.model = model
 
     def rsample_trajectory(
-        self, sample_shape: torch.Size = torch.Size(), ground_truth: bool = False
+        self, sample_shape: torch.Size = torch.Size()
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Sample trajectory for Stochastic Value Gradients.
 
@@ -112,24 +89,21 @@ class LightningModel(pl.LightningModule):
 
         Args:
             sample_shape: shape for batched trajectory samples
-            ground_truth: whether to use the dynamics of the MDP to
-                sample trajectories
 
         Returns:
             Trajectory sample following the policy and its corresponding
             log-likelihood under the model
         """
         sample_shape = torch.Size(sample_shape)
-        model = self.mdp if ground_truth else self.model
 
         batch = []
-        obs, logp = model.init.rsample(sample_shape)
+        obs, logp = self.model.init.rsample(sample_shape)
         obs = obs.refine_names(*(f"B{i+1}" for i, _ in enumerate(sample_shape)), ...)
-        for _ in range(model.horizon):
-            act = self.actor(obs)
-            rew = model.reward(obs, act)
+        for _ in range(self.model.horizon):
+            act = self.policy(obs)
+            rew = self.model.reward(obs, act)
             # No sample_shape needed since initial states are batched
-            new_obs, logp_t = model.trans.rsample(model.trans(obs, act))
+            new_obs, logp_t = self.model.trans.rsample(self.model.trans(obs, act))
 
             batch += [(obs, act, rew, new_obs)]
             logp = logp + logp_t
@@ -154,7 +128,7 @@ class LightningModel(pl.LightningModule):
         ret = rew.sum("H")
         return ret
 
-    def monte_carlo_value(self, samples: int = 1) -> Tensor:
+    def value(self, samples: int = 1) -> Tensor:
         """Monte Carlo estimate of the Stochastic Value.
 
         Args:
@@ -169,25 +143,7 @@ class LightningModel(pl.LightningModule):
         mc_performance = rets.mean("B1")
         return mc_performance
 
-    def analytic_value(self, ground_truth: bool = False) -> Tensor:
-        """Compute the analytic policy performance using the value function.
-
-        Solves the prediction problem for the current policy and uses the
-        resulting state-value function to compute the expected return.
-
-        Args:
-            ground_truth: whether to use the dynamics of the MDP to derive
-               the true value (gold standard)
-
-        Returns:
-            A tensor representing the policy's expected return
-        """
-        policy = self.actor.standard_form()
-        model = self.mdp.standard_form() if ground_truth else self.model.standard_form()
-        value = -self.policy_loss(policy, *model)
-        return value
-
-    def monte_carlo_svg(self, samples: int = 1) -> tuple[Tensor, lqr.Linear]:
+    def forward(self, samples: int = 1) -> tuple[Tensor, lqr.Linear]:
         """Monte Carlo estimate of the Stochastic Value Gradient.
 
         Args:
@@ -198,36 +154,85 @@ class LightningModel(pl.LightningModule):
             iterable of gradients of the expected return with respect to
             each policy parameter
         """
-        mc_performance = self.monte_carlo_value(samples)
-        svg = self._current_policy_svg(mc_performance)
+        mc_performance = self.value(samples)
+        svg = policy_svg(self.policy, mc_performance)
         return mc_performance, svg
 
-    def analytic_svg(self, ground_truth: bool = False) -> tuple[Tensor, lqr.Linear]:
+
+class AnalyticSVG(nn.Module):
+    """Computes the SVG analytic via LQG prediction."""
+
+    def __init__(self, policy: DeterministicPolicy, model: LQGModule):
+        super().__init__()
+        self.policy = policy
+        self.model = model
+        self.policy_loss = PolicyLoss(model.n_state, model.n_ctrl, model.horizon)
+
+    def value(self) -> Tensor:
+        """Compute the analytic policy performance using the value function.
+
+        Solves the prediction problem for the current policy and uses the
+        resulting state-value function to compute the expected return.
+
+        Returns:
+            A tensor representing the policy's expected return
+        """
+        policy = self.policy.standard_form()
+        dynamics, cost, init = self.model.standard_form()
+        value = -self.policy_loss(policy, dynamics, cost, init)
+        return value
+
+    def forward(self) -> tuple[Tensor, lqr.Linear]:
         """Compute the analytic SVG using the value function.
 
         Solves the prediction problem for the current policy and uses the
         resulting state-value function to compute the expected return and its
         gradient w.r.t. policy parameters.
 
-        Args:
-            ground_truth: whether to use the dynamics of the MDP to derive
-               the true SVG (gold standard)
-
         Returns:
             A tuple with the expected policy return (as a tensor) and an
             iterable of gradients of the expected return w.r.t. each policy
             parameter
         """
-        value = self.analytic_value(ground_truth=ground_truth)
-        svg = self._current_policy_svg(value)
+        value = self.value()
+        svg = policy_svg(self.policy, value)
         return value, svg
 
-    def _current_policy_svg(self, value: Tensor) -> lqr.Linear:
-        # pylint:disable=invalid-name
-        self.actor.zero_grad(set_to_none=True)
-        value.backward()
-        K, k = self.actor.standard_form()
-        return K.grad.clone(), k.grad.clone()
+
+class LightningModel(pl.LightningModule):
+    # pylint:disable=too-many-ancestors
+    actor: DeterministicPolicy
+    model: LQGModule
+    mdp: LQGModule
+    gold_standard: tuple[Tensor, lqr.Linear]
+    early_stop_on: str = "val/loss"
+
+    def __init__(self, policy: LQGPolicy, env: TorchLQGMixin):
+        super().__init__()
+        self.actor = policy.module.actor
+        self.model = policy.module.model
+        self.mdp = env.module
+        self.monte_carlo_svg = MonteCarloSVG(self.actor, self.model)
+        self.analytic_svg = AnalyticSVG(self.actor, self.model)
+
+        self.hparams.learning_rate = 1e-3
+        self.hparams.mc_samples = 256
+
+        self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
+        self._init_model()
+
+    def _init_model(self):
+        def initialize(module: nn.Module):
+            if isinstance(module, TVLinearNormalParams):
+                nn.init.xavier_uniform_(module.F)
+                nn.init.constant_(module.f, 0.0)
+
+        self.model.apply(initialize)
+
+    def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+        """Batched trajectory log prob."""
+        # pylint:disable=arguments-differ
+        return self.model.log_prob(obs, act, new_obs)
 
     def configure_optimizers(self):
         params = nn.ParameterList(
@@ -276,10 +281,10 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: Optional[str] = None):
-        true_val, true_svg = self._gold_standard
+        true_val, true_svg = self.gold_standard
         with torch.enable_grad():
             mc_val, mc_svg = self.monte_carlo_svg(samples=self.hparams.mc_samples)
-            analytic_val, analytic_svg = self.analytic_svg(ground_truth=False)
+            analytic_val, analytic_svg = self.analytic_svg()
         self.zero_grad(set_to_none=True)
 
         prfx = "" if prefix is None else prefix + "/"
@@ -297,7 +302,7 @@ class LightningModel(pl.LightningModule):
 
     def log_gold_standard(self):
         """Logs gold standard value and gradient."""
-        true_val, true_svg = self._gold_standard
+        true_val, true_svg = self.gold_standard
         self.log("true_value", true_val)
         self.log("true_svg_norm", linear_feedback_norm(true_svg))
 
@@ -321,25 +326,29 @@ def test_lightning_model():
         """
         )
 
-    print("Model sample:")
-    print_traj(model.rsample_trajectory([]))
-    print("Batched model sample:")
-    print_traj(model.rsample_trajectory([10]))
-    print("MDP sample:")
-    print_traj(model.rsample_trajectory([], ground_truth=True))
+    monte_carlo = model.monte_carlo_svg
+    analytic = model.analytic_svg
+    true_mc = MonteCarloSVG(model.actor, model.mdp)
 
-    obs, act, _, new_obs, sample_logp = model.rsample_trajectory([10])
+    print("Model sample:")
+    print_traj(monte_carlo.rsample_trajectory([]))
+    print("Batched model sample:")
+    print_traj(monte_carlo.rsample_trajectory([10]))
+    print("MDP sample:")
+    print_traj(true_mc.rsample_trajectory([]))
+
+    obs, act, _, new_obs, sample_logp = monte_carlo.rsample_trajectory([10])
     print(f"RSample logp: {sample_logp}, {sample_logp.shape}")
     traj_logp = model(obs, act, new_obs)
     print(f"Traj logp: {traj_logp}, {traj_logp.shape}")
     print("Model logp of MDP sample:")
-    obs, act, _, new_obs, _ = model.rsample_trajectory([10], ground_truth=True)
+    obs, act, _, new_obs, _ = true_mc.rsample_trajectory([10])
     traj_logp = model(obs, act, new_obs)
     print(traj_logp, traj_logp.shape)
 
-    print("Monte Carlo value:", model.monte_carlo_value(samples=256))
-    print("Analytic value:", model.analytic_value(ground_truth=False))
-    print("True value:", model.analytic_value(ground_truth=True))
+    print("Monte Carlo value:", monte_carlo.value(samples=256))
+    print("Analytic value:", analytic.value())
+    print("True value:", model.gold_standard[0])
 
 
 if __name__ == "__main__":
