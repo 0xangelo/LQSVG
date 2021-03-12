@@ -1865,7 +1865,7 @@ tune = ["pandas", "tabulate", "tensorboardx", "dataclasses"]
 
 [[package]]
 name = "raylab"
-version = "0.15.2"
+version = "0.15.3"
 description = "Reinforcement learning algorithms in RLlib and PyTorch."
 category = "main"
 optional = false
@@ -2495,7 +2495,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "96ea92d76d362d0c374a07901c143fab05b2ce7ee46c4145231016b208df1334"
+content-hash = "ad30b66d8e849354cbc46fe80dcfc0aa9f1bbfcaf8a72bfb6253024d56948590"
 
 [metadata.files]
 absl-py = [
@@ -3802,8 +3802,8 @@ ray = [
     {file = "ray-1.1.0-cp38-cp38-win_amd64.whl", hash = "sha256:18983d1f77f27e9de256d53be596e92b04fa2e614f3800faf5c92e11484f39ab"},
 ]
 raylab = [
-    {file = "raylab-0.15.2-py3-none-any.whl", hash = "sha256:ee0a748845d4692986c7c7c375ad6d1091fbfe48d91a803bb66b0337a9ade3cc"},
-    {file = "raylab-0.15.2.tar.gz", hash = "sha256:0878f868d4225235e5b10b9532932055704a9dc86d785351e8efb44b15abd491"},
+    {file = "raylab-0.15.3-py3-none-any.whl", hash = "sha256:add342df081868ff012d0950535a0bb79bc5ca230e454c2a8d9c174286672049"},
+    {file = "raylab-0.15.3.tar.gz", hash = "sha256:4a9a53afbeb9ad938b3247888ab26d8b07435ba7e01b435b828151ac7f926917"},
 ]
 redis = [
     {file = "redis-3.5.3-py2.py3-none-any.whl", hash = "sha256:432b788c4530cfe16d8d943a09d40ca6c16149727e4afe8c2c9d5580c59d9f24"},
