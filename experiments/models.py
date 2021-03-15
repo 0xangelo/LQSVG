@@ -199,6 +199,21 @@ class AnalyticSVG(nn.Module):
         return value, svg
 
 
+def glorot_init_model(model: nn.Module):
+    """Apply Glorot initialization to every time-varying linear submodule.
+
+    Args:
+        model: neural network PyTorch module
+    """
+
+    def initialize(module: nn.Module):
+        if isinstance(module, TVLinearNormalParams):
+            nn.init.xavier_uniform_(module.F)
+            nn.init.constant_(module.f, 0.0)
+
+    model.apply(initialize)
+
+
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     actor: DeterministicPolicy
@@ -219,15 +234,7 @@ class LightningModel(pl.LightningModule):
         self.hparams.mc_samples = 256
 
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
-        self._init_model()
-
-    def _init_model(self):
-        def initialize(module: nn.Module):
-            if isinstance(module, TVLinearNormalParams):
-                nn.init.xavier_uniform_(module.F)
-                nn.init.constant_(module.f, 0.0)
-
-        self.model.apply(initialize)
+        glorot_init_model(self.model)
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
