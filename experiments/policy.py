@@ -1,6 +1,7 @@
 # pylint:disable=missing-docstring,invalid-name
 from ray.rllib import RolloutWorker
 
+import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.gym import RandomVectorLQG
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
@@ -21,7 +22,7 @@ def make_worker(env_config: dict) -> RolloutWorker:
         env_config=env_config,
         num_envs=num_envs,
         policy_spec=LQGPolicy,
-        policy_config={},
+        policy_config={"framework": "torch"},
         rollout_fragment_length=env_config["horizon"],
         batch_mode="truncate_episodes",
         _use_trajectory_view_api=False,
@@ -32,6 +33,7 @@ def make_worker(env_config: dict) -> RolloutWorker:
     return worker
 
 
+@nt.suppress_named_tensor_warning()
 def test_worker():
     # pylint:disable=import-outside-toplevel
     import numpy as np
