@@ -110,6 +110,8 @@ class TorchLQGMixin:
         self.module = LQGModule(
             TVLinearDynamics(dynamics), QuadraticReward(cost), InitStateDynamics(init)
         )
+        # Ensure optimizers don't update the MDP
+        self.module.requires_grad_(False)
         self.dynamics, self.cost, self.rho = self.module.standard_form()
         self.observation_space, self.action_space = self._setup_spaces()
 
