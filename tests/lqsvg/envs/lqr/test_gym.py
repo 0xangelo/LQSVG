@@ -74,7 +74,7 @@ def test_properties(env_creator, spec):
 def test_solution(env_creator, spec):
     env = env_creator(spec)
 
-    pistar, qstar, vstar = env.solution()
+    pistar, qstar, vstar = env.solution
     assert pistar[0].names == tuple("H R C".split())
     assert pistar[1].names == tuple("H R".split())
 

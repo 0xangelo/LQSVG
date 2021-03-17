@@ -1,5 +1,6 @@
 """OpenAI Gym interface for LQG."""
 from dataclasses import dataclass
+from functools import cached_property
 from typing import List
 from typing import Optional
 from typing import Tuple
@@ -137,10 +138,11 @@ class TorchLQGMixin:
         )
         return observation_space, action_space
 
-    @torch.no_grad()
+    @cached_property
     def solution(self) -> Tuple[Linear, Quadratic, Quadratic]:
-        solver = NamedLQGControl(self.n_state, self.n_ctrl, self.horizon)
-        solution = solver(self.dynamics, self.cost)
+        with torch.no_grad():
+            solver = NamedLQGControl(self.n_state, self.n_ctrl, self.horizon)
+            solution = solver(self.dynamics, self.cost)
         return solution
 
 
