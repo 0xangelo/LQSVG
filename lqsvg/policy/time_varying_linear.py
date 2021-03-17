@@ -186,7 +186,7 @@ class LQGPolicy(TorchPolicy):
         return lqr.dims_from_spaces(self.observation_space, self.action_space)
 
     def initialize_from_lqg(self, env: TorchLQGMixin):
-        optimal: lqr.Linear = env.solution()[0]
+        optimal: lqr.Linear = env.solution[0]
         self.module.actor.initialize_from_optimal(optimal)
         self.module.model.reward.copy(env.cost)
 
