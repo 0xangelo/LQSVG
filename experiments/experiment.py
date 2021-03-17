@@ -2,11 +2,10 @@
 import pytorch_lightning as pl
 
 import lqsvg.torch.named as nt
-
-from data import build_datamodule  # pylint:disable=wrong-import-order
-from models import LightningModel  # pylint:disable=wrong-import-order
-from policy import make_worker  # pylint:disable=wrong-import-order
-from utils import suppress_dataloader_warning  # pylint:disable=wrong-import-order
+from lqsvg.experiment.data import build_datamodule
+from lqsvg.experiment.models import LightningModel
+from lqsvg.experiment.policy import make_worker
+from lqsvg.experiment.utils import suppress_dataloader_warning
 
 
 @nt.suppress_named_tensor_warning()

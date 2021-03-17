@@ -5,8 +5,6 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.gym import RandomVectorLQG
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
-# from lqsvg.policy import RandomPolicy
-
 
 def make_worker(env_config: dict) -> RolloutWorker:
     # pylint:disable=import-outside-toplevel

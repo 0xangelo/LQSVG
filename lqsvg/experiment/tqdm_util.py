@@ -2,7 +2,7 @@
 from ray.rllib import SampleBatch
 from tqdm.auto import tqdm
 
-from utils import num_complete_episodes  # pylint:disable=wrong-import-order
+from .utils import num_complete_episodes
 
 
 def collect_with_progress(worker, total_trajs, prog: bool = True) -> SampleBatch:

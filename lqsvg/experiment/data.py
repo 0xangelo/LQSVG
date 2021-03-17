@@ -18,8 +18,8 @@ from torch.utils.data import TensorDataset
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 
-from tqdm_util import collect_with_progress  # pylint:disable=wrong-import-order
-from utils import group_batch_episodes  # pylint:disable=wrong-import-order
+from .tqdm_util import collect_with_progress
+from .utils import group_batch_episodes
 
 
 @dataclass
@@ -176,10 +176,10 @@ def check_dataloaders(datamodule):
 
 def test_datamodule():
     # pylint:disable=missing-function-docstring,import-outside-toplevel
-    from policy import make_worker
+    from .policy import make_worker
 
     # Create and initialize
-    worker = make_worker()
+    worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
     datamodule = build_datamodule(worker)
     check_dataloaders(datamodule)
 

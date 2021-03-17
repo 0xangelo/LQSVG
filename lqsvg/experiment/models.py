@@ -13,11 +13,12 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules import TVLinearNormalParams, LQGModule
+from lqsvg.envs.lqr.modules import LQGModule
+from lqsvg.envs.lqr.modules import TVLinearNormalParams
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
-from utils import linear_feedback_norm  # pylint:disable=wrong-import-order
-from utils import linear_feedback_cossim  # pylint:disable=wrong-import-order
+from .utils import linear_feedback_cossim
+from .utils import linear_feedback_norm
 
 
 class ExpectedValue(nn.Module):
@@ -316,7 +317,7 @@ class LightningModel(pl.LightningModule):
 
 @nt.suppress_named_tensor_warning()
 def test_lightning_model():
-    from policy import make_worker
+    from .policy import make_worker
 
     worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
     model = LightningModel(worker.get_policy(), worker.env)

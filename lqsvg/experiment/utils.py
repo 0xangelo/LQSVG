@@ -1,4 +1,4 @@
-"""Utilities for handling sample batches in RLlib."""
+"""Utilities for RLlib sample batches, warnings, and linear feedback policies."""
 import warnings
 from contextlib import contextmanager
 
