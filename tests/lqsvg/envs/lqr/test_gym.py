@@ -49,7 +49,7 @@ def test_spec(spec: LQGGenerator, n_state, n_ctrl, horizon, gen_seed):
     assert spec.n_state == n_state
     assert spec.n_ctrl == n_ctrl
     assert spec.horizon == horizon
-    assert spec.gen_seed == gen_seed
+    assert spec.seed == gen_seed
 
 
 def test_gen_seed(env_creator, config):

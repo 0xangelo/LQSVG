@@ -54,11 +54,8 @@ class LQGGenerator(DataClassJsonMixin):
             - "xavier_normal"
         stationary: whether the transition kernel parameters should be
             constant over time or vary by timestep
-        gen_seed: integer seed for random number generator used in
+        seed: integer seed for random number generator used in
             initializing LQG parameters
-        num_envs: how many environments to simulate in parallel. Effectively
-            tells the environment to sample batches from the initial state
-            distribution.
     """
 
     # pylint:disable=too-many-instance-attributes
@@ -67,7 +64,7 @@ class LQGGenerator(DataClassJsonMixin):
     horizon: int
     trans_kernel_init: str = "standard_normal"
     stationary: bool = False
-    gen_seed: Optional[int] = None
+    seed: Optional[int] = None
 
     def make_lqg(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
         """Generates random LQG parameters.
@@ -84,9 +81,9 @@ class LQGGenerator(DataClassJsonMixin):
             ctrl_size=self.n_ctrl,
             horizon=self.horizon,
             stationary=self.stationary,
-            rng=self.gen_seed,
+            rng=self.seed,
         )
-        init = make_gaussinit(state_size=self.n_state, rng=self.gen_seed)
+        init = make_gaussinit(state_size=self.n_state, rng=self.seed)
 
         if self.trans_kernel_init == "xavier_uniform":
             nn.init.xavier_uniform_(dynamics.F)
@@ -193,7 +190,12 @@ class RandomLQGEnv(LQGEnv):
 
 
 class RandomVectorLQG(TorchLQGMixin, VectorEnv):
-    """Vectorized implementation of LQG environment."""
+    """Vectorized implementation of LQG environment.
+
+    Attributes:
+        num_envs: how many environments to simulate in parallel. Effectively
+            the sample size for the initial state distribution.
+    """
 
     num_envs: int
 
