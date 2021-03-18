@@ -1,6 +1,7 @@
 # pylint:disable=missing-module-docstring
 from __future__ import annotations
 
+import contextlib
 from typing import Optional
 from typing import Union
 
@@ -10,6 +11,17 @@ from torch import Generator
 from torch import Tensor
 
 import lqsvg.np_util as np_util
+
+
+@contextlib.contextmanager
+def default_generator_seed(seed: int):
+    """Temporarily set PyTorch's random seed."""
+    state: torch.ByteTensor = torch.get_rng_state()
+    try:
+        torch.manual_seed(seed)
+        yield
+    finally:
+        torch.set_rng_state(state)
 
 
 def default_rng(seed: Union[None, int, Generator] = None) -> Generator:
