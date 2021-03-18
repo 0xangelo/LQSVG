@@ -1,17 +1,17 @@
 # pylint:disable=missing-module-docstring
-from typing import Optional
-from typing import Tuple
+from __future__ import annotations
+
 from typing import Union
 
 import numpy as np
 from numpy.random._generator import Generator
 
 
+RNG = Union[int, Generator, None]
+
+
 def make_spd_matrix(
-    n_dim: int,
-    *,
-    sample_shape: Tuple[int, ...] = (),
-    rng: Optional[Union[Generator, int]] = None
+    n_dim: int, *, sample_shape: tuple[int, ...] = (), rng: RNG = None
 ) -> np.ndarray:
     """Generate a random symmetric, positive-definite matrix.
 
@@ -41,7 +41,7 @@ def make_spd_matrix(
     return X
 
 
-def np_expand(arr: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
+def np_expand(arr: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
     """Expand a numpy array by broadcasting it to the desired shape.
 
     Mirrors the behavior of torch.Tensor.expand.
