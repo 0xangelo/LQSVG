@@ -66,7 +66,7 @@ class LQGGenerator(DataClassJsonMixin):
     stationary: bool = False
     seed: Optional[int] = None
 
-    def make_lqg(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
+    def __call__(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
         """Generates random LQG parameters.
 
         Generates a transition kernel, cost function and initial state
@@ -184,8 +184,8 @@ class RandomLQGEnv(LQGEnv):
 
     # pylint:disable=abstract-method
     def __init__(self, config: dict):
-        gen = LQGGenerator(**config)
-        dynamics, cost, init = gen.make_lqg()
+        generator = LQGGenerator(**config)
+        dynamics, cost, init = generator()
         super().__init__(dynamics=dynamics, cost=cost, init=init)
 
 
@@ -203,8 +203,8 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
         config = config.copy()  # ensure .pop() has no side effects
         num_envs = config.pop("num_envs")
 
-        gen = LQGGenerator(**config)
-        dynamics, cost, init = gen.make_lqg()
+        generator = LQGGenerator(**config)
+        dynamics, cost, init = generator()
         self.setup(dynamics, cost, init)
         self._curr_states = None
         super().__init__(self.observation_space, self.action_space, num_envs)
