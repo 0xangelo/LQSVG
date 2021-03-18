@@ -68,7 +68,6 @@ class LQGGenerator(DataClassJsonMixin):
     trans_kernel_init: str = "standard_normal"
     stationary: bool = False
     gen_seed: Optional[int] = None
-    num_envs: Optional[int] = None
 
     def make_lqg(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
         """Generates random LQG parameters.
@@ -187,8 +186,9 @@ class RandomLQGEnv(LQGEnv):
     """Random Linear Quadratic Gaussian from JSON specifications."""
 
     # pylint:disable=abstract-method
-    def __init__(self, spec: LQGGenerator):
-        dynamics, cost, init = spec.make_lqg()
+    def __init__(self, config: dict):
+        gen = LQGGenerator(**config)
+        dynamics, cost, init = gen.make_lqg()
         super().__init__(dynamics=dynamics, cost=cost, init=init)
 
 
@@ -196,15 +196,16 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
     """Vectorized implementation of LQG environment."""
 
     num_envs: int
-    spec: LQGGenerator
 
-    def __init__(self, spec: LQGGenerator):
-        assert spec.num_envs is not None
-        dynamics, cost, init = spec.make_lqg()
+    def __init__(self, config: dict):
+        config = config.copy()  # ensure .pop() has no side effects
+        num_envs = config.pop("num_envs")
+
+        gen = LQGGenerator(**config)
+        dynamics, cost, init = gen.make_lqg()
         self.setup(dynamics, cost, init)
-        self.spec = spec
         self._curr_states = None
-        super().__init__(self.observation_space, self.action_space, spec.num_envs)
+        super().__init__(self.observation_space, self.action_space, num_envs)
 
     @property
     def curr_states(self) -> Optional[np.ndarray]:

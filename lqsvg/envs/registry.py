@@ -6,17 +6,15 @@ ENVS = {}
 
 
 def _random_lqg_maker(config: dict) -> gym.Env:
-    from lqsvg.envs.lqr.gym import LQGGenerator, RandomLQGEnv
+    from lqsvg.envs.lqr.gym import RandomLQGEnv
 
-    spec = LQGGenerator(**config)
-    return RandomLQGEnv(spec)
+    return RandomLQGEnv(config)
 
 
 def _random_vector_lqg_maker(config: dict) -> VectorEnv:
-    from lqsvg.envs.lqr.gym import LQGGenerator, RandomVectorLQG
+    from lqsvg.envs.lqr.gym import RandomVectorLQG
 
-    spec = LQGGenerator(**config)
-    return RandomVectorLQG(spec)
+    return RandomVectorLQG(config)
 
 
 ENVS.update(
