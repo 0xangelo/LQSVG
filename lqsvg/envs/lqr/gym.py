@@ -8,6 +8,7 @@ from typing import Tuple
 import gym  # pylint:disable=import-self
 import numpy as np
 import torch
+import torch.nn as nn
 from dataclasses_json import DataClassJsonMixin
 from ray.rllib.env import VectorEnv
 from ray.rllib.utils.typing import EnvActionType
@@ -54,6 +55,10 @@ class LQGSpec(DataClassJsonMixin):
         deterministic_trans: whether the covariance for state transition
             noise should be zero or a randomly initialized positive
             definite matrix. Has no effect for now
+        trans_kernel_init: how to initialize the transition matrix. One of:
+            - "standard_normal"
+            - "xavier_uniform"
+            - "xavier_normal"
         stationary: whether the transition kernel parameters should be
             constant over time or vary by timestep
         gen_seed: integer seed for random number generator used in
@@ -69,6 +74,7 @@ class LQGSpec(DataClassJsonMixin):
     horizon: int = 20
     deterministic_start: bool = False
     deterministic_trans: bool = False
+    trans_kernel_init: str = "standard_normal"
     stationary: bool = False
     gen_seed: Optional[int] = None
     num_envs: Optional[int] = None
@@ -91,6 +97,12 @@ class LQGSpec(DataClassJsonMixin):
             rng=self.gen_seed,
         )
         init = make_gaussinit(state_size=self.n_state, rng=self.gen_seed)
+
+        if self.trans_kernel_init == "xavier_uniform":
+            nn.init.xavier_uniform_(dynamics.F)
+        if self.trans_kernel_init == "xavier_normal":
+            nn.init.xavier_normal_(dynamics.F)
+
         return dynamics, cost, init
 
 
