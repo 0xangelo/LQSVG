@@ -52,7 +52,7 @@ class LQGGenerator(DataClassJsonMixin):
             - "standard_normal"
             - "xavier_uniform"
             - "xavier_normal"
-        stationary: whether the transition kernel parameters should be
+        stationary: whether dynamics and cost parameters should be
             constant over time or vary by timestep
         seed: integer seed for random number generator used in
             initializing LQG parameters
