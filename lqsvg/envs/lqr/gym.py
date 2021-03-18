@@ -48,13 +48,6 @@ class LQGGenerator(DataClassJsonMixin):
         n_state: dimensionality of the state vectors
         n_ctrl: dimensionality of the control (action) vectors
         horizon: task horizon
-        deterministic_start: whether the initial state distribution
-            should be a dirac delta or multivariate diagonal Gaussian
-            with mean zero and covariance as identity matrix. Has no
-            effect for now
-        deterministic_trans: whether the covariance for state transition
-            noise should be zero or a randomly initialized positive
-            definite matrix. Has no effect for now
         trans_kernel_init: how to initialize the transition matrix. One of:
             - "standard_normal"
             - "xavier_uniform"
@@ -72,8 +65,6 @@ class LQGGenerator(DataClassJsonMixin):
     n_state: int
     n_ctrl: int
     horizon: int
-    deterministic_start: bool = False
-    deterministic_trans: bool = False
     trans_kernel_init: str = "standard_normal"
     stationary: bool = False
     gen_seed: Optional[int] = None
