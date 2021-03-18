@@ -41,7 +41,7 @@ Info = dict
 
 
 @dataclass
-class LQGSpec(DataClassJsonMixin):
+class LQGGenerator(DataClassJsonMixin):
     """Specifications for LQG generation.
 
     Args:
@@ -196,7 +196,7 @@ class RandomLQGEnv(LQGEnv):
     """Random Linear Quadratic Gaussian from JSON specifications."""
 
     # pylint:disable=abstract-method
-    def __init__(self, spec: LQGSpec):
+    def __init__(self, spec: LQGGenerator):
         dynamics, cost, init = spec.make_lqg()
         super().__init__(dynamics=dynamics, cost=cost, init=init)
 
@@ -205,9 +205,9 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
     """Vectorized implementation of LQG environment."""
 
     num_envs: int
-    spec: LQGSpec
+    spec: LQGGenerator
 
-    def __init__(self, spec: LQGSpec):
+    def __init__(self, spec: LQGGenerator):
         assert spec.num_envs is not None
         dynamics, cost, init = spec.make_lqg()
         self.setup(dynamics, cost, init)

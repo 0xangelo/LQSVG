@@ -3,7 +3,7 @@ from typing import Type
 import numpy as np
 import pytest
 
-from lqsvg.envs.lqr.gym import LQGSpec
+from lqsvg.envs.lqr.gym import LQGGenerator
 from lqsvg.envs.lqr.gym import RandomLQGEnv
 from lqsvg.envs.lqr.gym import RandomVectorLQG
 
@@ -19,14 +19,14 @@ gen_seed = standard_fixture((1, 2, 3), "Seed")
 
 
 @pytest.fixture
-def spec_cls() -> Type[LQGSpec]:
-    return LQGSpec
+def spec_cls() -> Type[LQGGenerator]:
+    return LQGGenerator
 
 
 @pytest.fixture
 def spec(
-    spec_cls: Type[LQGSpec], n_state: int, n_ctrl: int, horizon: int, gen_seed: int
-) -> LQGSpec:
+    spec_cls: Type[LQGGenerator], n_state: int, n_ctrl: int, horizon: int, gen_seed: int
+) -> LQGGenerator:
     return spec_cls(
         n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, gen_seed=gen_seed, num_envs=1
     )
@@ -38,7 +38,7 @@ def env_creator(request):
 
 
 # Test common TorchLQGMixin interface ==========================================
-def test_spec(spec: LQGSpec, n_state, n_ctrl, horizon, gen_seed):
+def test_spec(spec: LQGGenerator, n_state, n_ctrl, horizon, gen_seed):
     assert spec.n_state == n_state
     assert spec.n_ctrl == n_ctrl
     assert spec.horizon == horizon
@@ -89,7 +89,7 @@ def test_solution(env_creator, spec):
 
 # ==============================================================================
 # Test RandomLQGEnv ============================================================
-def test_reset(spec: LQGSpec):
+def test_reset(spec: LQGGenerator):
     env = RandomLQGEnv(spec)
 
     obs = env.reset()
@@ -97,7 +97,7 @@ def test_reset(spec: LQGSpec):
     assert obs in env.observation_space  # pylint:disable=unsupported-membership-test
 
 
-def test_step(spec: LQGSpec):
+def test_step(spec: LQGGenerator):
     env = RandomLQGEnv(spec)
 
     env.reset()
@@ -118,13 +118,13 @@ num_envs = standard_fixture((1, 2, 4), "NEnvs")
 
 
 @pytest.fixture
-def vector_spec(spec: LQGSpec, num_envs: int) -> LQGSpec:
+def vector_spec(spec: LQGGenerator, num_envs: int) -> LQGGenerator:
     spec.num_envs = num_envs
     return spec
 
 
 # Test RandomVectorLQG =========================================================
-def test_vector_init(vector_spec: LQGSpec):
+def test_vector_init(vector_spec: LQGGenerator):
     env = RandomVectorLQG(vector_spec)
 
     assert env.num_envs == vector_spec.num_envs
@@ -132,7 +132,7 @@ def test_vector_init(vector_spec: LQGSpec):
     assert env.curr_states is None
 
 
-def test_vector_reset(vector_spec: LQGSpec):
+def test_vector_reset(vector_spec: LQGGenerator):
     env = RandomVectorLQG(vector_spec)
 
     obs = env.vector_reset()
@@ -151,7 +151,7 @@ def swap_row(arr: np.ndarray, in1: int, in2: int):
     arr[in2] = swap
 
 
-def test_reset_at(vector_spec: LQGSpec):
+def test_reset_at(vector_spec: LQGGenerator):
     env = RandomVectorLQG(vector_spec)
     rng = np.random.default_rng(vector_spec.gen_seed)
 
@@ -170,7 +170,7 @@ def test_reset_at(vector_spec: LQGSpec):
     assert np.allclose(reset, curr_states[0])
 
 
-def test_vector_step(vector_spec: LQGSpec):
+def test_vector_step(vector_spec: LQGGenerator):
     env = RandomVectorLQG(vector_spec)
 
     env.vector_reset()
