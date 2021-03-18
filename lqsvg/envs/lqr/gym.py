@@ -88,9 +88,9 @@ class LQGSpec(DataClassJsonMixin):
             ctrl_size=self.n_ctrl,
             horizon=self.horizon,
             stationary=self.stationary,
-            np_random=self.gen_seed,
+            rng=self.gen_seed,
         )
-        init = make_gaussinit(state_size=self.n_state, np_random=self.gen_seed)
+        init = make_gaussinit(state_size=self.n_state, rng=self.gen_seed)
         return dynamics, cost, init
 
 

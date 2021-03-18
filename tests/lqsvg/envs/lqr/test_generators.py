@@ -41,10 +41,11 @@ def check_system(
     n_ctrl: int,
     stationary: bool = False,
 ):
-    # pylint:disable=invalid-name,too-many-arguments
+    # pylint:disable=invalid-name,too-many-arguments,too-many-locals
     tau_size = n_state + n_ctrl
 
-    assert all([torch.is_tensor(t) for x in (dynamics, cost) for t in x])
+    is_tensor = [torch.is_tensor(t) for x in (dynamics, cost) for t in x]
+    assert all(is_tensor)
 
     if isinstance(dynamics, LinDynamics):
         F, f = dynamics
@@ -73,9 +74,7 @@ def check_system(
 
 
 def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
-    dynamics, cost, _ = box_ddp_random_lqr(
-        timestep, ctrl_coeff, horizon, np_random=seed
-    )
+    dynamics, cost, _ = box_ddp_random_lqr(timestep, ctrl_coeff, horizon, rng=seed)
     n_state = dynamics.F.shape[-2]
     n_ctrl = dynamics.F.shape[-1] - n_state
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=True)
@@ -87,7 +86,7 @@ def test_make_lqr(n_state, n_ctrl, horizon, stationary, seed):
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=stationary,
-        np_random=seed,
+        rng=seed,
     )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=stationary)
 
@@ -98,7 +97,7 @@ def test_make_lqg(n_state, n_ctrl, horizon, stationary, seed):
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=stationary,
-        np_random=seed,
+        rng=seed,
     )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary)
 
@@ -119,7 +118,7 @@ def test_make_lqr_linear_navigation(goal, beta, horizon):
 
 
 def test_stack_lqs(n_state, n_ctrl, horizon, seed):
-    system = make_lqr(n_state, n_ctrl, horizon, np_random=seed)
+    system = make_lqr(n_state, n_ctrl, horizon, rng=seed)
     dynamics, cost = stack_lqs(system)
     assert isinstance(dynamics, LinDynamics)
     assert isinstance(cost, QuadCost)

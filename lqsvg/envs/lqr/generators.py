@@ -52,7 +52,7 @@ def box_ddp_random_lqr(
     timestep: float,
     ctrl_coeff: float,
     horizon: int,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> tuple[LinDynamics, QuadCost, Box]:
     # pylint:disable=line-too-long
     """Generate a random, control-limited LQR as described in the Box-DDP paper.
@@ -64,9 +64,9 @@ def box_ddp_random_lqr(
     # pylint:enable=line-too-long
     assert 0 < timestep < 1
 
-    np_random = np.random.default_rng(np_random)
-    state_size = np_random.integers(10, 100, endpoint=True)
-    ctrl_size = np_random.integers(1, state_size // 2, endpoint=True)
+    rng = np.random.default_rng(rng)
+    state_size = rng.integers(10, 100, endpoint=True)
+    ctrl_size = rng.integers(1, state_size // 2, endpoint=True)
 
     dynamics = _box_ddp_random_dynamics(state_size, ctrl_size, timestep, horizon)
     cost = _box_ddp_random_cost(state_size, ctrl_size, timestep, ctrl_coeff, horizon)
@@ -133,11 +133,11 @@ def make_lindynamics(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> LinDynamics:
     """Generate linear transition matrices."""
     # pylint:disable=too-many-arguments
-    np_random = np.random.default_rng(np_random)
+    rng = np.random.default_rng(rng)
 
     n_tau = state_size + ctrl_size
     mat_shape = (state_size, n_tau)
@@ -145,8 +145,8 @@ def make_lindynamics(
 
     horizon_shape = () if stationary else (horizon,)
     batch_shape = () if n_batch is None else (n_batch,)
-    F = np_random.normal(size=horizon_shape + batch_shape + mat_shape)
-    f = np_random.normal(size=horizon_shape + batch_shape + vec_shape)
+    F = rng.normal(size=horizon_shape + batch_shape + mat_shape)
+    f = rng.normal(size=horizon_shape + batch_shape + vec_shape)
 
     F, f = map(as_float_tensor, (F, f))
     F = expand_and_refine(nt.matrix(F), mat_shape, horizon=horizon, n_batch=n_batch)
@@ -160,23 +160,23 @@ def make_linsdynamics(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> LinSDynamics:
     """Generate stochastic linear dynamics parameters."""
     # pylint:disable=too-many-arguments
-    np_random = np.random.default_rng(np_random)
+    rng = np.random.default_rng(rng)
     F, f = make_lindynamics(
         state_size,
         ctrl_size,
         horizon,
         stationary=stationary,
         n_batch=n_batch,
-        np_random=np_random,
+        rng=rng,
     )
 
     batch_shape = () if n_batch is None else (n_batch,)
     sample_shape = (() if stationary else (horizon,)) + batch_shape
-    W = make_spd_matrix(state_size, sample_shape=sample_shape, rng=np_random)
+    W = make_spd_matrix(state_size, sample_shape=sample_shape, rng=rng)
     W = nt.matrix(as_float_tensor(W))
     W = expand_and_refine(W, (state_size, state_size), horizon=horizon, n_batch=n_batch)
 
@@ -189,11 +189,11 @@ def make_quadcost(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> QuadCost:
     """Generate quadratic cost parameters."""
     # pylint:disable=too-many-arguments
-    np_random = np.random.default_rng(np_random)
+    rng = np.random.default_rng(rng)
 
     n_tau = state_size + ctrl_size
     mat_shape = (n_tau, n_tau)
@@ -202,10 +202,8 @@ def make_quadcost(
     horizon_shape = () if stationary else (horizon,)
     batch_shape = () if n_batch is None else (n_batch,)
 
-    C = make_spd_matrix(
-        n_dim=n_tau, sample_shape=horizon_shape + batch_shape, rng=np_random
-    )
-    c = np_random.normal(size=horizon_shape + batch_shape + vec_shape)
+    C = make_spd_matrix(n_dim=n_tau, sample_shape=horizon_shape + batch_shape, rng=rng)
+    c = rng.normal(size=horizon_shape + batch_shape + vec_shape)
 
     C, c = map(as_float_tensor, (C, c))
     C = expand_and_refine(nt.matrix(C), mat_shape, horizon=horizon, n_batch=n_batch)
@@ -217,7 +215,7 @@ def make_gaussinit(
     state_size: int,
     n_batch: Optional[int] = None,
     sample_covariance: bool = False,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> GaussInit:
     """Generate parameters for Gaussian initial state distribution."""
     # pylint:disable=invalid-name
@@ -228,7 +226,7 @@ def make_gaussinit(
     mu = torch.zeros(batch_shape + vec_shape)
     if sample_covariance:
         sig = as_float_tensor(
-            make_spd_matrix(state_size, sample_shape=batch_shape, rng=np_random)
+            make_spd_matrix(state_size, sample_shape=batch_shape, rng=rng)
         )
     else:
         sig = torch.eye(state_size)
@@ -245,7 +243,7 @@ def make_lqr(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> tuple[LinDynamics, QuadCost]:
     # pylint:disable=too-many-arguments
     """Random LQR generator used in backpropagation-planning.
@@ -256,19 +254,19 @@ def make_lqr(
         horizon: Integer number of decision steps
         stationary: Whether to create time-invariant dynamics and cost
         n_batch: Batch size (number of LQR samples)
-        np_random: Numpy random number generator or integer seed
+        rng: Numpy random number generator or integer seed
 
     Source::
         https://github.com/renato-scaroni/backpropagation-planning/blob/master/src/Modules/Envs/lqr.py
     """
-    np_random = np.random.default_rng(np_random)
+    rng = np.random.default_rng(rng)
     dynamics = make_lindynamics(
         state_size,
         ctrl_size,
         horizon,
         stationary=stationary,
         n_batch=n_batch,
-        np_random=np_random,
+        rng=rng,
     )
     cost = make_quadcost(
         state_size,
@@ -276,7 +274,7 @@ def make_lqr(
         horizon,
         stationary=stationary,
         n_batch=n_batch,
-        np_random=np_random,
+        rng=rng,
     )
     return dynamics, cost
 
@@ -287,7 +285,7 @@ def make_lqg(
     horizon: int,
     stationary: bool,
     n_batch: Optional[int] = None,
-    np_random: Optional[Union[Generator, int]] = None,
+    rng: Optional[Union[Generator, int]] = None,
 ) -> tuple[LinSDynamics, QuadCost]:
     """Random LQG generator.
 
@@ -297,17 +295,17 @@ def make_lqg(
         horizon: Integer number of decision steps
         stationary: Whether to create time-invariant dynamics and cost
         n_batch: Batch size (number of LQG samples)
-        np_random: Numpy random number generator or integer seed
+        rng: Numpy random number generator or integer seed
     """
     # pylint:disable=too-many-arguments
-    np_random = np.random.default_rng(np_random)
+    rng = np.random.default_rng(rng)
     dynamics = make_linsdynamics(
         state_size,
         ctrl_size,
         horizon,
         stationary=stationary,
         n_batch=n_batch,
-        np_random=np_random,
+        rng=rng,
     )
     cost = make_quadcost(
         state_size,
@@ -315,7 +313,7 @@ def make_lqg(
         horizon,
         stationary=stationary,
         n_batch=n_batch,
-        np_random=np_random,
+        rng=rng,
     )
     return dynamics, cost
 

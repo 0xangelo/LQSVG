@@ -21,7 +21,7 @@ def stationary_stochastic_dynamics(n_state, n_ctrl, horizon, seed):
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=True,
-        np_random=seed,
+        rng=seed,
     )
     return dynamics
 
@@ -39,7 +39,7 @@ def stationary_cost(n_state, n_ctrl, horizon, seed):
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=True,
-        np_random=seed,
+        rng=seed,
     )
     return cost
 
