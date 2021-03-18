@@ -66,6 +66,10 @@ class LQGGenerator(DataClassJsonMixin):
     stationary: bool = False
     seed: Optional[int] = None
 
+    def __post_init__(self):
+        # pylint:disable=attribute-defined-outside-init
+        self._rng = np.random.default_rng(self.seed)
+
     def __call__(self) -> Tuple[LinSDynamics, QuadCost, GaussInit]:
         """Generates random LQG parameters.
 
@@ -81,9 +85,9 @@ class LQGGenerator(DataClassJsonMixin):
             ctrl_size=self.n_ctrl,
             horizon=self.horizon,
             stationary=self.stationary,
-            rng=self.seed,
+            rng=self._rng,
         )
-        init = make_gaussinit(state_size=self.n_state, rng=self.seed)
+        init = make_gaussinit(state_size=self.n_state, rng=self._rng)
 
         if self.trans_kernel_init == "xavier_uniform":
             nn.init.xavier_uniform_(dynamics.F)
