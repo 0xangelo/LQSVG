@@ -69,9 +69,9 @@ class LQGSpec(DataClassJsonMixin):
     """
 
     # pylint:disable=too-many-instance-attributes
-    n_state: int = 2
-    n_ctrl: int = 2
-    horizon: int = 20
+    n_state: int
+    n_ctrl: int
+    horizon: int
     deterministic_start: bool = False
     deterministic_trans: bool = False
     trans_kernel_init: str = "standard_normal"

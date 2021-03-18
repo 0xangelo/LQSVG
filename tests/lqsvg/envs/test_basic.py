@@ -6,7 +6,10 @@ from raylab.envs import get_env_creator
 
 @pytest.fixture
 def env(env_name):
-    return get_env_creator(env_name)({})
+    env_config = {}
+    if "LQG" in env_name:
+        env_config.update(n_state=2, n_ctrl=2, horizon=100)
+    return get_env_creator(env_name)(env_config)
 
 
 def test_env_interaction_loop(env):
