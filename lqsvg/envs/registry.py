@@ -8,14 +8,14 @@ ENVS = {}
 def _random_lqg_maker(config: dict) -> gym.Env:
     from lqsvg.envs.lqr.gym import LQGSpec, RandomLQGEnv
 
-    spec = LQGSpec.from_dict(config)
+    spec = LQGSpec(**config)
     return RandomLQGEnv(spec)
 
 
 def _random_vector_lqg_maker(config: dict) -> VectorEnv:
     from lqsvg.envs.lqr.gym import LQGSpec, RandomVectorLQG
 
-    spec = LQGSpec.from_dict(config)
+    spec = LQGSpec(**config)
     return RandomVectorLQG(spec)
 
 
