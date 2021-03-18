@@ -2,12 +2,34 @@
 from __future__ import annotations
 
 from typing import Optional
+from typing import Union
 
 import numpy as np
 import torch
+from torch import Generator
 from torch import Tensor
 
 import lqsvg.np_util as np_util
+
+
+def default_rng(seed: Union[None, int, Generator] = None) -> Generator:
+    """Mirrors numpy's `default_rng` to produce RNGs for Pytorch.
+
+    Args:
+        seed: a seed to initialize the generator. If passed a Generator, will
+        return it unaltered. Otherwise, creates a new one. If passed an
+        integer, will use it as the manual seed for the created generator.
+
+    Returns:
+        A PyTorch Generator instance
+    """
+    if isinstance(seed, Generator):
+        return seed
+
+    rng = Generator()
+    if isinstance(seed, int):
+        rng.manual_seed(seed)
+    return rng
 
 
 def as_float_tensor(array: np.ndarray) -> Tensor:
