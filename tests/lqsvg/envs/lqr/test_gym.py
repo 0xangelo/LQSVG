@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable
+from typing import Optional
 from typing import Type
 from typing import Union
 
@@ -56,8 +57,8 @@ def env_creator(request) -> EnvCreator:
     return cls
 
 
-# Test common TorchLQGMixin interface ==========================================
-def test_generator(
+# Test LQGGenerator interface ==========================================
+def test_generator_init(
     generator: LQGGenerator, n_state: int, n_ctrl: int, horizon: int, seed: int
 ):
     assert generator.n_state == n_state
@@ -66,6 +67,21 @@ def test_generator(
     assert generator.seed == seed
 
 
+n_batch = standard_fixture((None, 1, 4), "NBatch")
+
+
+def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
+    dynamics, cost, init = generator(n_batch=n_batch)
+
+    tensors = [t for c in (dynamics, cost, init) for t in c]
+    if n_batch is None:
+        assert all("B" not in t.names for t in tensors)
+    else:
+        assert all("B" in t.names for t in tensors)
+        assert all(t.size("B") == n_batch for t in tensors)
+
+
+# Test common TorchLQGMixin interface ==========================================
 def test_seed(env_creator: EnvCreator, config: dict):
     config["seed"] = 42
     env1 = env_creator(config)
