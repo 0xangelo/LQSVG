@@ -1,4 +1,5 @@
 """Utilities for RLlib sample batches, warnings, and linear feedback policies."""
+import datetime
 import warnings
 from contextlib import contextmanager
 
@@ -9,6 +10,12 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+
+
+def calver() -> str:
+    """Return a standardized version number using CalVer."""
+    today = datetime.date.today()
+    return f"{today.month}.{today.day}.0"
 
 
 def linear_feedback_cossim(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tensor:
