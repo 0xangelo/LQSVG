@@ -161,8 +161,9 @@ class TimeVaryingLinear(nn.Module):
 
 # noinspection PyAbstractClass
 @configure
-@option("exploration_config/type", "raylab.utils.exploration.GaussianNoise")
-@option("exploration_config/pure_exploration_steps", 0)
+@option("exploration_config/type", default="raylab.utils.exploration.GaussianNoise")
+@option("exploration_config/pure_exploration_steps", default=0)
+@option("explore", default=False, override=True)
 class LQGPolicy(TorchPolicy):
     # pylint:disable=abstract-method
     dist_class = WrapDeterministicPolicy
