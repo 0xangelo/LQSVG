@@ -6,7 +6,7 @@ authors = ["Ângelo Lovatto <angelolovatto@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 raylab = "^0.15.3"
 ray = {extras = ["rllib", "tune"], version = "1.2.0"}
 
