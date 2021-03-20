@@ -176,7 +176,7 @@ def check_dataloaders(datamodule):
 
 def test_datamodule():
     # pylint:disable=missing-function-docstring,import-outside-toplevel
-    from .policy import make_worker
+    from .worker import make_worker
 
     # Create and initialize
     worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))

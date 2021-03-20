@@ -317,7 +317,7 @@ class LightningModel(pl.LightningModule):
 
 @nt.suppress_named_tensor_warning()
 def test_lightning_model():
-    from .policy import make_worker
+    from .worker import make_worker
 
     worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
     model = LightningModel(worker.get_policy(), worker.env)
