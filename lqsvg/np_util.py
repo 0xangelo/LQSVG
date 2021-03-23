@@ -35,7 +35,7 @@ def make_spd_matrix(
     A = generator.random(size=sample_shape + (n_dim, n_dim))
     axes = list(range(len(sample_shape) + 2))
     # The code inside `transpose` simply inverts the order of the last two axes
-    U, _, V = np.linalg.svd(A.transpose(axes[:-2] + axes[-2:][::-1]) @ A)
+    U, _, V = np.linalg.svd(A.transpose(axes[:-2] + [axes[-1], axes[-2]]) @ A)
     X = U @ (1.0 + np.eye(n_dim) * generator.random(sample_shape + (1, n_dim))) @ V
 
     return X
