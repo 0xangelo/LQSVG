@@ -20,6 +20,139 @@ from .types import Linear
 from .types import LinSDynamics
 
 
+###############################################################################
+# Dynamics checks
+###############################################################################
+
+
+def isstationary(dynamics: LinSDynamics) -> bool:
+    """Returns whether the dynamics are stationary (time-invariant)."""
+    return (
+        nt.allclose(dynamics.F, dynamics.F.select("H", 0))
+        and nt.allclose(dynamics.f, dynamics.f.select("H", 0))
+        and nt.allclose(dynamics.W, dynamics.W.select("H", 0))
+    )
+
+
+def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns the eigenvalues of unactuated stationary transition dynamics.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name
+    assert isstationary(dynamics), "Can't pass non-stationary dynamics"
+    F_s, _ = dynamics_factors(dynamics)
+    F_s = F_s.select("H", 0)
+    # Assume last two dimensions correspond to rows and cols respectively
+    eigvals, _ = np.linalg.eig(F_s.numpy())
+    return eigvals
+
+
+def isstable(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns whether the unactuated dynamics are stable.
+
+    A linear, stationary, discrete-time system is stable iff the all the
+    eigenvalues of F_s live in the unit circle of the complex plane.
+
+    Note:
+        It is not obvious if this condition is generalizable to non-stationary
+        systems. Thus, this function first checks if the system is stationary.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    eigvals = stationary_eigvals(dynamics)
+    # Assume the last dimension corresponds eigenvalues
+    stable = np.asarray(np.all(np.absolute(eigvals) <= 1.0, axis=-1))
+    return stable
+
+
+def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns whether the stationary dynamics are controllable.
+
+    This function accepts a batch of linear dynamics.
+
+    Note:
+        It is not obvious if this condition is generalizable to non-stationary
+        systems. Thus, this function first checks if the system is stationary.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name
+    n_state, _, _ = dims_from_dynamics(dynamics)
+    C = ctrb(dynamics)
+    return (torch.matrix_rank(nt.unnamed(C)) == n_state).numpy()
+
+
+###############################################################################
+# Dynamics manipulation
+###############################################################################
+
+
+def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
+    """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
+    n_state = dynamics.F.size("R")
+    n_ctrl = dynamics.F.size("C") - n_state
+    horizon = dynamics.F.size("H")
+    return n_state, n_ctrl, horizon
+
+
+def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
+    """Returns the unactuated and actuaded parts of the transition matrix."""
+    # pylint:disable=invalid-name
+    n_state, n_ctrl, _ = dims_from_dynamics(dynamics)
+    F_s, F_a = nt.split(dynamics.F, (n_state, n_ctrl), dim="C")
+    return F_s, F_a
+
+
+def ctrb(dynamics: LinSDynamics) -> Tensor:
+    """Returns the controllability matrix for a stationary linear system.
+
+    This function accepts batched dynamics.
+    """
+    # pylint:disable=invalid-name
+    F_s, F_a = dynamics_factors(dynamics)
+    F_s, F_a = F_s.select("H", 0), F_a.select("H", 0)
+    n_state, _, _ = dims_from_dynamics(dynamics)
+    # Assumes the last two dimensions correspond to rows and columns respectively
+    C = torch.cat([torch.matrix_power(F_s, i) @ F_a for i in range(n_state)], dim=-1)
+    return C
+
+
+###############################################################################
+# Random generation
+###############################################################################
+
+
+def wrap_sample_shape_to_size(
+    sampler: callable[[int], np.ndarray], dim: int
+) -> callable[[tuple[int, ...], int], np.ndarray]:
+    """Converts a sampler by size to a sampler by shape.
+
+    Computes the total size of the sample shape, calls the sampler with this
+    size, and reshapes the output.
+
+    Args:
+        sampler: function that takes an integer as argument and returns this
+            many samples as numpy arrays
+        dim: number of dimensions of each sample, e.g, 0 for scalars, 1 for
+            vectors, 2 for matrices, and so forth
+
+    Returns:
+        A sampler that takes a sample shape as an argument.
+    """
+
+    def wrapped(sample_shape: tuple[int, ...]) -> np.ndarray:
+        sample_size = np.prod(sample_shape, dtype=int)
+        arr = sampler(sample_size)
+        base = arr.shape[-dim:] if dim > 0 else ()
+        return np.reshape(arr, sample_shape + base)
+
+    return wrapped
+
+
 def expand_and_refine(
     tensor: Tensor,
     base_dim: int,
@@ -165,12 +298,9 @@ def random_mat_with_eigval_range(
     return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
 
 
-def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
-    """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
-    n_state = dynamics.F.size("R")
-    n_ctrl = dynamics.F.size("C") - n_state
-    horizon = dynamics.F.size("H")
-    return n_state, n_ctrl, horizon
+###############################################################################
+# Other
+###############################################################################
 
 
 def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
@@ -226,30 +356,3 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
     state, time = obs[..., :-1], obs[..., -1:]
     time = time.int()
     return state, time
-
-
-def wrap_sample_shape_to_size(
-    sampler: callable[[int], np.ndarray], dim: int
-) -> callable[[tuple[int, ...], int], np.ndarray]:
-    """Converts a sampler by size to a sampler by shape.
-
-    Computes the total size of the sample shape, calls the sampler with this
-    size, and reshapes the output.
-
-    Args:
-        sampler: function that takes an integer as argument and returns this
-            many samples as numpy arrays
-        dim: number of dimensions of each sample, e.g, 0 for scalars, 1 for
-            vectors, 2 for matrices, and so forth
-
-    Returns:
-        A sampler that takes a sample shape as an argument.
-    """
-
-    def wrapped(sample_shape: tuple[int, ...]) -> np.ndarray:
-        sample_size = np.prod(sample_shape, dtype=int)
-        arr = sampler(sample_size)
-        base = arr.shape[-dim:] if dim > 0 else ()
-        return np.reshape(arr, sample_shape + base)
-
-    return wrapped
