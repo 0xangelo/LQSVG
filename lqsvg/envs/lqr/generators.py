@@ -21,7 +21,11 @@ from .types import GaussInit
 from .types import LinDynamics
 from .types import LinSDynamics
 from .types import QuadCost
+from .utils import expand_and_refine
 from .utils import np_expand_horizon
+from .utils import random_normal_matrix
+from .utils import random_normal_vector
+from .utils import random_spd_matrix
 
 
 def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, QuadCost]:
@@ -46,34 +50,6 @@ def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, Quad
     cost = QuadCost(C=stack_batch(Cs), c=stack_batch(cs))
 
     return dynamics, cost
-
-
-def expand_and_refine(
-    tensor: Tensor,
-    base_dim: int,
-    horizon: Optional[int] = None,
-    n_batch: Optional[int] = None,
-) -> Tensor:
-    """Expand and refine tensor names with horizon and batch size information."""
-    assert (
-        n_batch is None or n_batch > 0
-    ), f"Batch size must be null or positive, got {n_batch}"
-    assert (
-        tensor.dim() >= base_dim
-    ), f"Tensor must have at least {base_dim} dimensions, got {tensor.dim()}"
-
-    shape = (
-        (() if horizon is None else (horizon,))
-        + (() if n_batch is None else (n_batch,))
-        + tensor.shape[-base_dim:]
-    )
-    names = (
-        (() if horizon is None else ("H",))
-        + (() if n_batch is None else ("B",))
-        + (...,)
-    )
-    tensor = tensor.expand(*shape).refine_names(*names)
-    return tensor
 
 
 def make_lindynamics(
@@ -128,66 +104,6 @@ def make_linsdynamics(
         state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
     )
     return LinSDynamics(F, f, W)
-
-
-def sample_shape(
-    horizon: int, stationary: bool = False, n_batch: Optional[int] = None
-) -> tuple[int, ...]:
-    # pylint:disable=missing-function-docstring
-    horizon_shape = () if stationary else (horizon,)
-    batch_shape = () if n_batch is None else (n_batch,)
-    return horizon_shape + batch_shape
-
-
-def random_normal_vector(
-    size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    # pylint:disable=missing-function-docstring
-    rng = np.random.default_rng(rng)
-
-    vec_shape = (size,)
-    shape = sample_shape(horizon, stationary=stationary, n_batch=n_batch) + vec_shape
-    vec = nt.vector(as_float_tensor(rng.normal(size=shape)))
-    vec = expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
-    return vec
-
-
-def random_normal_matrix(
-    row_size: int,
-    col_size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    # pylint:disable=missing-function-docstring,too-many-arguments
-    mat_shape = (row_size, col_size)
-    shape = sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
-    mat = nt.matrix(as_float_tensor(rng.normal(size=shape)))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
-
-
-def random_spd_matrix(
-    size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    # pylint:disable=missing-function-docstring
-    mat = make_spd_matrix(
-        size,
-        sample_shape=sample_shape(horizon, stationary=stationary, n_batch=n_batch),
-        rng=rng,
-    )
-    mat = nt.matrix(as_float_tensor(mat))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
 
 
 def make_quadcost(

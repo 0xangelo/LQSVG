@@ -1,15 +1,108 @@
 # pylint:disable=missing-module-docstring,unsubscriptable-object
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from gym.spaces import Box
 from torch import IntTensor
 from torch import Tensor
 
+import lqsvg.torch.named as nt
+from lqsvg.np_util import make_spd_matrix
 from lqsvg.np_util import np_expand
+from lqsvg.np_util import RNG
+from lqsvg.torch.utils import as_float_tensor
 
 from .types import Linear
 from .types import LinSDynamics
+
+
+def expand_and_refine(
+    tensor: Tensor,
+    base_dim: int,
+    horizon: Optional[int] = None,
+    n_batch: Optional[int] = None,
+) -> Tensor:
+    """Expand and refine tensor names with horizon and batch size information."""
+    assert (
+        n_batch is None or n_batch > 0
+    ), f"Batch size must be null or positive, got {n_batch}"
+    assert (
+        tensor.dim() >= base_dim
+    ), f"Tensor must have at least {base_dim} dimensions, got {tensor.dim()}"
+
+    shape = (
+        (() if horizon is None else (horizon,))
+        + (() if n_batch is None else (n_batch,))
+        + tensor.shape[-base_dim:]
+    )
+    names = (
+        (() if horizon is None else ("H",))
+        + (() if n_batch is None else ("B",))
+        + (...,)
+    )
+    tensor = tensor.expand(*shape).refine_names(*names)
+    return tensor
+
+
+def _sample_shape(
+    horizon: int, stationary: bool = False, n_batch: Optional[int] = None
+) -> tuple[int, ...]:
+    horizon_shape = () if stationary else (horizon,)
+    batch_shape = () if n_batch is None else (n_batch,)
+    return horizon_shape + batch_shape
+
+
+def random_normal_vector(
+    size: int,
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    # pylint:disable=missing-function-docstring
+    rng = np.random.default_rng(rng)
+
+    vec_shape = (size,)
+    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + vec_shape
+    vec = nt.vector(as_float_tensor(rng.normal(size=shape)))
+    vec = expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
+    return vec
+
+
+def random_normal_matrix(
+    row_size: int,
+    col_size: int,
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    # pylint:disable=missing-function-docstring,too-many-arguments
+    mat_shape = (row_size, col_size)
+    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
+    mat = nt.matrix(as_float_tensor(rng.normal(size=shape)))
+    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+    return mat
+
+
+def random_spd_matrix(
+    size: int,
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    # pylint:disable=missing-function-docstring
+    mat = make_spd_matrix(
+        size,
+        sample_shape=_sample_shape(horizon, stationary=stationary, n_batch=n_batch),
+        rng=rng,
+    )
+    mat = nt.matrix(as_float_tensor(mat))
+    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+    return mat
 
 
 def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
