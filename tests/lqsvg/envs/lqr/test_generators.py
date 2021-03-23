@@ -2,8 +2,8 @@ from typing import Union
 
 import pytest
 import torch
-from torch import Tensor
 
+import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import box_ddp_random_lqr
 from lqsvg.envs.lqr.generators import make_lqg
 from lqsvg.envs.lqr.generators import make_lqr
@@ -27,10 +27,6 @@ def timestep():
 @pytest.fixture
 def ctrl_coeff():
     return 0.1
-
-
-def named_allclose(tensora: Tensor, tensorb: Tensor) -> bool:
-    return torch.allclose(tensora.rename(None), tensorb.rename(None))
 
 
 def check_system(
@@ -66,11 +62,11 @@ def check_system(
     assert eigval.ge(0).all()
 
     if horizon > 1:
-        assert stationary == named_allclose(F[0], F[-1])
-        assert stationary == named_allclose(f[0], f[-1])
-        assert W is None or stationary == named_allclose(W[0], W[-1])
-        assert stationary == named_allclose(C[0], C[-1])
-        assert stationary == named_allclose(c[0], c[-1])
+        assert stationary == nt.allclose(F[0], F[-1])
+        assert stationary == nt.allclose(f[0], f[-1])
+        assert W is None or stationary == nt.allclose(W[0], W[-1])
+        assert stationary == nt.allclose(C[0], C[-1])
+        assert stationary == nt.allclose(c[0], c[-1])
 
 
 def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
