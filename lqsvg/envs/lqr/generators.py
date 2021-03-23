@@ -50,7 +50,7 @@ def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, Quad
 
 def expand_and_refine(
     tensor: Tensor,
-    base_shape: tuple[int, ...],
+    base_dim: int,
     horizon: Optional[int] = None,
     n_batch: Optional[int] = None,
 ) -> Tensor:
@@ -58,17 +58,21 @@ def expand_and_refine(
     assert (
         n_batch is None or n_batch > 0
     ), f"Batch size must be null or positive, got {n_batch}"
-    final_shape = (
+    assert (
+        tensor.dim() >= base_dim
+    ), f"Tensor must have at least {base_dim} dimensions, got {tensor.dim()}"
+
+    shape = (
         (() if horizon is None else (horizon,))
         + (() if n_batch is None else (n_batch,))
-        + base_shape
+        + tensor.shape[-base_dim:]
     )
     names = (
         (() if horizon is None else ("H",))
         + (() if n_batch is None else ("B",))
         + (...,)
     )
-    tensor = tensor.expand(*final_shape).refine_names(*names)
+    tensor = tensor.expand(*shape).refine_names(*names)
     return tensor
 
 
@@ -148,7 +152,7 @@ def random_normal_vector(
     vec_shape = (size,)
     shape = sample_shape(horizon, stationary=stationary, n_batch=n_batch) + vec_shape
     vec = nt.vector(as_float_tensor(rng.normal(size=shape)))
-    vec = expand_and_refine(vec, vec_shape, horizon=horizon, n_batch=n_batch)
+    vec = expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
     return vec
 
 
@@ -164,7 +168,7 @@ def random_normal_matrix(
     mat_shape = (row_size, col_size)
     shape = sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
     mat = nt.matrix(as_float_tensor(rng.normal(size=shape)))
-    mat = expand_and_refine(mat, mat_shape, horizon=horizon, n_batch=n_batch)
+    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
     return mat
 
 
@@ -182,7 +186,7 @@ def random_spd_matrix(
         rng=rng,
     )
     mat = nt.matrix(as_float_tensor(mat))
-    mat = expand_and_refine(mat, (size, size), horizon=horizon, n_batch=n_batch)
+    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
     return mat
 
 
@@ -214,7 +218,6 @@ def make_gaussinit(
     """Generate parameters for Gaussian initial state distribution."""
     # pylint:disable=invalid-name
     vec_shape = (state_size,)
-    mat_shape = vec_shape * 2
     batch_shape = () if n_batch is None else (n_batch,)
 
     mu = torch.zeros(batch_shape + vec_shape)
@@ -226,8 +229,8 @@ def make_gaussinit(
         sig = torch.eye(state_size)
 
     return GaussInit(
-        mu=expand_and_refine(nt.vector(mu), vec_shape, n_batch=n_batch),
-        sig=expand_and_refine(nt.matrix(sig), mat_shape, n_batch=n_batch),
+        mu=expand_and_refine(nt.vector(mu), 1, n_batch=n_batch),
+        sig=expand_and_refine(nt.matrix(sig), 2, n_batch=n_batch),
     )
 
 
