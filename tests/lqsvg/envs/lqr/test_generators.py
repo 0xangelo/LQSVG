@@ -19,16 +19,6 @@ from .utils import standard_fixture
 stationary = standard_fixture((True, False), "Stationary")
 
 
-@pytest.fixture
-def timestep():
-    return 0.01
-
-
-@pytest.fixture
-def ctrl_coeff():
-    return 0.1
-
-
 def check_system(
     dynamics: Union[LinDynamics, LinSDynamics],
     cost: QuadCost,
@@ -52,28 +42,21 @@ def check_system(
     assert f.shape == (horizon, n_state)
     if W is not None:
         assert W.shape == (horizon, n_state, n_state)
-        eigval_W, _ = torch.symeig(W.rename(None))
+        eigval_W, _ = torch.symeig(nt.unnamed(W))
         assert eigval_W.ge(0).all()
 
     C, c = cost
     assert C.shape == (horizon, tau_size, tau_size)
     assert c.shape == (horizon, tau_size)
-    eigval, _ = torch.symeig(C.rename(None))
+    eigval, _ = torch.symeig(nt.unnamed(C))
     assert eigval.ge(0).all()
 
     if horizon > 1:
-        assert stationary == nt.allclose(F[0], F[-1])
-        assert stationary == nt.allclose(f[0], f[-1])
-        assert W is None or stationary == nt.allclose(W[0], W[-1])
-        assert stationary == nt.allclose(C[0], C[-1])
-        assert stationary == nt.allclose(c[0], c[-1])
-
-
-def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
-    dynamics, cost, _ = box_ddp_random_lqr(timestep, ctrl_coeff, horizon, rng=seed)
-    n_state = dynamics.F.shape[-2]
-    n_ctrl = dynamics.F.shape[-1] - n_state
-    check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=True)
+        assert stationary == nt.allclose(F, F.select("H", 0))
+        assert stationary == nt.allclose(f, f.select("H", 0))
+        assert W is None or stationary == nt.allclose(W, W.select("H", 0))
+        assert stationary == nt.allclose(C, C.select("H", 0))
+        assert stationary == nt.allclose(c, c.select("H", 0))
 
 
 def test_make_lqr(n_state, n_ctrl, horizon, stationary, seed):
@@ -96,21 +79,6 @@ def test_make_lqg(n_state, n_ctrl, horizon, stationary, seed):
         rng=seed,
     )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary)
-
-
-@pytest.fixture
-def goal():
-    return 0.5, 1.0
-
-
-@pytest.fixture
-def beta(ctrl_coeff):
-    return ctrl_coeff
-
-
-def test_make_lqr_linear_navigation(goal, beta, horizon):
-    dynamics, cost, _ = make_lqr_linear_navigation(goal, beta, horizon)
-    check_system(dynamics, cost, horizon, 2, 2, stationary=True)
 
 
 def test_stack_lqs(n_state, n_ctrl, horizon, seed):
@@ -164,3 +132,45 @@ def test_batched_lqgs(n_state, n_ctrl, horizon, stationary, n_batch):
 
     assert cost.C.shape == sample_shape + (n_tau, n_tau)
     assert cost.c.shape == sample_shape + (n_tau,)
+
+
+###############################################################################
+# Box-DDP environment
+###############################################################################
+
+
+@pytest.fixture
+def timestep():
+    return 0.01
+
+
+@pytest.fixture
+def ctrl_coeff():
+    return 0.1
+
+
+def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
+    dynamics, cost, _ = box_ddp_random_lqr(timestep, ctrl_coeff, horizon, rng=seed)
+    n_state = dynamics.F.shape[-2]
+    n_ctrl = dynamics.F.shape[-1] - n_state
+    check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=True)
+
+
+###############################################################################
+# Linear Navigation
+###############################################################################
+
+
+@pytest.fixture
+def goal():
+    return 0.5, 1.0
+
+
+@pytest.fixture
+def beta(ctrl_coeff):
+    return ctrl_coeff
+
+
+def test_make_lqr_linear_navigation(goal, beta, horizon):
+    dynamics, cost, _ = make_lqr_linear_navigation(goal, beta, horizon)
+    check_system(dynamics, cost, horizon, 2, 2, stationary=True)
