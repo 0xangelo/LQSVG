@@ -236,15 +236,11 @@ def wrap_sample_shape_to_size(
     Computes the total size of the sample shape, calls the sampler with this
     size, and reshapes the output.
 
-    Assumes first dim of the wrapped sampler's output corresponds to the sample
-    dimension. Exception when the total sample size is 1, in which case it
-    assumes the sampler's output has no sample dimension. This is usually the
-    case with Numpy/Scipy.
-
     Args:
         sampler: function that takes an integer as argument and returns this
             many samples as numpy arrays
-        dim: number of dimensions of each sample
+        dim: number of dimensions of each sample, e.g, 0 for scalars, 1 for
+            vectors, 2 for matrices, and so forth
 
     Returns:
         A sampler that takes a sample shape as an argument.
