@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
+import torch
 from gym.spaces import Box
+from scipy.stats import ortho_group
 from torch import IntTensor
 from torch import Tensor
 
@@ -102,6 +104,30 @@ def random_spd_matrix(
     )
     mat = nt.matrix(as_float_tensor(mat))
     mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+    return mat
+
+
+def random_matrix_from_eigs(eigvals: Tensor, rng: RNG = None) -> Tensor:
+    """Generate random matrix with specified eigenvalues.
+
+    Supports batched inputs. Assumes `eigvals` is a named vector tensor.
+
+    Args:
+        eigvals: (batched) tensor with desired eigenvalues.
+        rng: random number generator seed
+
+    Returns:
+        A random matrix with given eigenvalues.
+    """
+    rng = np.random.default_rng(rng)
+
+    # Sample orthogonal matrices
+    dim = eigvals.size("R")
+    ortho = ortho_group.rvs(dim, size=eigvals.numel() // dim, random_state=rng)
+    ortho = nt.matrix(as_float_tensor(ortho))
+
+    diag_eigval = torch.diag_embed(eigvals)
+    mat = nt.transpose(ortho) @ diag_eigval @ ortho
     return mat
 
 
