@@ -48,56 +48,6 @@ def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, Quad
     return dynamics, cost
 
 
-def box_ddp_random_lqr(
-    timestep: float, ctrl_coeff: float, horizon: int, rng: RNG = None
-) -> tuple[LinDynamics, QuadCost, Box]:
-    # pylint:disable=line-too-long
-    """Generate a random, control-limited LQR as described in the Box-DDP paper.
-
-    Taken from `Control-limited differential dynamic programming`_.
-
-    .. _`Control-limited differential dynamic programming`: https://doi.org/10.1109/ICRA.2014.6907001
-    """
-    # pylint:enable=line-too-long
-    assert 0 < timestep < 1
-
-    rng = np.random.default_rng(rng)
-    state_size = rng.integers(10, 100, endpoint=True)
-    ctrl_size = rng.integers(1, state_size // 2, endpoint=True)
-
-    dynamics = _box_ddp_random_dynamics(state_size, ctrl_size, timestep, horizon)
-    cost = _box_ddp_random_cost(state_size, ctrl_size, timestep, ctrl_coeff, horizon)
-    dynamics, cost = refine_lqr(dynamics, cost)
-    bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
-    return dynamics, cost, bounds
-
-
-def _box_ddp_random_dynamics(
-    state_size: int, ctrl_size: int, timestep: float, horizon: int
-) -> LinDynamics:
-    F_x = torch.eye(state_size) + timestep * torch.randn(state_size, state_size)
-    F_u = torch.randn(state_size, ctrl_size)
-    F = torch.cat([F_x, F_u], dim=-1)
-    F = F.expand(horizon, *F.shape)
-    f = torch.zeros(horizon, state_size)
-    return LinDynamics(F, f)
-
-
-def _box_ddp_random_cost(
-    state_size: int, ctrl_size: int, timestep: float, ctrl_coeff: float, horizon: int
-) -> QuadCost:
-    dim = state_size + ctrl_size
-    C = torch.zeros(horizon, dim, dim)
-
-    C_xx = torch.eye(state_size, state_size) * timestep
-    C_uu = torch.eye(ctrl_size, ctrl_size) * timestep * ctrl_coeff
-    C[..., :state_size, :state_size] = C_xx
-    C[..., state_size:, state_size:] = C_uu
-
-    c = torch.zeros(horizon, dim)
-    return QuadCost(C, c)
-
-
 def expand_and_refine(
     tensor: Tensor,
     base_shape: tuple[int, ...],
@@ -362,6 +312,11 @@ def make_lqg(
     return dynamics, cost
 
 
+###############################################################################
+# Navigation environment
+###############################################################################
+
+
 def make_lqr_linear_navigation(
     goal: Union[np.ndarray, tuple[float, float]], beta: float, horizon: int
 ) -> tuple[LinDynamics, QuadCost, Box]:
@@ -392,3 +347,58 @@ def make_lqr_linear_navigation(
     F, f, C, c = map(lambda x: as_float_tensor(x.copy()), (F, f, C, c))
     dynamics, cost = refine_lqr((F, f), (C, c))
     return dynamics, cost, bounds
+
+
+###############################################################################
+# Box-DDP environment
+###############################################################################
+
+
+def box_ddp_random_lqr(
+    timestep: float, ctrl_coeff: float, horizon: int, rng: RNG = None
+) -> tuple[LinDynamics, QuadCost, Box]:
+    # pylint:disable=line-too-long
+    """Generate a random, control-limited LQR as described in the Box-DDP paper.
+
+    Taken from `Control-limited differential dynamic programming`_.
+
+    .. _`Control-limited differential dynamic programming`: https://doi.org/10.1109/ICRA.2014.6907001
+    """
+    # pylint:enable=line-too-long
+    assert 0 < timestep < 1
+
+    rng = np.random.default_rng(rng)
+    state_size = rng.integers(10, 100, endpoint=True)
+    ctrl_size = rng.integers(1, state_size // 2, endpoint=True)
+
+    dynamics = _box_ddp_random_dynamics(state_size, ctrl_size, timestep, horizon)
+    cost = _box_ddp_random_cost(state_size, ctrl_size, timestep, ctrl_coeff, horizon)
+    dynamics, cost = refine_lqr(dynamics, cost)
+    bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
+    return dynamics, cost, bounds
+
+
+def _box_ddp_random_dynamics(
+    state_size: int, ctrl_size: int, timestep: float, horizon: int
+) -> LinDynamics:
+    F_x = torch.eye(state_size) + timestep * torch.randn(state_size, state_size)
+    F_u = torch.randn(state_size, ctrl_size)
+    F = torch.cat([F_x, F_u], dim=-1)
+    F = F.expand(horizon, *F.shape)
+    f = torch.zeros(horizon, state_size)
+    return LinDynamics(F, f)
+
+
+def _box_ddp_random_cost(
+    state_size: int, ctrl_size: int, timestep: float, ctrl_coeff: float, horizon: int
+) -> QuadCost:
+    dim = state_size + ctrl_size
+    C = torch.zeros(horizon, dim, dim)
+
+    C_xx = torch.eye(state_size, state_size) * timestep
+    C_uu = torch.eye(ctrl_size, ctrl_size) * timestep * ctrl_coeff
+    C[..., :state_size, :state_size] = C_xx
+    C[..., state_size:, state_size:] = C_uu
+
+    c = torch.zeros(horizon, dim)
+    return QuadCost(C, c)
