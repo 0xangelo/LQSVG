@@ -111,6 +111,8 @@ def random_matrix_from_eigs(eigvals: Tensor, rng: RNG = None) -> Tensor:
     """Generate random matrix with specified eigenvalues.
 
     Supports batched inputs. Assumes `eigvals` is a named vector tensor.
+    Based on::
+        https://blogs.sas.com/content/iml/2012/03/30/geneate-a-random-matrix-with-specified-eigenvalues.html
 
     Args:
         eigvals: (batched) tensor with desired eigenvalues.
