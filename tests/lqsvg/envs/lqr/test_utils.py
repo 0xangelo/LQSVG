@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Optional
 
 import numpy as np
 import pytest
@@ -11,6 +12,7 @@ from scipy.stats import ortho_group
 from torch import Tensor
 
 import lqsvg.torch.named as nt
+from lqsvg.envs.lqr.utils import random_mat_with_eigval_range
 from lqsvg.envs.lqr.utils import random_matrix_from_eigs
 from lqsvg.envs.lqr.utils import wrap_sample_shape_to_size
 from lqsvg.torch.utils import default_generator_seed
@@ -72,3 +74,32 @@ def test_random_matrix_from_eigs(eigvals: Tensor, seed: int):
     mat = random_matrix_from_eigs(eigvals, rng=seed).numpy()
     eigvals_, _ = np.linalg.eig(mat)
     assert np.allclose(np.sort(eigvals_, axis=-1), np.sort(eigvals.numpy(), axis=-1))
+
+
+mat_dim = standard_fixture((2, 3, 4), "MatDim")
+eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
+horizon = standard_fixture((10, 100), "Horizon")
+stationary = standard_fixture((True, False), "Stationary")
+n_batch = standard_fixture((None, 1, 4), "NBatch")
+
+
+def test_random_mat_with_eigval_range(
+    mat_dim: int,
+    eigval_range: tuple[float, float],
+    horizon: int,
+    n_batch: Optional[int],
+    seed: int,
+):
+    mat = random_mat_with_eigval_range(
+        mat_dim, eigval_range=eigval_range, horizon=horizon, n_batch=n_batch, rng=seed
+    )
+
+    assert mat.size("C") == mat_dim
+    assert mat.size("R") == mat_dim
+    assert mat.size("H") == horizon
+    assert not n_batch or mat.size("B") == n_batch
+
+    eigvals, _ = np.linalg.eig(mat.numpy())
+    low, high = eigval_range
+    assert np.all(np.abs(eigvals) >= low)
+    assert np.all(np.abs(eigvals) <= high)

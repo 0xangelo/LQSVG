@@ -123,12 +123,44 @@ def random_matrix_from_eigs(eigvals: Tensor, rng: RNG = None) -> Tensor:
 
     # Sample orthogonal matrices
     dim = eigvals.size("R")
-    ortho = ortho_group.rvs(dim, size=eigvals.numel() // dim, random_state=rng)
+    _random_orthogonal_matrix = wrap_sample_shape_to_size(
+        lambda s: ortho_group.rvs(dim, size=s, random_state=rng), dim=2
+    )
+    ortho = _random_orthogonal_matrix(
+        eigvals.shape[:-1]
+    )  # Assume last dimension is "R"
     ortho = nt.matrix(as_float_tensor(ortho))
 
     diag_eigval = torch.diag_embed(eigvals)
     mat = nt.transpose(ortho) @ diag_eigval @ ortho
     return mat
+
+
+def random_mat_with_eigval_range(
+    size: int,
+    eigval_range: tuple[float, float],
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    """Generate a random matrix with absolute eigenvalues in the desired range."""
+    # pylint:disable=too-many-arguments
+    assert all(
+        v >= 0 for v in eigval_range
+    ), f"Eigenvalue range must be positive, got {eigval_range}"
+    rng = np.random.default_rng(rng)
+
+    low, high = eigval_range
+    eigvals = rng.uniform(
+        low=low, high=high, size=_sample_shape(horizon, stationary, n_batch) + (size,)
+    )
+    # Flip sign randomly
+    np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
+    eigvals = nt.vector(as_float_tensor(eigvals))
+
+    mat = random_matrix_from_eigs(eigvals, rng=rng)
+    return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
 
 
 def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
