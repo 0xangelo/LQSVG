@@ -1,4 +1,4 @@
-# pylint:disable=missing-module-docstring
+# pylint:disable=missing-module-docstring,unsubscriptable-object
 from __future__ import annotations
 
 import numpy as np
@@ -73,3 +73,34 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
     state, time = obs[..., :-1], obs[..., -1:]
     time = time.int()
     return state, time
+
+
+def wrap_sample_shape_to_size(
+    sampler: callable[[int], np.ndarray], dim: int
+) -> callable[[tuple[int, ...], int], np.ndarray]:
+    """Converts a sampler by size to a sampler by shape.
+
+    Computes the total size of the sample shape, calls the sampler with this
+    size, and reshapes the output.
+
+    Assumes first dim of the wrapped sampler's output corresponds to the sample
+    dimension. Exception when the total sample size is 1, in which case it
+    assumes the sampler's output has no sample dimension. This is usually the
+    case with Numpy/Scipy.
+
+    Args:
+        sampler: function that takes an integer as argument and returns this
+            many samples as numpy arrays
+        dim: number of dimensions of each sample
+
+    Returns:
+        A sampler that takes a sample shape as an argument.
+    """
+
+    def wrapped(sample_shape: tuple[int, ...]) -> np.ndarray:
+        sample_size = np.prod(sample_shape, dtype=int)
+        arr = sampler(sample_size)
+        base = arr.shape[-dim:] if dim > 0 else ()
+        return np.reshape(arr, sample_shape + base)
+
+    return wrapped
