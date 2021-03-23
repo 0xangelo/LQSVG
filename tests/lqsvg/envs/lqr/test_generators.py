@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import Optional
 from typing import Union
 
 import pytest
@@ -16,7 +19,7 @@ from lqsvg.envs.lqr.types import QuadCost
 from .utils import standard_fixture
 
 
-stationary = standard_fixture((True, False), "Stationary")
+Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
 
 
 def check_system(
@@ -59,24 +62,42 @@ def check_system(
         assert stationary == nt.allclose(c, c.select("H", 0))
 
 
-def test_make_lqr(n_state, n_ctrl, horizon, stationary, seed):
+def test_make_lqr(
+    n_state,
+    n_ctrl,
+    horizon,
+    stationary,
+    seed,
+    Fs_eigval_range: Optional[tuple[float, float]],
+):
+    # pylint:disable=invalid-name,too-many-arguments
     dynamics, cost = make_lqr(
         state_size=n_state,
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=stationary,
         rng=seed,
+        Fs_eigval_range=Fs_eigval_range,
     )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary=stationary)
 
 
-def test_make_lqg(n_state, n_ctrl, horizon, stationary, seed):
+def test_make_lqg(
+    n_state,
+    n_ctrl,
+    horizon,
+    stationary,
+    seed,
+    Fs_eigval_range: Optional[tuple[float, float]],
+):
+    # pylint:disable=invalid-name,too-many-arguments
     dynamics, cost = make_lqg(
         state_size=n_state,
         ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=stationary,
         rng=seed,
+        Fs_eigval_range=Fs_eigval_range,
     )
     check_system(dynamics, cost, horizon, n_state, n_ctrl, stationary)
 

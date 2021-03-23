@@ -1,4 +1,6 @@
 """OpenAI Gym interface for LQG."""
+from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import cached_property
 from typing import List
@@ -8,7 +10,6 @@ from typing import Tuple
 import gym  # pylint:disable=import-self
 import numpy as np
 import torch
-import torch.nn as nn
 from dataclasses_json import DataClassJsonMixin
 from ray.rllib.env import VectorEnv
 from ray.rllib.utils.typing import EnvActionType
@@ -48,22 +49,19 @@ class LQGGenerator(DataClassJsonMixin):
         n_state: dimensionality of the state vectors
         n_ctrl: dimensionality of the control (action) vectors
         horizon: task horizon
-        trans_kernel_init: how to initialize the transition matrix. One of:
-            - "standard_normal"
-            - "xavier_uniform"
-            - "xavier_normal"
         stationary: whether dynamics and cost parameters should be
             constant over time or vary by timestep
+        Fs_eigval_range: range of eigenvalues for the unnactuated system
         seed: integer seed for random number generator used in
             initializing LQG parameters
     """
 
-    # pylint:disable=too-many-instance-attributes
+    # pylint:disable=too-many-instance-attributes,invalid-name
     n_state: int
     n_ctrl: int
     horizon: int
-    trans_kernel_init: str = "standard_normal"
     stationary: bool = False
+    Fs_eigval_range: Optional[tuple[float, float]] = None
     seed: Optional[int] = None
 
     def __post_init__(self):
@@ -92,13 +90,9 @@ class LQGGenerator(DataClassJsonMixin):
             stationary=self.stationary,
             n_batch=n_batch,
             rng=self._rng,
+            Fs_eigval_range=self.Fs_eigval_range,
         )
         init = make_gaussinit(state_size=self.n_state, n_batch=n_batch, rng=self._rng)
-
-        if self.trans_kernel_init == "xavier_uniform":
-            nn.init.xavier_uniform_(dynamics.F)
-        if self.trans_kernel_init == "xavier_normal":
-            nn.init.xavier_normal_(dynamics.F)
 
         return dynamics, cost, init
 

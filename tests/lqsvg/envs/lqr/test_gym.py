@@ -21,12 +21,6 @@ from .utils import standard_fixture
 EnvCreator = Callable[[dict], Union[gym.Env, VectorEnv]]
 
 
-n_state = standard_fixture((1, 2, 4), "NState")
-n_ctrl = standard_fixture((1, 2, 3), "NCtrl")
-horizon = standard_fixture((1, 4, 16), "Horizon")
-seed = standard_fixture((1, 2, 3), "Seed")
-
-
 @pytest.fixture
 def generator_cls() -> Type[LQGGenerator]:
     return LQGGenerator

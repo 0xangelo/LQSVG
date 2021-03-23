@@ -23,6 +23,7 @@ from .types import LinSDynamics
 from .types import QuadCost
 from .utils import expand_and_refine
 from .utils import np_expand_horizon
+from .utils import random_mat_with_eigval_range
 from .utils import random_normal_matrix
 from .utils import random_normal_vector
 from .utils import random_spd_matrix
@@ -58,6 +59,7 @@ def make_lindynamics(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
+    Fs_eigval_range: Optional[tuple[float, float]] = None,
     rng: RNG = None,
 ) -> LinDynamics:
     """Generate linear transition matrices.
@@ -68,14 +70,19 @@ def make_lindynamics(
         horizon: length of the horizon
         stationary: whether dynamics vary with time
         n_batch: batch size, if any
+        Fs_eigval_range: range of eigenvalues for the unnactuated system
         rng: random number generator, seed, or None
     """
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
-    n_tau = state_size + ctrl_size
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
-    F = random_normal_matrix(state_size, n_tau, **kwargs)
+    if Fs_eigval_range:
+        Fs = random_mat_with_eigval_range(state_size, Fs_eigval_range, **kwargs)
+        Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
+        F = torch.cat((Fs, Fa), dim="C")
+    else:
+        F = random_normal_matrix(state_size, state_size + ctrl_size, **kwargs)
     f = random_normal_vector(state_size, **kwargs)
     return LinDynamics(F, f)
 
@@ -87,6 +94,7 @@ def make_linsdynamics(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     rng: RNG = None,
+    **linear_kwargs
 ) -> LinSDynamics:
     """Generate stochastic linear dynamics parameters."""
     # pylint:disable=too-many-arguments
@@ -99,6 +107,7 @@ def make_linsdynamics(
         stationary=stationary,
         n_batch=n_batch,
         rng=rng,
+        **linear_kwargs
     )
     W = random_spd_matrix(
         state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
@@ -157,6 +166,7 @@ def make_lqr(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     rng: RNG = None,
+    **linear_kwargs
 ) -> tuple[LinDynamics, QuadCost]:
     # pylint:disable=too-many-arguments
     """Random LQR generator used in backpropagation-planning.
@@ -180,6 +190,7 @@ def make_lqr(
         stationary=stationary,
         n_batch=n_batch,
         rng=rng,
+        **linear_kwargs
     )
     cost = make_quadcost(
         state_size,
@@ -199,6 +210,7 @@ def make_lqg(
     stationary: bool,
     n_batch: Optional[int] = None,
     rng: RNG = None,
+    **linear_kwargs
 ) -> tuple[LinSDynamics, QuadCost]:
     """Random LQG generator.
 
@@ -219,6 +231,7 @@ def make_lqg(
         stationary=stationary,
         n_batch=n_batch,
         rng=rng,
+        **linear_kwargs
     )
     cost = make_quadcost(
         state_size,

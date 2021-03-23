@@ -60,7 +60,6 @@ def test_wrap_sample_shape_to_size(sampler: callable[[int], np.ndarray], dim: in
 
 vec_dim = standard_fixture((2, 3, 4), "VecDim")
 batch_shape = standard_fixture(((), (1,), (2,), (2, 1)), "BatchShape")
-seed = standard_fixture(range(10), "Seed")
 
 
 @pytest.fixture()
@@ -78,8 +77,6 @@ def test_random_matrix_from_eigs(eigvals: Tensor, seed: int):
 
 mat_dim = standard_fixture((2, 3, 4), "MatDim")
 eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
-horizon = standard_fixture((10, 100), "Horizon")
-stationary = standard_fixture((True, False), "Stationary")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
