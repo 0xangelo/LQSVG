@@ -1,5 +1,6 @@
 """Utilities for RLlib sample batches, warnings, and linear feedback policies."""
 import datetime
+import logging
 import warnings
 from contextlib import contextmanager
 
@@ -10,6 +11,12 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+
+
+def suppress_lightning_info_logging():
+    """Silences messages related to GPU/TPU availability."""
+    # https://github.com/PyTorchLightning/pytorch-lightning/issues/3431
+    logging.getLogger("lightning").setLevel(logging.WARNING)
 
 
 def calver() -> str:
