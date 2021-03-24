@@ -92,7 +92,12 @@ class LQGGenerator(DataClassJsonMixin):
             rng=self._rng,
             Fs_eigval_range=self.Fs_eigval_range,
         )
-        init = make_gaussinit(state_size=self.n_state, n_batch=n_batch, rng=self._rng)
+        init = make_gaussinit(
+            state_size=self.n_state,
+            n_batch=n_batch,
+            sample_covariance=False,
+            rng=self._rng,
+        )
 
         return dynamics, cost, init
 
