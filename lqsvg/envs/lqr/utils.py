@@ -34,22 +34,9 @@ def isstationary(dynamics: LinSDynamics) -> bool:
     )
 
 
-def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
-    """Returns the eigenvalues of unactuated stationary transition dynamics.
-
-    Raises:
-         AssertionError: if the (batch of) dynamics is not stationary
-    """
-    # pylint:disable=invalid-name
-    assert isstationary(dynamics), "Can't pass non-stationary dynamics"
-    F_s, _ = dynamics_factors(dynamics)
-    F_s = F_s.select("H", 0)
-    # Assume last two dimensions correspond to rows and cols respectively
-    eigvals, _ = np.linalg.eig(F_s.numpy())
-    return eigvals
-
-
-def isstable(dynamics: LinSDynamics) -> np.ndarray:
+def isstable(
+    dynamics: Optional[LinSDynamics] = None, eigvals: Optional[Tensor] = None
+) -> np.ndarray:
     """Returns whether the unactuated dynamics are stable.
 
     A linear, stationary, discrete-time system is stable iff the all the
@@ -60,9 +47,15 @@ def isstable(dynamics: LinSDynamics) -> np.ndarray:
         systems. Thus, this function first checks if the system is stationary.
 
     Raises:
-         AssertionError: if the (batch of) dynamics is not stationary
+        AssertionError: if both `dynamics` and `eigvals` are passed/missing
+        AssertionError: if the (batch of) dynamics is not stationary
     """
-    eigvals = stationary_eigvals(dynamics)
+    assert (dynamics is not None) ^ (
+        eigvals is not None
+    ), "Only one of `dynamics` or `eigvals` must be passed."
+
+    if eigvals is None:
+        eigvals = stationary_eigvals(dynamics)
     # Assume the last dimension corresponds eigenvalues
     stable = np.asarray(np.all(np.absolute(eigvals) <= 1.0, axis=-1))
     return stable
@@ -105,6 +98,21 @@ def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
     n_state, n_ctrl, _ = dims_from_dynamics(dynamics)
     F_s, F_a = nt.split(dynamics.F, (n_state, n_ctrl), dim="C")
     return F_s, F_a
+
+
+def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns the eigenvalues of unactuated stationary transition dynamics.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name
+    assert isstationary(dynamics), "Can't pass non-stationary dynamics"
+    F_s, _ = dynamics_factors(dynamics)
+    F_s = F_s.select("H", 0)
+    # Assume last two dimensions correspond to rows and cols respectively
+    eigvals, _ = np.linalg.eig(F_s.numpy())
+    return eigvals
 
 
 def ctrb(dynamics: LinSDynamics) -> Tensor:
