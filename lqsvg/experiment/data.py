@@ -16,10 +16,13 @@ from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 from torch.utils.data import TensorDataset
 
+import lqsvg
+import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 
 from .tqdm_util import collect_with_progress
 from .utils import group_batch_episodes
+from .worker import make_worker
 
 
 @dataclass
@@ -68,9 +71,11 @@ class TrajectoryData(pl.LightningDataModule):
         self.full_dataset = None
         self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
-    def collect_trajectories(self):
+    def collect_trajectories(self, prog: bool = True):
         """Sample trajectories with rollout worker and build dataset."""
-        sample_batch = collect_with_progress(self.worker, self.spec.total_trajs)
+        sample_batch = collect_with_progress(
+            self.worker, self.spec.total_trajs, prog=prog
+        )
         sample_batch = group_batch_episodes(sample_batch)
 
         trajs = sample_batch.split_by_episode()
@@ -140,8 +145,6 @@ def build_datamodule(worker: RolloutWorker, **kwargs):
     # pylint:disable=missing-function-docstring
     data_spec = DataModuleSpec(**kwargs)
     datamodule = TrajectoryData(worker, data_spec)
-    datamodule.collect_trajectories()
-    datamodule.setup()
     return datamodule
 
 
@@ -175,12 +178,16 @@ def check_dataloaders(datamodule):
 
 
 def test_datamodule():
-    # pylint:disable=missing-function-docstring,import-outside-toplevel
-    from .worker import make_worker
-
+    # pylint:disable=missing-function-docstring
+    lqsvg.register_all()
     # Create and initialize
-    worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
-    datamodule = build_datamodule(worker)
+    with nt.suppress_named_tensor_warning():
+        worker = make_worker(
+            env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=10)
+        )
+    datamodule = build_datamodule(worker, total_trajs=100)
+    datamodule.collect_trajectories()
+    datamodule.setup()
     check_dataloaders(datamodule)
 
 
