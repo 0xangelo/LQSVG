@@ -48,6 +48,12 @@ def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
     return K, k
 
 
+def _xavier_uniform_init(module: nn.Module):
+    if isinstance(module, TVLinearFeedback):
+        nn.init.xavier_uniform_(module.K)
+        nn.init.constant_(module.k, 0.0)
+
+
 class TVLinearFeedback(nn.Module):
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         super().__init__()
@@ -161,12 +167,23 @@ class TimeVaryingLinear(nn.Module):
 
 # noinspection PyAbstractClass
 @configure
+@option(
+    "initialization",
+    default="xavier_uniform",
+    help="""\
+    How to initialize the policy's parameters. One of:
+    - 'xavier_uniform'
+    - 'from_optimal'
+    """,
+)
 @option("exploration_config/type", default="raylab.utils.exploration.GaussianNoise")
 @option("exploration_config/pure_exploration_steps", default=0)
 @option("explore", default=False, override=True)
 class LQGPolicy(TorchPolicy):
     # pylint:disable=abstract-method
     dist_class = WrapDeterministicPolicy
+    observation_space: Box
+    action_space: Box
 
     @cached_property
     def n_state(self):
@@ -187,14 +204,18 @@ class LQGPolicy(TorchPolicy):
         return lqr.dims_from_spaces(self.observation_space, self.action_space)
 
     def initialize_from_lqg(self, env: TorchLQGMixin):
-        optimal: lqr.Linear = env.solution[0]
-        self.module.actor.initialize_from_optimal(optimal)
+        if self.config["initialization"] == "from_optimal":
+            optimal: lqr.Linear = env.solution[0]
+            self.module.actor.initialize_from_optimal(optimal)
         self.module.model.reward.copy(env.cost)
 
     def _make_module(
         self, obs_space: Box, action_space: Box, config: dict
     ) -> nn.Module:
-        return TimeVaryingLinear(obs_space, action_space, config)
+        module = TimeVaryingLinear(obs_space, action_space, config)
+        if self.config["initialization"] == "xavier_uniform":
+            module.apply(_xavier_uniform_init)
+        return module
 
     def _make_optimizers(self):
         optimizers = super()._make_optimizers()
