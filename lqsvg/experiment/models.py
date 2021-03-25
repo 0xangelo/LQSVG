@@ -95,6 +95,7 @@ class MonteCarloSVG(nn.Module):
             log-likelihood under the model
         """
         sample_shape = torch.Size(sample_shape)
+        self.model.eval()
 
         batch = []
         obs, logp = self.model.init.rsample(sample_shape)
@@ -247,6 +248,7 @@ class LightningModel(pl.LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         # pylint:disable=arguments-differ
+        self.model.train()
         loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("train/loss", loss)
         return loss
