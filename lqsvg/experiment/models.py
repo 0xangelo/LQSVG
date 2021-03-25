@@ -246,7 +246,11 @@ class LightningModel(pl.LightningModule):
         params = nn.ParameterList(
             itertools.chain(self.model.trans.parameters(), self.model.init.parameters())
         )
-        optim = torch.optim.Adam(params, lr=self.hparams.learning_rate)
+        optim = torch.optim.Adam(
+            params,
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
         return optim
 
     def _compute_loss_on_batch(
