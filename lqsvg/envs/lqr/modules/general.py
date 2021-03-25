@@ -2,28 +2,27 @@
 """Compilation of LQG modules."""
 from __future__ import annotations
 
+from typing import Union
+
 import torch.nn as nn
+from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
 
 from lqsvg.envs import lqr
 
 from .dynamics import InitStateDynamics
+from .dynamics import LinearDynamics
 from .dynamics import TVLinearDynamics
 from .reward import QuadraticReward
 
 
-class LQGModule(nn.Module):
-    """Linear Quadratic Gaussian as neural network module."""
+class EnvModule(nn.Module):
+    """Environment dynamics as a neural network module."""
 
     def __init__(
-        self, trans: TVLinearDynamics, reward: QuadraticReward, init: InitStateDynamics
+        self, trans: StochasticModel, reward: QuadraticReward, init: InitStateDynamics
     ):
         super().__init__()
-        self.n_state, self.n_ctrl, self.horizon = (
-            trans.n_state,
-            trans.n_ctrl,
-            trans.horizon,
-        )
         self.trans = trans
         self.reward = reward
         self.init = init
@@ -43,6 +42,23 @@ class LQGModule(nn.Module):
         trans_logp = self.trans.log_prob(new_obs, self.trans(obs, act)).sum(dim="H")
 
         return init_logp + trans_logp
+
+
+class LQGModule(EnvModule):
+    """Linear Quadratic Gaussian as neural network module."""
+
+    def __init__(
+        self,
+        trans: Union[TVLinearDynamics, LinearDynamics],
+        reward: QuadraticReward,
+        init: InitStateDynamics,
+    ):
+        super().__init__(trans, reward, init)
+        self.n_state, self.n_ctrl, self.horizon = (
+            trans.n_state,
+            trans.n_ctrl,
+            trans.horizon,
+        )
 
     def standard_form(self) -> tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
         """Submodules as a collection of matrices."""

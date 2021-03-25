@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import itertools
-from typing import Optional
 
 import pytorch_lightning as pl
 import torch
@@ -14,7 +13,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules import LQGModule
-from lqsvg.envs.lqr.modules import TVLinearNormalParams
+from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 from .utils import linear_feedback_cossim
@@ -75,7 +74,7 @@ def policy_svg(policy: DeterministicPolicy, value: Tensor) -> lqr.Linear:
 class MonteCarloSVG(nn.Module):
     """Computes the Monte Carlo aproximation for SVGs."""
 
-    def __init__(self, policy: DeterministicPolicy, model: LQGModule):
+    def __init__(self, policy: DeterministicPolicy, model: EnvModule):
         super().__init__()
         self.policy = policy
         self.model = model
@@ -200,25 +199,10 @@ class AnalyticSVG(nn.Module):
         return value, svg
 
 
-def glorot_init_model(model: nn.Module):
-    """Apply Glorot initialization to every time-varying linear submodule.
-
-    Args:
-        model: neural network PyTorch module
-    """
-
-    def initialize(module: nn.Module):
-        if isinstance(module, TVLinearNormalParams):
-            nn.init.xavier_uniform_(module.F)
-            nn.init.constant_(module.f, 0.0)
-
-    model.apply(initialize)
-
-
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     actor: DeterministicPolicy
-    model: LQGModule
+    model: EnvModule
     mdp: LQGModule
     gold_standard: tuple[Tensor, lqr.Linear]
     early_stop_on: str = "val/loss"
@@ -229,13 +213,12 @@ class LightningModel(pl.LightningModule):
         self.model = policy.module.model
         self.mdp = env.module
         self.monte_carlo_svg = MonteCarloSVG(self.actor, self.model)
-        self.analytic_svg = AnalyticSVG(self.actor, self.model)
 
-        self.hparams.learning_rate = 1e-3
-        self.hparams.mc_samples = 256
+        self.analytic_svg = None
+        if isinstance(self.model, LQGModule):
+            self.analytic_svg = AnalyticSVG(self.actor, self.model)
 
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
-        glorot_init_model(self.model)
 
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
@@ -292,24 +275,35 @@ class LightningModel(pl.LightningModule):
         self.log_gold_standard()
         self.value_gradient_info("test")
 
-    def value_gradient_info(self, prefix: Optional[str] = None):
-        true_val, true_svg = self.gold_standard
+    def value_gradient_info(self, prefix: str = ""):
+        self.log_monte_carlo(prefix)
+        if self.analytic_svg is not None:
+            self.log_analytic(prefix)
+
+    def log_monte_carlo(self, prefix: str = ""):
         with torch.enable_grad():
             mc_val, mc_svg = self.monte_carlo_svg(samples=self.hparams.mc_samples)
+        self.zero_grad(set_to_none=True)
+
+        true_val, true_svg = self.gold_standard
+        self.log(prefix + "monte_carlo_value", mc_val)
+        self.log(prefix + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
+        self.log(prefix + "monte_carlo_diff", mc_val - true_val)
+        self.log(
+            prefix + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg)
+        )
+
+    def log_analytic(self, prefix: str = ""):
+        with torch.enable_grad():
             analytic_val, analytic_svg = self.analytic_svg()
         self.zero_grad(set_to_none=True)
 
-        prfx = "" if prefix is None else prefix + "/"
-        self.log(prfx + "monte_carlo_value", mc_val)
-        self.log(prfx + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
-        self.log(prfx + "analytic_value", analytic_val)
-        self.log(prfx + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
-
-        self.log(prfx + "monte_carlo_diff", mc_val - true_val)
-        self.log(prfx + "analytic_diff", analytic_val - true_val)
-        self.log(prfx + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg))
+        true_val, true_svg = self.gold_standard
+        self.log(prefix + "analytic_value", analytic_val)
+        self.log(prefix + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
+        self.log(prefix + "analytic_diff", analytic_val - true_val)
         self.log(
-            prfx + "analytic_cossim", linear_feedback_cossim(analytic_svg, true_svg)
+            prefix + "analytic_cossim", linear_feedback_cossim(analytic_svg, true_svg)
         )
 
     def log_gold_standard(self):

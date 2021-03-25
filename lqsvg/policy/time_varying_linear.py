@@ -28,6 +28,10 @@ from lqsvg.envs.lqr.modules import InitStateDynamics
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.modules import QuadraticReward
 from lqsvg.envs.lqr.modules import TVLinearDynamics
+from lqsvg.envs.lqr.modules import TVLinearNormalParams
+from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics
+from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalParams
+from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.utils import unpack_obs
 
 
@@ -46,12 +50,6 @@ def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
     n_state, n_ctrl, _ = lqr.dims_from_policy(policy)
     K, k = (g + 0.5 * torch.randn_like(g) / (n_state + np.sqrt(n_ctrl)) for g in policy)
     return K, k
-
-
-def _xavier_uniform_init(module: nn.Module):
-    if isinstance(module, TVLinearFeedback):
-        nn.init.xavier_uniform_(module.K)
-        nn.init.constant_(module.k, 0.0)
 
 
 class TVLinearFeedback(nn.Module):
@@ -119,7 +117,19 @@ class TVLinearTransModel(TVLinearDynamics):
     """Time-varying linear Gaussian dynamics model."""
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        dynamics = make_linsdynamics(n_state, n_ctrl, horizon, stationary=False)
+        dynamics = make_linsdynamics(
+            n_state, n_ctrl, horizon, stationary=False, sample_covariance=True
+        )
+        super().__init__(dynamics)
+
+
+class LinearTransModel(LinearDynamics):
+    """Stationary linear Gaussian dynamics model."""
+
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
+        dynamics = make_linsdynamics(
+            n_state, n_ctrl, horizon, stationary=True, sample_covariance=True
+        )
         super().__init__(dynamics)
 
 
@@ -139,23 +149,57 @@ class InitStateModel(InitStateDynamics):
         super().__init__(init)
 
 
+def glorot_init_policy(module: nn.Module):
+    """Apply Glorot initialization to time-varying linear policy.
+
+    Args:
+        module: neural network PyTorch module
+    """
+    if isinstance(module, TVLinearFeedback):
+        nn.init.xavier_uniform_(module.K)
+        nn.init.constant_(module.k, 0.0)
+
+
+def glorot_init_model(module: nn.Module):
+    """Apply Glorot initialization to linear dynamics model.
+
+    Args:
+        module: neural network PyTorch module
+    """
+    if isinstance(module, (TVLinearNormalParams, LinearNormalParams)):
+        nn.init.xavier_uniform_(module.F)
+        nn.init.constant_(module.f, 0.0)
+
+
 class TimeVaryingLinear(nn.Module):
     # pylint:disable=abstract-method
     actor: TVLinearPolicy
     behavior: TVLinearPolicy
-    model: LQGModule
+    model: EnvModule
 
     def __init__(self, obs_space: Box, action_space: Box, config: dict):
         super().__init__()
+        # Policy
         self.actor = TVLinearPolicy(obs_space, action_space)
         self.behavior = self.actor
 
+        # Model
         n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
+        if config["stationary_model"]:
+            trans = LinearTransModel(n_state, n_ctrl, horizon)
+        else:
+            trans = TVLinearTransModel(n_state, n_ctrl, horizon)
         self.model = LQGModule(
-            TVLinearTransModel(n_state, n_ctrl, horizon),
-            QuadRewardModel(n_state, n_ctrl, horizon),
-            InitStateModel(n_state=n_state, seed=config.get("seed", None)),
+            trans=trans,
+            reward=QuadRewardModel(n_state, n_ctrl, horizon),
+            init=InitStateModel(n_state=n_state, seed=config.get("seed", None)),
         )
+
+        # Parameter initialization
+        if config["policy_initializer"] == "xavier_uniform":
+            self.apply(glorot_init_policy)
+        if config["model_initializer"] == "xavier_uniform":
+            self.apply(glorot_init_model)
 
     def standard_form(
         self,
@@ -168,13 +212,27 @@ class TimeVaryingLinear(nn.Module):
 # noinspection PyAbstractClass
 @configure
 @option(
-    "initialization",
+    "module/policy_initializer",
     default="xavier_uniform",
     help="""\
     How to initialize the policy's parameters. One of:
     - 'xavier_uniform'
     - 'from_optimal'
     """,
+)
+@option(
+    "module/model_initializer",
+    default="xavier_uniform",
+    help="""\
+    How to initialize the model's parameters. One of:
+    - 'xavier_uniform'
+    - 'standard_normal'
+    """,
+)
+@option(
+    "module/stationary_model",
+    default=False,
+    help="Whether to use a stationary linear Gaussian dynamics model.",
 )
 @option("exploration_config/type", default="raylab.utils.exploration.GaussianNoise")
 @option("exploration_config/pure_exploration_steps", default=0)
@@ -204,7 +262,7 @@ class LQGPolicy(TorchPolicy):
         return lqr.dims_from_spaces(self.observation_space, self.action_space)
 
     def initialize_from_lqg(self, env: TorchLQGMixin):
-        if self.config["initialization"] == "from_optimal":
+        if self.config["module"]["policy_initializer"] == "from_optimal":
             optimal: lqr.Linear = env.solution[0]
             self.module.actor.initialize_from_optimal(optimal)
         self.module.model.reward.copy(env.cost)
@@ -212,9 +270,7 @@ class LQGPolicy(TorchPolicy):
     def _make_module(
         self, obs_space: Box, action_space: Box, config: dict
     ) -> nn.Module:
-        module = TimeVaryingLinear(obs_space, action_space, config)
-        if self.config["initialization"] == "xavier_uniform":
-            module.apply(_xavier_uniform_init)
+        module = TimeVaryingLinear(obs_space, action_space, config["module"])
         return module
 
     def _make_optimizers(self):
