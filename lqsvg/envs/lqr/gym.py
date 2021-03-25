@@ -52,6 +52,8 @@ class LQGGenerator(DataClassJsonMixin):
         stationary: whether dynamics and cost parameters should be
             constant over time or vary by timestep
         Fs_eigval_range: range of eigenvalues for the unnactuated system
+        transition_bias: whether to use a non-zero bias vector for transition
+            dynamics
         seed: integer seed for random number generator used in
             initializing LQG parameters
     """
@@ -62,6 +64,7 @@ class LQGGenerator(DataClassJsonMixin):
     horizon: int
     stationary: bool = False
     Fs_eigval_range: Optional[tuple[float, float]] = None
+    transition_bias: bool = True
     seed: Optional[int] = None
 
     def __post_init__(self):

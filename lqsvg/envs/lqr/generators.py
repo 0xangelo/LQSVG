@@ -53,6 +53,7 @@ def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, Quad
     return dynamics, cost
 
 
+# noinspection PyPep8Naming
 def make_lindynamics(
     state_size: int,
     ctrl_size: int,
@@ -60,6 +61,7 @@ def make_lindynamics(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     Fs_eigval_range: Optional[tuple[float, float]] = None,
+    transition_bias: bool = True,
     rng: RNG = None,
 ) -> LinDynamics:
     """Generate linear transition matrices.
@@ -70,7 +72,11 @@ def make_lindynamics(
         horizon: length of the horizon
         stationary: whether dynamics vary with time
         n_batch: batch size, if any
-        Fs_eigval_range: range of eigenvalues for the unnactuated system
+        Fs_eigval_range: range of eigenvalues for the unnactuated system. If None,
+            samples the F_s matrix entries independently from a standard normal
+            distribution
+        transition_bias: whether to use a non-zero bias vector for transition
+            dynamics
         rng: random number generator, seed, or None
     """
     # pylint:disable=too-many-arguments
@@ -79,11 +85,17 @@ def make_lindynamics(
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
     if Fs_eigval_range:
         Fs = random_mat_with_eigval_range(state_size, Fs_eigval_range, **kwargs)
-        Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
-        F = torch.cat((Fs, Fa), dim="C")
     else:
-        F = random_normal_matrix(state_size, state_size + ctrl_size, **kwargs)
-    f = random_normal_vector(state_size, **kwargs)
+        Fs = random_normal_matrix(state_size, state_size, **kwargs)
+    Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
+    F = torch.cat((Fs, Fa), dim="C")
+
+    if transition_bias:
+        f = random_normal_vector(state_size, **kwargs)
+    else:
+        f = expand_and_refine(
+            torch.zeros(state_size), 1, horizon=horizon, n_batch=n_batch
+        )
     return LinDynamics(F, f)
 
 
