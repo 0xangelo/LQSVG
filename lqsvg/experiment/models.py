@@ -278,9 +278,9 @@ class LightningModel(pl.LightningModule):
         self.value_gradient_info("test")
 
     def value_gradient_info(self, prefix: str = ""):
-        self.log_monte_carlo(prefix)
+        self.log_monte_carlo(prefix + "/")
         if self.analytic_svg is not None:
-            self.log_analytic(prefix)
+            self.log_analytic(prefix + "/")
 
     def log_monte_carlo(self, prefix: str = ""):
         with torch.enable_grad():
