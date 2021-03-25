@@ -105,6 +105,7 @@ def make_linsdynamics(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
+    sample_covariance: bool = True,
     rng: RNG = None,
     **linear_kwargs
 ) -> LinSDynamics:
@@ -121,9 +122,14 @@ def make_linsdynamics(
         rng=rng,
         **linear_kwargs
     )
-    W = random_spd_matrix(
-        state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
-    )
+
+    if sample_covariance:
+        W = random_spd_matrix(
+            state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
+        )
+    else:
+        W = expand_and_refine(torch.eye(state_size), 2, horizon=1, n_batch=n_batch)
+
     return LinSDynamics(F, f, W)
 
 
