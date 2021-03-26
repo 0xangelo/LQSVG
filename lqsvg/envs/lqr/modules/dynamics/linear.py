@@ -8,7 +8,6 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from raylab.policy.modules.model import StochasticModel
-from torch import IntTensor
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -21,7 +20,7 @@ from .common import disassemble_covariance
 from .common import TVMultivariateNormal
 
 
-class CovCholeskyFactor(nn.Module):
+class CovarianceCholesky(nn.Module):
     """Covariance matrix stored as Cholesky factor."""
 
     beta: float = 0.2
@@ -35,16 +34,9 @@ class CovCholeskyFactor(nn.Module):
     def _named_factors(self) -> tuple[Tensor, Tensor]:
         return nt.matrix(self.ltril), nt.vector(self.pre_diag)
 
-    def forward(self, time: Optional[IntTensor] = None) -> Tensor:
+    def forward(self) -> Tensor:
         # pylint:disable=missing-function-docstring
         ltril, pre_diag = self._named_factors()
-        if time is not None:
-            ltril = ltril.expand(time.shape + ltril.shape).refine_names(
-                *time.names, ...
-            )
-            pre_diag = pre_diag.expand(time.shape + pre_diag.shape).refine_names(
-                *time.names, ...
-            )
         return nt.matrix(assemble_scale_tril(ltril, pre_diag, beta=self.beta))
 
 
@@ -61,7 +53,7 @@ class LinearNormalParams(nn.Module):
         assert isstationary(dynamics)
         self.F = nn.Parameter(nt.unnamed(dynamics.F.select("H", 0)))
         self.f = nn.Parameter(nt.unnamed(dynamics.f.select("H", 0)))
-        self.scale_tril = CovCholeskyFactor(dynamics.W.select("H", 0))
+        self.scale_tril = CovarianceCholesky(dynamics.W.select("H", 0))
         if horizon is None:
             _, _, horizon = lqr.dims_from_dynamics(dynamics)
         self.horizon = horizon
@@ -80,7 +72,7 @@ class LinearNormalParams(nn.Module):
         loc = F @ tau + nt.vector_to_matrix(f)
         return {
             "loc": nt.matrix_to_vector(loc),
-            "scale_tril": nt.matrix(scale_tril),
+            "scale_tril": scale_tril,
             "time": time + 1,
         }
 
