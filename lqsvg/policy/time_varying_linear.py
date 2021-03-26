@@ -10,6 +10,7 @@ from raylab.options import configure
 from raylab.options import option
 from raylab.policy import TorchPolicy
 from raylab.policy.action_dist import WrapDeterministicPolicy
+from raylab.policy.modules.model import ResidualStochasticModel
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
@@ -65,6 +66,8 @@ class TimeVaryingLinear(nn.Module):
             trans = LinearTransModel(n_state, n_ctrl, horizon)
         else:
             trans = TVLinearTransModel(n_state, n_ctrl, horizon)
+        if config["residual_model"]:
+            trans = ResidualStochasticModel(trans)
         if config["model_input_norm"]:
             trans = InputNormModel(trans, obs_space)
 
@@ -113,6 +116,11 @@ class TimeVaryingLinear(nn.Module):
     "module/stationary_model",
     default=False,
     help="Whether to use a stationary linear Gaussian dynamics model.",
+)
+@option(
+    "module/residual_model",
+    default=False,
+    help="Whether to predict change in state or absolute state variables.",
 )
 @option(
     "module/model_input_norm",
