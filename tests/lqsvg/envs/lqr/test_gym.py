@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from typing import Callable
-from typing import Optional
-from typing import Type
 from typing import Union
 
 import gym
@@ -10,7 +8,6 @@ import numpy as np
 import pytest
 from ray.rllib import VectorEnv
 
-from lqsvg.envs.lqr.gym import LQGGenerator
 from lqsvg.envs.lqr.gym import RandomLQGEnv
 from lqsvg.envs.lqr.gym import RandomVectorLQG
 
@@ -19,27 +16,6 @@ from .utils import allclose_dynamics
 from .utils import standard_fixture
 
 EnvCreator = Callable[[dict], Union[gym.Env, VectorEnv]]
-
-
-@pytest.fixture
-def generator_cls() -> Type[LQGGenerator]:
-    return LQGGenerator
-
-
-@pytest.fixture
-def generator(
-    generator_cls: Type[LQGGenerator],
-    n_state: int,
-    n_ctrl: int,
-    horizon: int,
-    seed: int,
-) -> LQGGenerator:
-    return generator_cls(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, seed=seed)
-
-
-@pytest.fixture
-def config(generator) -> dict:
-    return generator.to_dict()
 
 
 @pytest.fixture(params=(RandomLQGEnv, RandomVectorLQG), ids=lambda x: x.__name__)
@@ -51,28 +27,14 @@ def env_creator(request) -> EnvCreator:
     return cls
 
 
-# Test LQGGenerator interface ==========================================
-def test_generator_init(
-    generator: LQGGenerator, n_state: int, n_ctrl: int, horizon: int, seed: int
-):
-    assert generator.n_state == n_state
-    assert generator.n_ctrl == n_ctrl
-    assert generator.horizon == horizon
-    assert generator.seed == seed
-
-
-n_batch = standard_fixture((None, 1, 4), "NBatch")
-
-
-def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
-    dynamics, cost, init = generator(n_batch=n_batch)
-
-    tensors = [t for c in (dynamics, cost, init) for t in c]
-    if n_batch is None:
-        assert all("B" not in t.names for t in tensors)
-    else:
-        assert all("B" in t.names for t in tensors)
-        assert all(t.size("B") == n_batch for t in tensors)
+@pytest.fixture
+def config(
+    n_state: int,
+    n_ctrl: int,
+    horizon: int,
+    seed: int,
+) -> dict:
+    return dict(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, seed=seed)
 
 
 # Test common TorchLQGMixin interface ==========================================
@@ -149,7 +111,7 @@ num_envs = standard_fixture((1, 2, 4), "NEnvs")
 
 
 @pytest.fixture
-def vector_config(config: dict, num_envs: int) -> LQGGenerator:
+def vector_config(config: dict, num_envs: int) -> dict:
     config["num_envs"] = num_envs
     return config
 

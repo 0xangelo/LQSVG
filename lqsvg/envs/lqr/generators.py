@@ -2,11 +2,13 @@
 # pylint:disable=invalid-name,unsubscriptable-object
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 from typing import Union
 
 import numpy as np
 import torch
+from dataclasses_json import DataClassJsonMixin
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -27,6 +29,70 @@ from .utils import random_mat_with_eigval_range
 from .utils import random_normal_matrix
 from .utils import random_normal_vector
 from .utils import random_spd_matrix
+
+
+@dataclass
+class LQGGenerator(DataClassJsonMixin):
+    """Specifications for LQG generation.
+
+    Args:
+        n_state: dimensionality of the state vectors
+        n_ctrl: dimensionality of the control (action) vectors
+        horizon: task horizon
+        stationary: whether dynamics and cost parameters should be
+            constant over time or vary by timestep
+        Fs_eigval_range: range of eigenvalues for the unnactuated system
+        transition_bias: whether to use a non-zero bias vector for transition
+            dynamics
+        seed: integer seed for random number generator used in
+            initializing LQG parameters
+    """
+
+    # pylint:disable=too-many-instance-attributes,invalid-name
+    n_state: int
+    n_ctrl: int
+    horizon: int
+    stationary: bool = False
+    Fs_eigval_range: Optional[tuple[float, float]] = None
+    transition_bias: bool = True
+    seed: Optional[int] = None
+
+    def __post_init__(self):
+        # pylint:disable=attribute-defined-outside-init
+        self._rng = np.random.default_rng(self.seed)
+
+    def __call__(
+        self, n_batch: Optional[int] = None
+    ) -> tuple[LinSDynamics, QuadCost, GaussInit]:
+        """Generates random LQG parameters.
+
+        Generates a transition kernel, cost function and initial state
+        distribution parameters.
+
+        Args:
+            n_batch: batch size, if any
+
+        Returns:
+            A tuple containing parameters for linear stochastic dynamics,
+            quadratic costs, and Normal inital state distribution.
+        """
+        dynamics, cost = make_lqg(
+            state_size=self.n_state,
+            ctrl_size=self.n_ctrl,
+            horizon=self.horizon,
+            stationary=self.stationary,
+            n_batch=n_batch,
+            rng=self._rng,
+            Fs_eigval_range=self.Fs_eigval_range,
+        )
+        init = make_gaussinit(
+            state_size=self.n_state,
+            n_batch=n_batch,
+            sample_covariance=False,
+            rng=self._rng,
+        )
+
+        return dynamics, cost, init
 
 
 def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, QuadCost]:

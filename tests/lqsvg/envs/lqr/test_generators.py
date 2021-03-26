@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from typing import Type
 from typing import Union
 
 import pytest
@@ -8,6 +9,7 @@ import torch
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import box_ddp_random_lqr
+from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.generators import make_lqg
 from lqsvg.envs.lqr.generators import make_lqr
 from lqsvg.envs.lqr.generators import make_lqr_linear_navigation
@@ -20,6 +22,47 @@ from .utils import standard_fixture
 
 
 Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
+
+
+@pytest.fixture
+def generator_cls() -> Type[LQGGenerator]:
+    return LQGGenerator
+
+
+# noinspection PyArgumentList
+@pytest.fixture
+def generator(
+    generator_cls: Type[LQGGenerator],
+    n_state: int,
+    n_ctrl: int,
+    horizon: int,
+    seed: int,
+) -> LQGGenerator:
+    return generator_cls(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, seed=seed)
+
+
+# Test LQGGenerator interface ==========================================
+def test_generator_init(
+    generator: LQGGenerator, n_state: int, n_ctrl: int, horizon: int, seed: int
+):
+    assert generator.n_state == n_state
+    assert generator.n_ctrl == n_ctrl
+    assert generator.horizon == horizon
+    assert generator.seed == seed
+
+
+n_batch = standard_fixture((None, 1, 4), "NBatch")
+
+
+def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
+    dynamics, cost, init = generator(n_batch=n_batch)
+
+    tensors = [t for c in (dynamics, cost, init) for t in c]
+    if n_batch is None:
+        assert all("B" not in t.names for t in tensors)
+    else:
+        assert all("B" in t.names for t in tensors)
+        assert all(t.size("B") == n_batch for t in tensors)
 
 
 def check_system(
@@ -120,9 +163,6 @@ def test_stack_lqs(n_state, n_ctrl, horizon, seed):
 
 
 # Batched LQs =================================================================
-n_batch = standard_fixture((None, 1, 10), "Batch")
-
-
 def test_batched_lqgs(n_state, n_ctrl, horizon, stationary, n_batch):
     dynamics, cost = make_lqg(
         state_size=n_state,
