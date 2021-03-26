@@ -360,7 +360,6 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
 
     Expects observation as a named 'vector' tensor.
     """
-    # state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
-    state, time = obs[..., :-1], obs[..., -1:]
+    state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
     time = time.int()
     return state, time
