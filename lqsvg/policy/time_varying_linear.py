@@ -69,7 +69,7 @@ class TimeVaryingLinear(nn.Module):
         if config["residual_model"]:
             trans = ResidualModel(trans)
         if config["model_input_norm"]:
-            trans = LayerNormModel(trans, obs_space)
+            trans = LayerNormModel(trans, n_state)
 
         model_cls = LQGModule if isinstance(trans, LinearDynamics) else EnvModule
         self.model = model_cls(

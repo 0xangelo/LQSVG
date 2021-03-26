@@ -6,7 +6,6 @@ from typing import Optional
 from typing import Union
 
 import torch
-from gym.spaces import Box
 from raylab.policy.modules.actor import DeterministicPolicy
 from raylab.policy.modules.model import StochasticModel
 from raylab.torch.nn.distributions.types import SampleLogp
@@ -172,10 +171,9 @@ class StochasticModelWrapper(StochasticModel):
 class LayerNormModel(StochasticModelWrapper):
     """Applies Layer Normalization to state inputs."""
 
-    def __init__(self, model: StochasticModel, obs_space: Box):
-        assert isinstance(obs_space, Box)
+    def __init__(self, model: StochasticModel, n_state: int):
         super().__init__(model)
-        self.normalizer = nn.LayerNorm(normalized_shape=obs_space.shape[0] - 1)
+        self.normalizer = nn.LayerNorm(normalized_shape=n_state)
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
         state, time = unpack_obs(obs)
@@ -187,14 +185,18 @@ class LayerNormModel(StochasticModelWrapper):
 class BatchNormModel(StochasticModelWrapper):
     """Applies Batch Normalization to state inputs."""
 
-    def __init__(self, model: StochasticModel, obs_space: Box):
-        assert isinstance(obs_space, Box)
+    def __init__(self, model: StochasticModel, n_state: int):
         super().__init__(model)
-        self.normalizer = nn.BatchNorm1d(num_features=obs_space.shape[0] - 1)
+        self.normalizer = nn.BatchNorm1d(num_features=n_state)
+        self.n_state = n_state
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
         state, time = unpack_obs(obs)
-        state = self.normalizer(nt.unnamed(state)).refine_names(*state.names)
+        state = (
+            self.normalizer(nt.unnamed(state).reshape(-1, self.n_state))
+            .reshape_as(state)
+            .refine_names(*state.names)
+        )
         obs = pack_obs(state, time)
         return self._model(obs, action)
 
