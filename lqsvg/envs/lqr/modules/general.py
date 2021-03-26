@@ -2,8 +2,6 @@
 """Compilation of LQG modules."""
 from __future__ import annotations
 
-from typing import Union
-
 import torch.nn as nn
 from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
@@ -12,7 +10,6 @@ from lqsvg.envs import lqr
 
 from .dynamics import InitStateDynamics
 from .dynamics import LinearDynamics
-from .dynamics import TVLinearDynamics
 from .reward import QuadraticReward
 
 
@@ -49,7 +46,7 @@ class LQGModule(EnvModule):
 
     def __init__(
         self,
-        trans: Union[TVLinearDynamics, LinearDynamics],
+        trans: LinearDynamics,
         reward: QuadraticReward,
         init: InitStateDynamics,
     ):

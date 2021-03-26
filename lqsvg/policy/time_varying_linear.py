@@ -13,8 +13,7 @@ from raylab.policy.action_dist import WrapDeterministicPolicy
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules import TVLinearNormalParams
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalParams
+from lqsvg.envs.lqr.modules import LinearDynamics
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.modules.general import LQGModule
 
@@ -22,7 +21,6 @@ from .modules import InitStateModel
 from .modules import InputNormModel
 from .modules import LinearTransModel
 from .modules import QuadRewardModel
-from .modules import TVLinearFeedback
 from .modules import TVLinearPolicy
 from .modules import TVLinearTransModel
 
@@ -33,7 +31,7 @@ def glorot_init_policy(module: nn.Module):
     Args:
         module: neural network PyTorch module
     """
-    if isinstance(module, TVLinearFeedback):
+    if isinstance(module, TVLinearPolicy):
         nn.init.xavier_uniform_(module.K)
         nn.init.constant_(module.k, 0.0)
 
@@ -44,7 +42,7 @@ def glorot_init_model(module: nn.Module):
     Args:
         module: neural network PyTorch module
     """
-    if isinstance(module, (TVLinearNormalParams, LinearNormalParams)):
+    if isinstance(module, LinearDynamics):
         nn.init.xavier_uniform_(module.F)
         nn.init.constant_(module.f, 0.0)
 
@@ -69,7 +67,9 @@ class TimeVaryingLinear(nn.Module):
             trans = TVLinearTransModel(n_state, n_ctrl, horizon)
         if config["model_input_norm"]:
             trans = InputNormModel(trans, obs_space)
-        self.model = LQGModule(
+
+        model_cls = LQGModule if isinstance(trans, LinearDynamics) else EnvModule
+        self.model = model_cls(
             trans=trans,
             reward=QuadRewardModel(n_state, n_ctrl, horizon),
             init=InitStateModel(n_state=n_state, seed=config.get("seed", None)),

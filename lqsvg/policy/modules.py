@@ -22,9 +22,9 @@ from lqsvg.envs.lqr import make_gaussinit
 from lqsvg.envs.lqr.generators import make_linsdynamics
 from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.modules import InitStateDynamics
+from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.envs.lqr.modules import QuadraticReward
-from lqsvg.envs.lqr.modules import TVLinearDynamics
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics
+from lqsvg.envs.lqr.modules import TVLinearDynamicsModule
 from lqsvg.envs.lqr.utils import unpack_obs
 
 from .utils import perturb_policy
@@ -77,24 +77,32 @@ class TVLinearFeedback(nn.Module):
 
 
 class TVLinearPolicy(DeterministicPolicy):
-    # pylint:disable=missing-docstring
+    """Time-varying affine feedback policy as a DeterministicPolicy module."""
+
+    K: nn.Parameter
+    k: nn.Parameter
+
     def __init__(self, obs_space: Box, action_space: Box):
         n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
         action_linear = TVLinearFeedback(n_state, n_ctrl, horizon)
         super().__init__(
             encoder=nn.Identity(), action_linear=action_linear, squashing=nn.Identity()
         )
+        self.K = self.action_linear.K
+        self.k = self.action_linear.k
 
     def initialize_from_optimal(self, optimal: lqr.Linear):
+        # pylint:disable=missing-function-docstring
         policy = perturb_policy(optimal)
         self.action_linear.copy(policy)
 
     def standard_form(self) -> lqr.Linear:
+        # pylint:disable=missing-function-docstring
         return self.action_linear.gains()
 
 
-class TVLinearTransModel(TVLinearDynamics):
-    """Time-varying linear Gaussian dynamics model."""
+class TVLinearTransModel(TVLinearDynamicsModule):
+    """Time-varying linear Gaussian transition model."""
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         dynamics = make_linsdynamics(
@@ -103,8 +111,8 @@ class TVLinearTransModel(TVLinearDynamics):
         super().__init__(dynamics)
 
 
-class LinearTransModel(LinearDynamics):
-    """Stationary linear Gaussian dynamics model."""
+class LinearTransModel(LinearDynamicsModule):
+    """Stationary linear Gaussian transition model."""
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         dynamics = make_linsdynamics(

@@ -1,6 +1,8 @@
 """Linear dynamics models."""
 from __future__ import annotations
 
+from abc import ABCMeta
+from abc import abstractmethod
 from typing import Optional
 
 import torch
@@ -22,7 +24,6 @@ from .common import TVMultivariateNormal
 class CovCholeskyFactor(nn.Module):
     """Covariance matrix stored as Cholesky factor."""
 
-    # pylint:disable=abstract-method
     beta: float = 0.2
 
     def __init__(self, sigma: Tensor):
@@ -47,11 +48,14 @@ class CovCholeskyFactor(nn.Module):
         return nt.matrix(assemble_scale_tril(ltril, pre_diag, beta=self.beta))
 
 
+# noinspection PyPep8Naming
 class LinearNormalParams(nn.Module):
     """Linear state-action conditional Gaussian parameters."""
 
-    # pylint:disable=invalid-name,abstract-method,no-self-use
-    # noinspection PyPep8Naming
+    # pylint:disable=invalid-name
+    F: nn.Parameter
+    f: nn.Parameter
+
     def __init__(self, dynamics: lqr.LinSDynamics, horizon: Optional[int] = None):
         super().__init__()
         assert isstationary(dynamics)
@@ -93,19 +97,36 @@ class LinearNormalParams(nn.Module):
         return nt.horizon(tensor.expand((self.horizon,) + tensor.shape))
 
 
-class LinearDynamics(StochasticModel):
-    """Linear stochastic model from dynamics."""
+class LinearDynamics(StochasticModel, metaclass=ABCMeta):
+    """Abstraction for linear modules usable by LQG solvers."""
 
     n_state: int
     n_ctrl: int
     horizon: int
+    F: nn.Parameter
+    f: nn.Parameter
+
+    @abstractmethod
+    def standard_form(self) -> lqr.LinSDynamics:
+        """Returns self as parameters defining a linear stochastic system."""
+
+    def dimensions(self) -> tuple[int, int, int]:
+        """Return the state, action, and horizon size for this module."""
+        return self.n_state, self.n_ctrl, self.horizon
+
+
+class LinearDynamicsModule(LinearDynamics):
+    """Linear stochastic model from dynamics."""
+
+    # pylint:disable=invalid-name
 
     def __init__(self, dynamics: lqr.LinSDynamics):
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
         params = LinearNormalParams(dynamics, horizon=self.horizon)
         dist = TVMultivariateNormal()
         super().__init__(params, dist)
+        self.F = self.params.F
+        self.f = self.params.f
 
     def standard_form(self) -> lqr.LinSDynamics:
-        # pylint:disable=missing-function-docstring
         return self.params.as_linsdynamics()

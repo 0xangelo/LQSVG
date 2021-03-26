@@ -4,7 +4,6 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-from raylab.policy.modules.model import StochasticModel
 from torch import IntTensor
 from torch import Tensor
 
@@ -15,12 +14,12 @@ from lqsvg.envs.lqr.utils import unpack_obs
 from .common import assemble_scale_tril
 from .common import disassemble_covariance
 from .common import TVMultivariateNormal
+from .linear import LinearDynamics
 
 
 class CovCholeskyFactor(nn.Module):
     """Covariance Cholesky factor."""
 
-    # pylint:disable=abstract-method
     beta: float = 0.2
 
     def __init__(self, sigma: Tensor):
@@ -44,7 +43,7 @@ class CovCholeskyFactor(nn.Module):
 class TVLinearNormalParams(nn.Module):
     """Time-varying linear state-action conditional Gaussian parameters."""
 
-    # pylint:disable=invalid-name,abstract-method,no-self-use
+    # pylint:disable=invalid-name
     # noinspection PyPep8Naming
     def __init__(self, F: Tensor, f: Tensor, W: Tensor):
         super().__init__()
@@ -83,19 +82,18 @@ class TVLinearNormalParams(nn.Module):
         return lqr.LinSDynamics(F, f, covariance_matrix)
 
 
-class TVLinearDynamics(StochasticModel):
+class TVLinearDynamicsModule(LinearDynamics):
     """Time-varying linear stochastic model from dynamics."""
 
-    n_state: int
-    n_ctrl: int
-    horizon: int
+    # pylint:disable=invalid-name
 
     def __init__(self, dynamics: lqr.LinSDynamics):
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
         params = TVLinearNormalParams(*dynamics)
         dist = TVMultivariateNormal()
         super().__init__(params, dist)
+        self.F = self.params.F
+        self.f = self.params.f
 
     def standard_form(self) -> lqr.LinSDynamics:
-        # pylint:disable=missing-function-docstring
         return self.params.as_linsdynamics()

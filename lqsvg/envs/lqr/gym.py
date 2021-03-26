@@ -25,7 +25,7 @@ from .generators import make_lqg
 from .modules import InitStateDynamics
 from .modules import LQGModule
 from .modules import QuadraticReward
-from .modules import TVLinearDynamics
+from .modules import TVLinearDynamicsModule
 from .solvers import NamedLQGControl
 from .types import GaussInit
 from .types import Linear
@@ -120,7 +120,9 @@ class TorchLQGMixin:
         init: GaussInit,
     ):
         self.module = LQGModule(
-            TVLinearDynamics(dynamics), QuadraticReward(cost), InitStateDynamics(init)
+            TVLinearDynamicsModule(dynamics),
+            QuadraticReward(cost),
+            InitStateDynamics(init),
         )
         # Ensure optimizers don't update the MDP
         self.module.requires_grad_(False)
