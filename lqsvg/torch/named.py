@@ -171,8 +171,4 @@ def where(
 def split(
     tensor: Tensor, split_size_or_sections: Union[int, list[int]], dim: str
 ) -> tuple[Tensor, ...]:
-    permuted = tensor.align_to(..., dim)
-    tensors = torch.split(permuted, split_size_or_sections, dim=-1)
-    return tuple(
-        t.refine_names(*permuted.names).align_to(*tensor.names) for t in tensors
-    )
+    return torch.split(tensor, split_size_or_sections, dim=tensor.names.index(dim))
