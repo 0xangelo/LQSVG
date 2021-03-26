@@ -363,3 +363,8 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
     state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
     time = time.int()
     return state, time
+
+
+def pack_obs(state: Tensor, time: IntTensor) -> Tensor:
+    """Reverses the `unpack_obs` transformation."""
+    return torch.cat((state, time.float()), dim="R")
