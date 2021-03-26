@@ -88,10 +88,12 @@ class TimeVaryingLinear(nn.Module):
         else:
             trans = TVLinearTransModel(n_state, n_ctrl, horizon)
 
+        trans = self._input_processing(trans, n_state, config["model_input_norm"])
+
+        # This should be last, otherwise we may be learning residuals between
+        # normalized states and unnormalized next states
         if config["residual_model"]:
             trans = ResidualModel(trans)
-
-        trans = self._input_processing(trans, n_state, config["model_input_norm"])
         return trans
 
     @staticmethod
