@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from functools import cached_property
 
-import torch
 import torch.nn as nn
 from gym.spaces import Box
 from raylab.options import configure
@@ -136,22 +135,23 @@ class LQGPolicy(TorchPolicy):
     observation_space: Box
     action_space: Box
 
-    @cached_property
+    @property
     def n_state(self):
-        n_state, _, _ = self.space_dims()
+        n_state, _, _ = self.space_dims
         return n_state
 
-    @cached_property
+    @property
     def n_ctrl(self):
-        _, n_ctrl, _ = self.space_dims()
+        _, n_ctrl, _ = self.space_dims
         return n_ctrl
 
-    @cached_property
+    @property
     def horizon(self):
-        _, _, horizon = self.space_dims()
+        _, _, horizon = self.space_dims
         return horizon
 
-    def space_dims(self):
+    @cached_property
+    def space_dims(self) -> tuple[int, int, int]:
         return lqr.dims_from_spaces(self.observation_space, self.action_space)
 
     def initialize_from_lqg(self, env: TorchLQGMixin):
@@ -165,7 +165,3 @@ class LQGPolicy(TorchPolicy):
     ) -> nn.Module:
         module = TimeVaryingLinear(obs_space, action_space, config["module"])
         return module
-
-    def _make_optimizers(self):
-        optimizers = super()._make_optimizers()
-        optimizers["actor"] = torch.optim.Adam(self.module.actor.parameters(), lr=1e-4)
