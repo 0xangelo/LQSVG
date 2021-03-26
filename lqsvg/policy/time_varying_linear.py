@@ -19,7 +19,7 @@ from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.modules.general import LQGModule
 
 from .modules import InitStateModel
-from .modules import InputNormModel
+from .modules import LayerNormModel
 from .modules import LinearTransModel
 from .modules import QuadRewardModel
 from .modules import TVLinearPolicy
@@ -69,7 +69,7 @@ class TimeVaryingLinear(nn.Module):
         if config["residual_model"]:
             trans = ResidualStochasticModel(trans)
         if config["model_input_norm"]:
-            trans = InputNormModel(trans, obs_space)
+            trans = LayerNormModel(trans, obs_space)
 
         model_cls = LQGModule if isinstance(trans, LinearDynamics) else EnvModule
         self.model = model_cls(

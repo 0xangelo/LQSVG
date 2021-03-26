@@ -137,19 +137,15 @@ class InitStateModel(InitStateDynamics):
         super().__init__(init)
 
 
-class InputNormModel(StochasticModel):
-    """StochasticModel that applies normalization layer to observation inputs."""
+class StochasticModelWrapper(StochasticModel):
+    """Wraps the stochastic model to allow a modular transformation."""
 
-    def __init__(self, model: StochasticModel, obs_space: Box):
-        assert isinstance(obs_space, Box)
+    def __init__(self, model: StochasticModel):
         super().__init__(params_module=model.params, dist_module=model.dist)
         self._model = model
-        self.obs_normalizer = nn.LayerNorm(normalized_shape=obs_space.shape)
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
-        obs = self.obs_normalizer(obs)
-        params = self._model(obs, action)
-        return params
+        return self._model(obs, action)
 
     def sample(self, params: TensorDict, sample_shape: list[int] = ()) -> SampleLogp:
         return self._model.sample(params, sample_shape)
@@ -171,3 +167,31 @@ class InputNormModel(StochasticModel):
 
     def deterministic(self, params: TensorDict) -> SampleLogp:
         return self._model.deterministic(params)
+
+
+class LayerNormModel(StochasticModelWrapper):
+    """Applies Layer Normalization to observation inputs."""
+
+    def __init__(self, model: StochasticModel, obs_space: Box):
+        assert isinstance(obs_space, Box)
+        super().__init__(model)
+        self.obs_normalizer = nn.LayerNorm(normalized_shape=obs_space.shape)
+
+    def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
+        obs = self.obs_normalizer(obs)
+        params = self._model(obs, action)
+        return params
+
+
+class BatchNormModel(StochasticModelWrapper):
+    """Applies Batch Normalization to observation inputs."""
+
+    def __init__(self, model: StochasticModel, obs_space: Box):
+        assert isinstance(obs_space, Box)
+        super().__init__(model)
+        self.obs_normalizer = nn.BatchNorm1d(num_features=obs_space.shape[0])
+
+    def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
+        obs = self.obs_normalizer(obs)
+        params = self._model(obs, action)
+        return params
