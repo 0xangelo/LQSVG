@@ -82,8 +82,7 @@ class TVLinearPolicy(DeterministicPolicy):
     K: nn.Parameter
     k: nn.Parameter
 
-    def __init__(self, obs_space: Box, action_space: Box):
-        n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         action_linear = TVLinearFeedback(n_state, n_ctrl, horizon)
         super().__init__(
             encoder=nn.Identity(), action_linear=action_linear, squashing=nn.Identity()

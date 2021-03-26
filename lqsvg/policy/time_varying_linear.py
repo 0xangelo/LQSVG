@@ -55,12 +55,13 @@ class TimeVaryingLinear(nn.Module):
 
     def __init__(self, obs_space: Box, action_space: Box, config: dict):
         super().__init__()
+        n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
+
         # Policy
-        self.actor = TVLinearPolicy(obs_space, action_space)
+        self.actor = TVLinearPolicy(n_state, n_ctrl, horizon)
         self.behavior = self.actor
 
         # Model
-        n_state, n_ctrl, horizon = lqr.dims_from_spaces(obs_space, action_space)
         if config["stationary_model"]:
             trans = LinearTransModel(n_state, n_ctrl, horizon)
         else:
