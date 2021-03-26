@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import cached_property
+from typing import Optional
 
 import torch.nn as nn
 from gym.spaces import Box
@@ -9,6 +10,7 @@ from raylab.options import configure
 from raylab.options import option
 from raylab.policy import TorchPolicy
 from raylab.policy.action_dist import WrapDeterministicPolicy
+from raylab.policy.modules.model import StochasticModel
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
@@ -16,6 +18,7 @@ from lqsvg.envs.lqr.modules import LinearDynamics
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.modules.general import LQGModule
 
+from .modules import BatchNormModel
 from .modules import InitStateModel
 from .modules import LayerNormModel
 from .modules import LinearTransModel
@@ -62,15 +65,7 @@ class TimeVaryingLinear(nn.Module):
         self.behavior = self.actor
 
         # Model
-        if config["stationary_model"]:
-            trans = LinearTransModel(n_state, n_ctrl, horizon)
-        else:
-            trans = TVLinearTransModel(n_state, n_ctrl, horizon)
-        if config["residual_model"]:
-            trans = ResidualModel(trans)
-        if config["model_input_norm"]:
-            trans = LayerNormModel(trans, n_state)
-
+        trans = self._trans_model(n_state, n_ctrl, horizon, config)
         model_cls = LQGModule if isinstance(trans, LinearDynamics) else EnvModule
         self.model = model_cls(
             dims=(n_state, n_ctrl, horizon),
@@ -84,6 +79,35 @@ class TimeVaryingLinear(nn.Module):
             self.apply(glorot_init_policy)
         if config["model_initializer"] == "xavier_uniform":
             self.apply(glorot_init_model)
+
+    def _trans_model(
+        self, n_state: int, n_ctrl: int, horizon: int, config: dict
+    ) -> StochasticModel:
+        if config["stationary_model"]:
+            trans = LinearTransModel(n_state, n_ctrl, horizon)
+        else:
+            trans = TVLinearTransModel(n_state, n_ctrl, horizon)
+
+        if config["residual_model"]:
+            trans = ResidualModel(trans)
+
+        trans = self._input_processing(trans, n_state, config["model_input_norm"])
+        return trans
+
+    @staticmethod
+    def _input_processing(
+        trans: StochasticModel, n_state: int, input_norm: Optional[str]
+    ) -> StochasticModel:
+        if input_norm == "LayerNorm":
+            trans = LayerNormModel(trans, n_state)
+        elif input_norm == "BatchNorm":
+            trans = BatchNormModel(trans, n_state)
+        else:
+            assert (
+                input_norm is None
+            ), f"Invalid 'model_input_norm' option: {input_norm}"
+
+        return trans
 
     def standard_form(
         self,
@@ -125,8 +149,13 @@ class TimeVaryingLinear(nn.Module):
 )
 @option(
     "module/model_input_norm",
-    default=False,
-    help="Whether to wrap the transition model to normalize observation inputs.",
+    default=None,
+    help="""\
+    Wrap the transition model to normalize observation inputs. One of:
+    - LayerNorm
+    - BatchNorm
+    - None
+    """,
 )
 @option("exploration_config/type", default="raylab.utils.exploration.GaussianNoise")
 @option("exploration_config/pure_exploration_steps", default=0)
