@@ -25,6 +25,7 @@ from lqsvg.envs.lqr.modules import InitStateDynamics
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.envs.lqr.modules import QuadraticReward
 from lqsvg.envs.lqr.modules import TVLinearDynamicsModule
+from lqsvg.envs.lqr.utils import pack_obs
 from lqsvg.envs.lqr.utils import unpack_obs
 
 from .utils import perturb_policy
@@ -169,28 +170,79 @@ class StochasticModelWrapper(StochasticModel):
 
 
 class LayerNormModel(StochasticModelWrapper):
-    """Applies Layer Normalization to observation inputs."""
+    """Applies Layer Normalization to state inputs."""
 
     def __init__(self, model: StochasticModel, obs_space: Box):
         assert isinstance(obs_space, Box)
         super().__init__(model)
-        self.obs_normalizer = nn.LayerNorm(normalized_shape=obs_space.shape)
+        self.normalizer = nn.LayerNorm(normalized_shape=obs_space.shape[0] - 1)
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
-        obs = self.obs_normalizer(obs)
-        params = self._model(obs, action)
-        return params
+        state, time = unpack_obs(obs)
+        state = self.normalizer(nt.unnamed(state)).refine_names(*state.names)
+        obs = pack_obs(state, time)
+        return self._model(obs, action)
 
 
 class BatchNormModel(StochasticModelWrapper):
-    """Applies Batch Normalization to observation inputs."""
+    """Applies Batch Normalization to state inputs."""
 
     def __init__(self, model: StochasticModel, obs_space: Box):
         assert isinstance(obs_space, Box)
         super().__init__(model)
-        self.obs_normalizer = nn.BatchNorm1d(num_features=obs_space.shape[0])
+        self.normalizer = nn.BatchNorm1d(num_features=obs_space.shape[0] - 1)
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
-        obs = self.obs_normalizer(obs)
-        params = self._model(obs, action)
+        state, time = unpack_obs(obs)
+        state = self.normalizer(nt.unnamed(state)).refine_names(*state.names)
+        obs = pack_obs(state, time)
+        return self._model(obs, action)
+
+
+class ResidualModel(StochasticModelWrapper):
+    """Predicts state transition residuals."""
+
+    def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
+        params = self.params(obs, action)
+        state, _ = unpack_obs(obs)
+        params["state"] = state
         return params
+
+    def sample(self, params: TensorDict, sample_shape: list[int] = ()) -> SampleLogp:
+        residual, log_prob = self.dist.sample(params, sample_shape)
+        delta, time = unpack_obs(residual)
+        next_obs = pack_obs(params["state"] + delta, time)
+        return next_obs, log_prob
+
+    def rsample(self, params: TensorDict, sample_shape: list[int] = ()) -> SampleLogp:
+        residual, log_prob = self.dist.rsample(params, sample_shape)
+        delta, time = unpack_obs(residual)
+        next_obs = pack_obs(params["state"] + delta, time)
+        return next_obs, log_prob
+
+    def log_prob(self, next_obs: Tensor, params: TensorDict) -> Tensor:
+        next_state, time = unpack_obs(next_obs)
+        residual = pack_obs(next_state - params["state"], time)
+        return self.dist.log_prob(residual, params)
+
+    def cdf(self, next_obs: Tensor, params: TensorDict) -> Tensor:
+        next_state, time = unpack_obs(next_obs)
+        residual = pack_obs(next_state - params["state"], time)
+        return self.dist.cdf(residual, params)
+
+    def icdf(self, prob, params: TensorDict) -> Tensor:
+        residual = self.dist.icdf(prob, params)
+        delta, time = unpack_obs(residual)
+        return pack_obs(params["state"] + delta, time)
+
+    def reproduce(self, next_obs, params: TensorDict) -> SampleLogp:
+        next_state, time = unpack_obs(next_obs)
+        residual = pack_obs(next_state - params["state"], time)
+        residual_, log_prob_ = self.dist.reproduce(residual, params)
+        delta_, time_ = unpack_obs(residual_)
+        return pack_obs(params["state"] + delta_, time_), log_prob_
+
+    def deterministic(self, params: TensorDict) -> SampleLogp:
+        residual, log_prob = self.dist.deterministic(params)
+        delta, time = unpack_obs(residual)
+        return pack_obs(params["state"] + delta, time), log_prob
