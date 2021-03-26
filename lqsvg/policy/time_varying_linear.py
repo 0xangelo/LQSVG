@@ -72,6 +72,7 @@ class TimeVaryingLinear(nn.Module):
 
         model_cls = LQGModule if isinstance(trans, LinearDynamics) else EnvModule
         self.model = model_cls(
+            dims=(n_state, n_ctrl, horizon),
             trans=trans,
             reward=QuadRewardModel(n_state, n_ctrl, horizon),
             init=InitStateModel(n_state=n_state, seed=config.get("seed", None)),

@@ -29,6 +29,7 @@ from .types import Linear
 from .types import LinSDynamics
 from .types import QuadCost
 from .types import Quadratic
+from .utils import dims_from_dynamics
 from .utils import spaces_from_dims
 
 Obs = np.ndarray
@@ -53,9 +54,10 @@ class TorchLQGMixin:
         init: GaussInit,
     ):
         self.module = LQGModule(
-            TVLinearDynamicsModule(dynamics),
-            QuadraticReward(cost),
-            InitStateDynamics(init),
+            dims=dims_from_dynamics(dynamics),
+            trans=TVLinearDynamicsModule(dynamics),
+            reward=QuadraticReward(cost),
+            init=InitStateDynamics(init),
         )
         # Ensure optimizers don't update the MDP
         self.module.requires_grad_(False)

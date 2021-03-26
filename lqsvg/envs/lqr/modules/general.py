@@ -16,10 +16,19 @@ from .reward import QuadraticReward
 class EnvModule(nn.Module):
     """Environment dynamics as a neural network module."""
 
+    n_state: int
+    n_ctrl: int
+    horizon: int
+
     def __init__(
-        self, trans: StochasticModel, reward: QuadraticReward, init: InitStateDynamics
+        self,
+        dims: tuple[int, int, int],
+        trans: StochasticModel,
+        reward: QuadraticReward,
+        init: InitStateDynamics,
     ):
         super().__init__()
+        self.n_state, self.n_ctrl, self.horizon = dims
         self.trans = trans
         self.reward = reward
         self.init = init
@@ -46,16 +55,12 @@ class LQGModule(EnvModule):
 
     def __init__(
         self,
+        dims: tuple[int, int, int],
         trans: LinearDynamics,
         reward: QuadraticReward,
         init: InitStateDynamics,
     ):
-        super().__init__(trans, reward, init)
-        self.n_state, self.n_ctrl, self.horizon = (
-            trans.n_state,
-            trans.n_ctrl,
-            trans.horizon,
-        )
+        super().__init__(dims, trans, reward, init)
 
     def standard_form(self) -> tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
         """Submodules as a collection of matrices."""
