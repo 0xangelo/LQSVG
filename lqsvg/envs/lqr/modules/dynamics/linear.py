@@ -28,7 +28,7 @@ class CovCholeskyFactor(nn.Module):
 
     def __init__(self, sigma: Tensor):
         super().__init__()
-        assert sigma.shape == 2
+        assert len(sigma.shape) == 2
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
 
