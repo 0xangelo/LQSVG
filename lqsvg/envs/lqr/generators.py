@@ -161,11 +161,12 @@ def make_lindynamics(
         f = random_normal_vector(state_size, **kwargs)
     else:
         f = expand_and_refine(
-            torch.zeros(state_size), 1, horizon=horizon, n_batch=n_batch
+            nt.vector(torch.zeros(state_size)), 1, horizon=horizon, n_batch=n_batch
         )
     return LinDynamics(F, f)
 
 
+# noinspection PyIncorrectDocstring
 def make_linsdynamics(
     state_size: int,
     ctrl_size: int,
@@ -176,7 +177,23 @@ def make_linsdynamics(
     rng: RNG = None,
     **linear_kwargs
 ) -> LinSDynamics:
-    """Generate stochastic linear dynamics parameters."""
+    """Generate stochastic linear dynamics parameters.
+
+    Args:
+        state_size: size of state vector
+        ctrl_size: size of control vector
+        horizon: length of the horizon
+        stationary: whether dynamics vary with time
+        n_batch: batch size, if any
+        sample_covariance: whether to sample a random SPD matrix for the
+            Gaussian covariance or use the identity matrix.
+        Fs_eigval_range: range of eigenvalues for the unnactuated system. If None,
+            samples the F_s matrix entries independently from a standard normal
+            distribution
+        transition_bias: whether to use a non-zero bias vector for transition
+            dynamics
+        rng: random number generator, seed, or None
+    """
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
 
@@ -195,7 +212,9 @@ def make_linsdynamics(
             state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
         )
     else:
-        W = expand_and_refine(torch.eye(state_size), 2, horizon=1, n_batch=n_batch)
+        W = expand_and_refine(
+            nt.matrix(torch.eye(state_size)), 2, horizon=horizon, n_batch=n_batch
+        )
 
     return LinSDynamics(F, f, W)
 
@@ -204,18 +223,47 @@ def make_quadcost(
     state_size: int,
     ctrl_size: int,
     horizon: int,
-    stationary: bool = False,
+    stationary: bool = True,
     n_batch: Optional[int] = None,
+    linear: bool = False,
+    cross_terms: bool = False,
     rng: RNG = None,
 ) -> QuadCost:
-    """Generate quadratic cost parameters."""
-    # pylint:disable=too-many-arguments
+    """Generate quadratic cost parameters.
+
+    Args:
+        state_size: size of state vector
+        ctrl_size: size of control vector
+        horizon: length of the horizon
+        stationary: whether dynamics vary with time
+        n_batch: batch size, if any
+        linear: whether to include a linear term in addition to the quadratic
+        cross_terms: whether to include state-ctrl cross terms in the quadratic
+            (C_sa and C_as)
+        rng: random number generator, seed, or None
+    """
+    # pylint:disable=too-many-arguments,too-many-locals
     rng = np.random.default_rng(rng)
     n_tau = state_size + ctrl_size
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
+
     C = random_spd_matrix(n_tau, **kwargs)
-    c = random_normal_vector(n_tau, **kwargs)
+    if not cross_terms:
+        C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
+        C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
+        C_as, C_aa = nt.split(C_a, [state_size, ctrl_size], dim="R")
+
+        C_s = torch.cat((C_ss, torch.zeros_like(C_sa)), dim="R")
+        C_a = torch.cat((torch.zeros_like(C_as), C_aa), dim="R")
+        C = torch.cat((C_s, C_a), dim="C")
+
+    if linear:
+        c = random_normal_vector(n_tau, **kwargs)
+    else:
+        c = expand_and_refine(
+            nt.vector(torch.zeros(n_tau)), 1, horizon=horizon, n_batch=n_batch
+        )
     return QuadCost(C, c)
 
 
@@ -225,7 +273,15 @@ def make_gaussinit(
     sample_covariance: bool = False,
     rng: RNG = None,
 ) -> GaussInit:
-    """Generate parameters for Gaussian initial state distribution."""
+    """Generate parameters for Gaussian initial state distribution.
+
+    Args:
+        state_size: size of state vector
+        n_batch: batch size, if any
+        sample_covariance: whether to sample a random SPD matrix for the
+            Gaussian covariance or use the identity matrix.
+        rng: random number generator, seed, or None
+    """
     # pylint:disable=invalid-name
     vec_shape = (state_size,)
     batch_shape = () if n_batch is None else (n_batch,)
@@ -250,6 +306,7 @@ def make_lqr(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
+    cost_linear: bool = False,
     rng: RNG = None,
     **linear_kwargs
 ) -> tuple[LinDynamics, QuadCost]:
@@ -262,6 +319,8 @@ def make_lqr(
         horizon: Integer number of decision steps
         stationary: Whether to create time-invariant dynamics and cost
         n_batch: Batch size (number of LQR samples)
+        cost_linear: whether to include a linear term in addition to the
+            quadratic one in the cost function
         rng: Numpy random number generator or integer seed
 
     Source::
@@ -282,6 +341,7 @@ def make_lqr(
         ctrl_size,
         horizon,
         stationary=stationary,
+        linear=cost_linear,
         n_batch=n_batch,
         rng=rng,
     )
