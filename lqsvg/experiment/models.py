@@ -290,7 +290,7 @@ class LightningModel(pl.LightningModule):
         true_val, true_svg = self.gold_standard
         self.log(prefix + "monte_carlo_value", mc_val)
         self.log(prefix + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
-        self.log(prefix + "monte_carlo_diff", mc_val - true_val)
+        self.log(prefix + "monte_carlo_abs_diff", torch.abs(mc_val - true_val))
         self.log(
             prefix + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg)
         )
@@ -303,7 +303,7 @@ class LightningModel(pl.LightningModule):
         true_val, true_svg = self.gold_standard
         self.log(prefix + "analytic_value", analytic_val)
         self.log(prefix + "analytic_svg_norm", linear_feedback_norm(analytic_svg))
-        self.log(prefix + "analytic_diff", analytic_val - true_val)
+        self.log(prefix + "analytic_abs_diff", torch.abs(analytic_val - true_val))
         self.log(
             prefix + "analytic_cossim", linear_feedback_cossim(analytic_svg, true_svg)
         )
