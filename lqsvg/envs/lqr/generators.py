@@ -44,6 +44,14 @@ class LQGGenerator(DataClassJsonMixin):
         Fs_eigval_range: range of eigenvalues for the unnactuated system
         transition_bias: whether to use a non-zero bias vector for transition
             dynamics
+        rand_trans_cov: whether to sample a random SPD matrix for the
+            Gaussian transition covariance or use the identity matrix.
+        rand_init_cov: whether to sample a random SPD matrix for the
+            Gaussian initial state covariance or use the identity matrix.
+        cost_linear: whether to include a linear term in addition to the
+            quadratic one in the cost
+        cost_cross: whether to include state-ctrl cross terms in the quadratic
+            cost matrix (C_sa and C_as)
         seed: integer seed for random number generator used in
             initializing LQG parameters
     """
@@ -52,9 +60,13 @@ class LQGGenerator(DataClassJsonMixin):
     n_state: int
     n_ctrl: int
     horizon: int
-    stationary: bool = False
-    Fs_eigval_range: Optional[tuple[float, float]] = None
-    transition_bias: bool = True
+    stationary: bool = True
+    Fs_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0)
+    transition_bias: bool = False
+    rand_trans_cov: bool = True
+    rand_init_cov: bool = False
+    cost_linear: bool = False
+    cost_cross: bool = False
     seed: Optional[int] = None
 
     def __post_init__(self):
@@ -76,20 +88,31 @@ class LQGGenerator(DataClassJsonMixin):
             A tuple containing parameters for linear stochastic dynamics,
             quadratic costs, and Normal inital state distribution.
         """
-        dynamics, cost = make_lqg(
-            state_size=self.n_state,
-            ctrl_size=self.n_ctrl,
-            horizon=self.horizon,
+        dynamics = make_linsdynamics(
+            self.n_state,
+            self.n_ctrl,
+            self.horizon,
             stationary=self.stationary,
             n_batch=n_batch,
             rng=self._rng,
             Fs_eigval_range=self.Fs_eigval_range,
             transition_bias=self.transition_bias,
+            sample_covariance=self.rand_trans_cov,
+        )
+        cost = make_quadcost(
+            self.n_state,
+            self.n_ctrl,
+            self.horizon,
+            stationary=self.stationary,
+            n_batch=n_batch,
+            linear=self.cost_linear,
+            cross_terms=self.cost_cross,
+            rng=self._rng,
         )
         init = make_gaussinit(
             state_size=self.n_state,
             n_batch=n_batch,
-            sample_covariance=False,
+            sample_covariance=self.rand_init_cov,
             rng=self._rng,
         )
 
@@ -342,47 +365,6 @@ def make_lqr(
         horizon,
         stationary=stationary,
         linear=cost_linear,
-        n_batch=n_batch,
-        rng=rng,
-    )
-    return dynamics, cost
-
-
-def make_lqg(
-    state_size: int,
-    ctrl_size: int,
-    horizon: int,
-    stationary: bool,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-    **linear_kwargs
-) -> tuple[LinSDynamics, QuadCost]:
-    """Random LQG generator.
-
-    Args:
-        state_size: Integer size for state
-        ctrl_size: Integer size for controls
-        horizon: Integer number of decision steps
-        stationary: Whether to create time-invariant dynamics and cost
-        n_batch: Batch size (number of LQG samples)
-        rng: Numpy random number generator or integer seed
-    """
-    # pylint:disable=too-many-arguments
-    rng = np.random.default_rng(rng)
-    dynamics = make_linsdynamics(
-        state_size,
-        ctrl_size,
-        horizon,
-        stationary=stationary,
-        n_batch=n_batch,
-        rng=rng,
-        **linear_kwargs
-    )
-    cost = make_quadcost(
-        state_size,
-        ctrl_size,
-        horizon,
-        stationary=stationary,
         n_batch=n_batch,
         rng=rng,
     )

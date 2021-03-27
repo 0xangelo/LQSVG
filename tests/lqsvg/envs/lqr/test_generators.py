@@ -1,6 +1,7 @@
 # pylint:disable=too-many-arguments,invalid-name
 from __future__ import annotations
 
+from typing import Any
 from typing import Optional
 from typing import Type
 from typing import Union
@@ -27,7 +28,8 @@ from .utils import standard_fixture
 Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
 transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
-linear = standard_fixture((True, False), "Linear")
+cost_linear = standard_fixture((True, False), "CostLinear")
+cost_cross = standard_fixture((True, False), "CostCross")
 
 
 @pytest.fixture
@@ -42,15 +44,37 @@ def generator(
     n_state: int,
     n_ctrl: int,
     horizon: int,
+    stationary: bool,
+    Fs_eigval_range: tuple[float, float],
+    transition_bias: bool,
+    sample_covariance: bool,
+    cost_linear: bool,
+    cost_cross: bool,
     seed: int,
 ) -> LQGGenerator:
-    return generator_cls(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, seed=seed)
+    return generator_cls(
+        n_state,
+        n_ctrl,
+        horizon,
+        stationary=stationary,
+        Fs_eigval_range=Fs_eigval_range,
+        transition_bias=transition_bias,
+        rand_trans_cov=sample_covariance,
+        cost_linear=cost_linear,
+        cost_cross=cost_cross,
+        seed=seed,
+    )
 
 
 # Test LQGGenerator interface ==========================================
 def test_generator_init(
-    generator: LQGGenerator, n_state: int, n_ctrl: int, horizon: int, seed: int
+    generator_cls: Any,
+    n_state: int,
+    n_ctrl: int,
+    horizon: int,
+    seed: int,
 ):
+    generator = generator_cls(n_state, n_ctrl, horizon, seed=seed)
     assert generator.n_state == n_state
     assert generator.n_ctrl == n_ctrl
     assert generator.horizon == horizon
@@ -60,6 +84,37 @@ def test_generator_init(
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
+def test_generator_defaults(generator_cls: Any, n_batch: Optional[int]):
+    generator = generator_cls(2, 2, 20)
+    dynamics, cost, init = generator(n_batch=n_batch)
+
+    tensors = [t for c in (dynamics, cost, init) for t in c]
+    if n_batch is None:
+        assert all("B" not in t.names for t in tensors)
+    else:
+        assert all("B" in t.names for t in tensors)
+        assert all(t.size("B") == n_batch for t in tensors)
+
+    check_dynamics(
+        dynamics,
+        generator.n_state,
+        generator.n_ctrl,
+        generator.horizon,
+        stationary=generator.stationary,
+        transition_bias=generator.transition_bias,
+        sample_covariance=generator.rand_trans_cov,
+    )
+    check_cost(
+        cost,
+        generator.n_state,
+        generator.n_ctrl,
+        generator.horizon,
+        stationary=generator.stationary,
+        linear=generator.cost_linear,
+    )
+
+
+@pytest.mark.slow
 def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
     dynamics, cost, init = generator(n_batch=n_batch)
 
@@ -69,6 +124,24 @@ def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
     else:
         assert all("B" in t.names for t in tensors)
         assert all(t.size("B") == n_batch for t in tensors)
+
+    check_dynamics(
+        dynamics,
+        generator.n_state,
+        generator.n_ctrl,
+        generator.horizon,
+        stationary=generator.stationary,
+        transition_bias=generator.transition_bias,
+        sample_covariance=generator.rand_trans_cov,
+    )
+    check_cost(
+        cost,
+        generator.n_state,
+        generator.n_ctrl,
+        generator.horizon,
+        stationary=generator.stationary,
+        linear=generator.cost_linear,
+    )
 
 
 def assert_all_tensor(*tensors: Tensor):
@@ -159,6 +232,7 @@ def check_cost(
         assert not linear or stationary == nt.allclose(c, c.select("H", 0))
 
 
+@pytest.mark.slow
 def test_make_linsdynamics(
     n_state: int,
     n_ctrl: int,
@@ -190,13 +264,14 @@ def test_make_linsdynamics(
     )
 
 
+@pytest.mark.slow
 def test_make_quadcost(
     n_state: int,
     n_ctrl: int,
     horizon: int,
     stationary: bool,
     seed: int,
-    linear: bool,
+    cost_linear: bool,
 ):
     cost = make_quadcost(
         n_state,
@@ -204,11 +279,14 @@ def test_make_quadcost(
         horizon,
         stationary=stationary,
         rng=seed,
-        linear=linear,
+        linear=cost_linear,
     )
-    check_cost(cost, n_state, n_ctrl, horizon, stationary=stationary, linear=linear)
+    check_cost(
+        cost, n_state, n_ctrl, horizon, stationary=stationary, linear=cost_linear
+    )
 
 
+@pytest.mark.slow
 def test_make_lqr(
     n_state: int,
     n_ctrl: int,
@@ -217,7 +295,7 @@ def test_make_lqr(
     seed: int,
     Fs_eigval_range: Optional[tuple[float, float]],
     transition_bias: bool,
-    linear: bool,
+    cost_linear: bool,
 ):
     # pylint:disable=invalid-name,too-many-arguments
     dynamics, cost = make_lqr(
@@ -228,7 +306,7 @@ def test_make_lqr(
         rng=seed,
         Fs_eigval_range=Fs_eigval_range,
         transition_bias=transition_bias,
-        cost_linear=linear,
+        cost_linear=cost_linear,
     )
     check_dynamics(
         dynamics,
@@ -238,7 +316,7 @@ def test_make_lqr(
         stationary=stationary,
         transition_bias=transition_bias,
     )
-    check_cost(cost, n_state, n_ctrl, horizon, stationary, linear)
+    check_cost(cost, n_state, n_ctrl, horizon, stationary, cost_linear)
 
 
 def test_stack_lqs(n_state, n_ctrl, horizon, seed):
@@ -256,33 +334,6 @@ def test_stack_lqs(n_state, n_ctrl, horizon, seed):
     assert cost.C.names == mat_names
     assert cost.c.names == vec_names
     assert all(x.size("B") == 1 for y in (dynamics, cost) for x in y)
-
-
-# Batched LQs =================================================================
-def test_batched_lqgs(n_state, n_ctrl, horizon, stationary, n_batch):
-    dynamics, cost = make_lqr(
-        n_state, n_ctrl, horizon, stationary=stationary, n_batch=n_batch
-    )
-    assert isinstance(dynamics, LinDynamics)
-    assert isinstance(cost, QuadCost)
-
-    mat_names = tuple("H B R C".split()) if n_batch else tuple("H R C".split())
-    vec_names = tuple("H B R".split()) if n_batch else tuple("H R".split())
-
-    assert dynamics.F.names == mat_names
-    assert dynamics.f.names == vec_names
-
-    assert cost.C.names == mat_names
-    assert cost.c.names == vec_names
-
-    n_tau = n_state + n_ctrl
-    sample_shape = (horizon,) + ((n_batch,) if n_batch else ())
-
-    assert dynamics.F.shape == sample_shape + (n_state, n_tau)
-    assert dynamics.f.shape == sample_shape + (n_state,)
-
-    assert cost.C.shape == sample_shape + (n_tau, n_tau)
-    assert cost.c.shape == sample_shape + (n_tau,)
 
 
 ###############################################################################

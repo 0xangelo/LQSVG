@@ -2,7 +2,6 @@
 from . import named
 from .generators import box_ddp_random_lqr
 from .generators import make_gaussinit
-from .generators import make_lqg
 from .generators import make_lqr
 from .generators import make_lqr_linear_navigation
 from .generators import stack_lqs
