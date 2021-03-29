@@ -221,10 +221,11 @@ class LightningModel(pl.LightningModule):
 
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
 
+    # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
         # pylint:disable=arguments-differ
-        return self.model.log_prob(obs, act, new_obs)
+        return self.model.log_prob(obs, act, new_obs) / obs.size("H")
 
     def configure_optimizers(self):
         params = nn.ParameterList(
