@@ -2,6 +2,7 @@
 # pylint:disable=invalid-name,unsubscriptable-object
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional
 from typing import Union
@@ -118,12 +119,25 @@ class LQGGenerator(DataClassJsonMixin):
 
         return dynamics, cost, init
 
+    @contextmanager
+    def config(self, **kwargs):
+        """Temporarily alter this generator's configuration and return it."""
+        cache = {k: getattr(self, k) for k in kwargs}
+        try:
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+            yield self
+        finally:
+            for k, v in cache.items():
+                setattr(self, k, v)
+
 
 def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, QuadCost]:
     """Stack several linear quadratic problems into a batched representation.
 
     Returns dynamics and costs with an additional batch dimension.
     """
+    # noinspection PyTypeChecker
     dyns_costs: tuple[list[AnyDynamics], list[QuadCost]] = zip(*systems)
     dyns, costs = dyns_costs
 
