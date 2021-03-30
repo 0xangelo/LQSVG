@@ -248,7 +248,7 @@ def random_spd_matrix(
     return mat
 
 
-def random_matrix_from_eigs(eigvals: Tensor, rng: RNG = None) -> Tensor:
+def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> Tensor:
     """Generate random matrix with specified eigenvalues.
 
     Supports batched inputs. Assumes `eigvals` is a named vector tensor.
@@ -265,17 +265,17 @@ def random_matrix_from_eigs(eigvals: Tensor, rng: RNG = None) -> Tensor:
     rng = np.random.default_rng(rng)
 
     # Sample orthogonal matrices
-    dim = eigvals.size("R")
+    dim = eigvals.shape[-1]
     _random_orthogonal_matrix = wrap_sample_shape_to_size(
         lambda s: ortho_group.rvs(dim, size=s, random_state=rng), dim=2
     )
-    ortho = _random_orthogonal_matrix(
-        eigvals.shape[:-1]
-    )  # Assume last dimension is "R"
-    ortho = nt.matrix(as_float_tensor(ortho))
+    # Assume last dimension is "R"
+    ortho = _random_orthogonal_matrix(eigvals.shape[:-1])
 
-    diag_eigval = torch.diag_embed(eigvals)
-    mat = nt.transpose(ortho) @ diag_eigval @ ortho
+    mat = ortho.transpose(*range(ortho.ndim - 2), -1, -2) @ (
+        eigvals[..., np.newaxis] * ortho
+    )
+    mat = nt.matrix(as_float_tensor(mat))
     return mat
 
 
@@ -300,7 +300,6 @@ def random_mat_with_eigval_range(
     )
     # Flip sign randomly
     np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
-    eigvals = nt.vector(as_float_tensor(eigvals))
 
     mat = random_matrix_from_eigs(eigvals, rng=rng)
     return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)

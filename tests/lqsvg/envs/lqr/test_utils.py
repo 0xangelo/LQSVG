@@ -6,16 +6,12 @@ from typing import Optional
 
 import numpy as np
 import pytest
-import torch
 from scipy.stats import norm as normal
 from scipy.stats import ortho_group
-from torch import Tensor
 
-import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.utils import random_mat_with_eigval_range
 from lqsvg.envs.lqr.utils import random_matrix_from_eigs
 from lqsvg.envs.lqr.utils import wrap_sample_shape_to_size
-from lqsvg.torch.utils import default_generator_seed
 
 from .utils import standard_fixture
 
@@ -63,16 +59,16 @@ batch_shape = standard_fixture(((), (1,), (2,), (2, 1)), "BatchShape")
 
 
 @pytest.fixture()
-def eigvals(vec_dim: int, batch_shape: tuple[int, ...], seed: int) -> Tensor:
+def eigvals(vec_dim: int, batch_shape: tuple[int, ...], seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
     shape = batch_shape + (vec_dim,)
-    with default_generator_seed(seed):
-        return nt.vector(torch.empty(shape).uniform_(-1, 1))
+    return rng.uniform(low=-1.0, high=1.0, size=shape)
 
 
-def test_random_matrix_from_eigs(eigvals: Tensor, seed: int):
+def test_random_matrix_from_eigs(eigvals: np.ndarray, seed: int):
     mat = random_matrix_from_eigs(eigvals, rng=seed).numpy()
     eigvals_, _ = np.linalg.eig(mat)
-    assert np.allclose(np.sort(eigvals_, axis=-1), np.sort(eigvals.numpy(), axis=-1))
+    assert np.allclose(np.sort(eigvals_, axis=-1), np.sort(eigvals, axis=-1))
 
 
 mat_dim = standard_fixture((2, 3, 4), "MatDim")
