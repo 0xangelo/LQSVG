@@ -75,8 +75,8 @@ def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
     """
     # pylint:disable=invalid-name
     n_state, _, _ = dims_from_dynamics(dynamics)
-    C = ctrb(dynamics)
-    return (torch.matrix_rank(nt.unnamed(C)) == n_state).numpy()
+    C = ctrb(dynamics).numpy()
+    return np.linalg.matrix_rank(C) == n_state
 
 
 ###############################################################################
