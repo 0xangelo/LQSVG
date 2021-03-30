@@ -351,16 +351,16 @@ class RecurrentModel(LightningModel):
         init_logp = init_model.log_prob(obs.select(dim="H", index=0))
 
         trans_logp = []
-        obs_ = init_model.rsample(init_logp.shape)
+        obs_, _ = init_model.rsample(init_logp.shape)
         for t in range(self.model.horizon):  # pylint:disable=invalid-name
             params = trans_model(obs_, act.select(dim="H", index=t))
             trans_logp += [
                 trans_model.log_prob(new_obs.select(dim="H", index=t), params)
             ]
 
-            obs_ = trans_model.rsample(params)
+            obs_, _ = trans_model.rsample(params)
 
-        trans_logp = torch.stack(trans_logp).refine_names("H", ...).sum(dim="H")
+        trans_logp = nt.stack_horizon(*trans_logp).sum(dim="H")
 
         return (init_logp + trans_logp) / self.model.horizon
 

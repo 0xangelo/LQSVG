@@ -17,6 +17,7 @@ from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.experiment.models import LightningModel
 from lqsvg.experiment.models import MonteCarloSVG
+from lqsvg.experiment.models import RecurrentModel
 from lqsvg.policy.modules import BatchNormModel
 from lqsvg.policy.modules import InitStateModel
 from lqsvg.policy.modules import LayerNormModel
@@ -172,3 +173,19 @@ def test_lightning_model(
 
     assert torch.isfinite(monte_carlo.value(samples=256))
     assert torch.isfinite(model.gold_standard[0])
+
+
+def test_recurrent_model(rllib_policy: LQGPolicy, env: TorchLQGMixin):
+    model = RecurrentModel(rllib_policy, env)
+
+    batch_shape = (10,)
+    with torch.no_grad():
+        # noinspection PyTypeChecker
+        trajectory = MonteCarloSVG(model.actor, model.mdp).rsample_trajectory(
+            batch_shape
+        )
+    obs, act, _, new_obs, _ = trajectory
+    log_prob = model(obs, act, new_obs)
+    assert not any(n in log_prob.names for n in "H R C".split())
+    assert torch.isfinite(log_prob).all()
+    assert log_prob.shape == batch_shape
