@@ -21,7 +21,7 @@ from .types import LinSDynamics
 
 
 ###############################################################################
-# Dynamics checks
+# Diagnostics
 ###############################################################################
 
 
@@ -80,7 +80,7 @@ def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
 
 
 ###############################################################################
-# Dynamics manipulation
+# System manipulation
 ###############################################################################
 
 
@@ -96,7 +96,7 @@ def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
     """Returns the unactuated and actuaded parts of the transition matrix."""
     # pylint:disable=invalid-name
     n_state, n_ctrl, _ = dims_from_dynamics(dynamics)
-    F_s, F_a = nt.split(dynamics.F, (n_state, n_ctrl), dim="C")
+    F_s, F_a = nt.split(dynamics.F, [n_state, n_ctrl], dim="C")
     return F_s, F_a
 
 
