@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Callable
 from typing import Optional
 from typing import Type
 from typing import Union
@@ -24,8 +25,7 @@ from lqsvg.envs.lqr.types import QuadCost
 
 from .utils import standard_fixture
 
-# noinspection PyUnresolvedReferences
-GeneratorFn = callable[[], LQGGenerator]
+GeneratorFn = Callable[[], LQGGenerator]
 
 Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
 transition_bias = standard_fixture((True, False), "TransBias")
