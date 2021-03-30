@@ -134,6 +134,7 @@ def ctrb(dynamics: LinSDynamics) -> Tensor:
 ###############################################################################
 
 
+# noinspection PyUnresolvedReferences
 def wrap_sample_shape_to_size(
     sampler: callable[[int], np.ndarray], dim: int
 ) -> callable[[tuple[int, ...], int], np.ndarray]:
@@ -248,7 +249,7 @@ def random_spd_matrix(
     return mat
 
 
-def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> Tensor:
+def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
     """Generate random matrix with specified eigenvalues.
 
     Supports batched inputs. Assumes `eigvals` is a named vector tensor.
@@ -275,7 +276,6 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> Tensor:
     mat = ortho.transpose(*range(ortho.ndim - 2), -1, -2) @ (
         eigvals[..., np.newaxis] * ortho
     )
-    mat = nt.matrix(as_float_tensor(mat))
     return mat
 
 
@@ -302,6 +302,7 @@ def random_mat_with_eigval_range(
     np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
 
     mat = random_matrix_from_eigs(eigvals, rng=rng)
+    mat = nt.matrix(as_float_tensor(mat))
     return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
 
 

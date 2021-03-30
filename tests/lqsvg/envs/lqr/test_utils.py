@@ -66,7 +66,7 @@ def eigvals(vec_dim: int, batch_shape: tuple[int, ...], seed: int) -> np.ndarray
 
 
 def test_random_matrix_from_eigs(eigvals: np.ndarray, seed: int):
-    mat = random_matrix_from_eigs(eigvals, rng=seed).numpy()
+    mat = random_matrix_from_eigs(eigvals, rng=seed)
     eigvals_, _ = np.linalg.eig(mat)
     assert np.allclose(np.sort(eigvals_, axis=-1), np.sort(eigvals, axis=-1))
 
