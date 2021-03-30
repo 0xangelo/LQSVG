@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+from typing import Optional
 
 import pytorch_lightning as pl
 import torch
@@ -98,6 +99,7 @@ class MonteCarloSVG(nn.Module):
         self.model.eval()
 
         batch = []
+        # noinspection PyTypeChecker
         obs, logp = self.model.init.rsample(sample_shape)
         obs = obs.refine_names(*(f"B{i+1}" for i, _ in enumerate(sample_shape)), ...)
         for _ in range(self.model.horizon):
@@ -139,6 +141,7 @@ class MonteCarloSVG(nn.Module):
             A tensor representing the Monte Carlo estimate of the policy's
             expected return
         """
+        # noinspection PyTypeChecker
         rets = self.rsample_return((samples,))
         # Reduce over the first (and only) batch dimension
         mc_performance = rets.mean("B1")
@@ -221,6 +224,8 @@ class LightningModel(pl.LightningModule):
 
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
 
+        self.hparams.empvar_samples = 10
+
     # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
@@ -239,9 +244,8 @@ class LightningModel(pl.LightningModule):
         return optim
 
     def _compute_loss_on_batch(
-        self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int
+        self, batch: tuple[Tensor, Tensor, Tensor], _: int
     ) -> Tensor:
-        del batch_idx
         obs, act, new_obs = (x.refine_names("B", "H", "R") for x in batch)
         return -self(obs, act, new_obs).mean()
 
@@ -295,6 +299,26 @@ class LightningModel(pl.LightningModule):
         self.log(
             prefix + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg)
         )
+        self.log(prefix + "empirical_grad_var", self.empirical_variance([mc_svg]))
+
+    def empirical_variance(self, existing: Optional[list[lqr.Linear]] = None) -> float:
+        samples = existing or []
+
+        n_grads = self.hparams.empvar_samples - len(samples)
+        with torch.enable_grad():
+            samples += [
+                self.monte_carlo_svg(samples=self.hparams.mc_samples)
+                for _ in range(n_grads)
+            ]
+        self.zero_grad(set_to_none=True)
+
+        cossims = [
+            linear_feedback_cossim(gi, gj)
+            for i, gi in enumerate(samples)
+            for gj in samples[i + 1 :]
+        ]
+
+        return torch.stack(cossims).mean().item()
 
     def log_analytic(self, prefix: str = ""):
         with torch.enable_grad():
@@ -316,6 +340,32 @@ class LightningModel(pl.LightningModule):
         self.log("true_svg_norm", linear_feedback_norm(true_svg))
 
 
+class RecurrentModel(LightningModel):
+    # pylint:disable=too-many-ancestors
+    def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+        obs, act, new_obs = (x.align_to("H", ..., "R") for x in (obs, act, new_obs))
+
+        init_model = self.model.init
+        trans_model = self.model.trans
+
+        init_logp = init_model.log_prob(obs.select(dim="H", index=0))
+
+        trans_logp = []
+        obs_ = init_model.rsample(init_logp.shape)
+        for t in range(self.model.horizon):  # pylint:disable=invalid-name
+            params = trans_model(obs_, act.select(dim="H", index=t))
+            trans_logp += [
+                trans_model.log_prob(new_obs.select(dim="H", index=t), params)
+            ]
+
+            obs_ = trans_model.rsample(params)
+
+        trans_logp = torch.stack(trans_logp).refine_names("H", ...).sum(dim="H")
+
+        return (init_logp + trans_logp) / self.model.horizon
+
+
+# noinspection PyTypeChecker
 @nt.suppress_named_tensor_warning()
 def test_lightning_model():
     from .worker import make_worker
