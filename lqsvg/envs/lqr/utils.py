@@ -213,6 +213,29 @@ def ctrb(dynamics: LinSDynamics) -> Tensor:
     return C
 
 
+def make_controllable(dynamics: LinSDynamics) -> LinSDynamics:
+    """Compute controllable dynamics from reference one."""
+    # pylint:disable=invalid-name
+    n_state, _, _ = dims_from_dynamics(dynamics)
+    F_s, F_a = dynamics_factors(dynamics)
+
+    # Compute eigendecomp of Fs
+    # noinspection PyTypeChecker
+    A = F_s.select("H", 0).numpy()
+    _, col_eigvec = np.linalg.eig(A)
+    # Ensure Fa has a component in each eigenvector direction
+    comb = np.ones(n_state, dtype=A.dtype) / np.sqrt(n_state)
+    B = col_eigvec @ comb[..., np.newaxis]
+    F_a = torch.from_numpy(np.concatenate([F_a[..., :-1].numpy(), B], axis=-1))
+
+    F = (
+        torch.cat([F_s, F_a], dim=-1)
+        .expand_as(dynamics.F)
+        .refine_names(*dynamics.F.names)
+    )
+    return LinSDynamics(F=F, f=dynamics.f, W=dynamics.W)
+
+
 ###############################################################################
 # Random generation
 ###############################################################################
