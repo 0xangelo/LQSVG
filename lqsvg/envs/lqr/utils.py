@@ -79,6 +79,90 @@ def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
     return np.linalg.matrix_rank(C) == n_state
 
 
+def is_pbh_ctrb(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns whether the stationary dynamics are controllable.
+
+    Uses the Hautus Lemma for controllability::
+    https://en.wikipedia.org/wiki/Hautus_lemma#Hautus_Lemma_for_controllability
+    Converted to the discrete time case by checking the eigenvectors
+    corresponding to the eigenvalues with magnitude greater than 1.
+
+    This function accepts a batch of linear dynamics.
+
+    Warning:
+        This function seems to return True even for systems known to be
+        uncontrollable
+
+    Note:
+        It is not obvious if this condition is generalizable to non-stationary
+        systems. Thus, this function first checks if the system is stationary.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name,unused-variable
+    assert isstationary(dynamics)
+    A, B = map(lambda x: x.select("H", 0).numpy(), dynamics_factors(dynamics))
+    _, col_eigvecs = np.linalg.eig(A)
+
+    # Check if some eigenvector of A is linearly independent of all columns of B
+    row_eigvecs = col_eigvecs.transpose(*range(col_eigvecs.ndim - 2), -1, -2)
+    tol = np.finfo(B.dtype).eps
+    # tol = 1e-7
+    return ~np.any(np.all(np.abs(row_eigvecs @ B) < tol, axis=-1), axis=-1)
+
+    # n_state, _, _ = dims_from_dynamics(dynamics)
+    # # Align arrays with new 'test' dimension for each eigval
+    # A = A[..., np.newaxis, :, :]
+    # lam_eye = eigvals[..., np.newaxis, np.newaxis] * np.eye(n_state)
+    # A, lam_eye = np.broadcast_arrays(A, lam_eye)
+    # B = B[..., np.newaxis, :, :].repeat(n_state, axis=-3)
+    #
+    # pbh = np.concatenate([lam_eye - A, B], axis=-1)
+    # return np.all(np.linalg.matrix_rank(pbh, tol=1e-8) == n_state, axis=-1)
+
+
+def isstabilizable(dynamics: LinSDynamics) -> np.ndarray:
+    """Returns whether the stationary dynamics are stabilizable.
+
+    Uses the Hautus Lemma for stabilizability::
+    https://en.wikipedia.org/wiki/Hautus_lemma#Hautus_Lemma_for_stabilizability
+    Converted to the discrete time case by checking the eigenvectors
+    corresponding to the eigenvalues with magnitude greater than 1.
+
+    This function accepts a batch of linear dynamics.
+
+    Warning:
+        This function seems to return True even for systems known not to be
+        stabilizable
+
+    Note:
+        It is not obvious if this condition is generalizable to non-stationary
+        systems. Thus, this function first checks if the system is stationary.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name
+    assert isstationary(dynamics)
+    F_s, F_a = map(lambda x: x.select("H", 0).numpy(), dynamics_factors(dynamics))
+    eigvals, _ = np.linalg.eig(F_s)
+
+    tests = []
+    n_state, _, _ = dims_from_dynamics(dynamics)
+    for i in range(n_state):
+        pbh = np.concatenate(
+            [F_s - eigvals[..., i, np.newaxis, np.newaxis] * np.eye(n_state), F_a],
+            axis=-1,
+        )
+        unstable = np.abs(eigvals[..., i]) >= 1.0
+        # If abs eigval signals instability, check PBH condition
+        test = np.where(unstable, np.linalg.matrix_rank(pbh) == n_state, True)
+        # assert test.shape == F_s.shape[:-2], test.shape
+        tests += [test]
+    return np.stack(tests, axis=-1).all(axis=-1)
+
+
 ###############################################################################
 # System manipulation
 ###############################################################################
