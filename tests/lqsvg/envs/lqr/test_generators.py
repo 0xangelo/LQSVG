@@ -1,7 +1,7 @@
-# pylint:disable=too-many-arguments,invalid-name
+# pylint:disable=too-many-arguments,invalid-name,unsubscriptable-object
 from __future__ import annotations
 
-from typing import Any
+from functools import partial
 from typing import Optional
 from typing import Type
 from typing import Union
@@ -24,6 +24,8 @@ from lqsvg.envs.lqr.types import QuadCost
 
 from .utils import standard_fixture
 
+# noinspection PyUnresolvedReferences
+GeneratorFn = callable[[], LQGGenerator]
 
 Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
 transition_bias = standard_fixture((True, False), "TransBias")
@@ -39,42 +41,25 @@ def generator_cls() -> Type[LQGGenerator]:
 
 # noinspection PyArgumentList
 @pytest.fixture
-def generator(
+def generator_fn(
     generator_cls: Type[LQGGenerator],
     n_state: int,
     n_ctrl: int,
     horizon: int,
-    stationary: bool,
-    Fs_eigval_range: tuple[float, float],
-    transition_bias: bool,
-    sample_covariance: bool,
-    cost_linear: bool,
-    cost_cross: bool,
     seed: int,
-) -> LQGGenerator:
-    return generator_cls(
-        n_state,
-        n_ctrl,
-        horizon,
-        stationary=stationary,
-        Fs_eigval_range=Fs_eigval_range,
-        transition_bias=transition_bias,
-        rand_trans_cov=sample_covariance,
-        cost_linear=cost_linear,
-        cost_cross=cost_cross,
-        seed=seed,
-    )
+) -> GeneratorFn:
+    return partial(generator_cls, n_state, n_ctrl, horizon, seed=seed)
 
 
 # Test LQGGenerator interface ==========================================
 def test_generator_init(
-    generator_cls: Any,
+    generator_fn: GeneratorFn,
     n_state: int,
     n_ctrl: int,
     horizon: int,
     seed: int,
 ):
-    generator = generator_cls(n_state, n_ctrl, horizon, seed=seed)
+    generator = generator_fn()
     assert generator.n_state == n_state
     assert generator.n_ctrl == n_ctrl
     assert generator.horizon == horizon
@@ -84,17 +69,9 @@ def test_generator_init(
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
-def test_generator_defaults(generator_cls: Any, n_batch: Optional[int]):
-    generator = generator_cls(2, 2, 20)
-    dynamics, cost, init = generator(n_batch=n_batch)
-
-    tensors = [t for c in (dynamics, cost, init) for t in c]
-    if n_batch is None:
-        assert all("B" not in t.names for t in tensors)
-    else:
-        assert all("B" in t.names for t in tensors)
-        assert all(t.size("B") == n_batch for t in tensors)
-
+def check_generated_dynamics(
+    dynamics: Union[LinDynamics, LinSDynamics], generator: LQGGenerator
+):
     check_dynamics(
         dynamics,
         generator.n_state,
@@ -104,6 +81,9 @@ def test_generator_defaults(generator_cls: Any, n_batch: Optional[int]):
         transition_bias=generator.transition_bias,
         sample_covariance=generator.rand_trans_cov,
     )
+
+
+def check_generated_cost(cost: QuadCost, generator: LQGGenerator):
     check_cost(
         cost,
         generator.n_state,
@@ -114,8 +94,8 @@ def test_generator_defaults(generator_cls: Any, n_batch: Optional[int]):
     )
 
 
-@pytest.mark.slow
-def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
+def test_generator_defaults(generator_fn: GeneratorFn, n_batch: Optional[int]):
+    generator = generator_fn()
     dynamics, cost, init = generator(n_batch=n_batch)
 
     tensors = [t for c in (dynamics, cost, init) for t in c]
@@ -125,23 +105,23 @@ def test_generator_batch_call(generator: LQGGenerator, n_batch: Optional[int]):
         assert all("B" in t.names for t in tensors)
         assert all(t.size("B") == n_batch for t in tensors)
 
-    check_dynamics(
-        dynamics,
-        generator.n_state,
-        generator.n_ctrl,
-        generator.horizon,
-        stationary=generator.stationary,
-        transition_bias=generator.transition_bias,
-        sample_covariance=generator.rand_trans_cov,
-    )
-    check_cost(
-        cost,
-        generator.n_state,
-        generator.n_ctrl,
-        generator.horizon,
-        stationary=generator.stationary,
-        linear=generator.cost_linear,
-    )
+    check_generated_dynamics(dynamics, generator)
+    check_generated_cost(cost, generator)
+
+
+def test_generator_batch_call(generator_fn: GeneratorFn, n_batch: Optional[int]):
+    generator = generator_fn()
+    dynamics, cost, init = generator(n_batch=n_batch)
+
+    tensors = [t for c in (dynamics, cost, init) for t in c]
+    if n_batch is None:
+        assert all("B" not in t.names for t in tensors)
+    else:
+        assert all("B" in t.names for t in tensors)
+        assert all(t.size("B") == n_batch for t in tensors)
+
+    check_generated_dynamics(dynamics, generator)
+    check_generated_cost(cost, generator)
 
 
 def assert_all_tensor(*tensors: Tensor):
@@ -230,6 +210,48 @@ def check_cost(
     if horizon > 1:
         assert stationary == nt.allclose(C, C.select("H", 0))
         assert not linear or stationary == nt.allclose(c, c.select("H", 0))
+
+
+def test_stationary(generator_fn: GeneratorFn, stationary: bool):
+    generator = generator_fn(stationary=stationary)
+    dynamics, cost, _ = generator()
+
+    check_generated_dynamics(dynamics, generator)
+    check_generated_cost(cost, generator)
+
+
+def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
+    generator = generator_fn(rand_trans_cov=sample_covariance)
+    dynamics, _, _ = generator()
+
+    check_generated_dynamics(dynamics, generator)
+
+
+# noinspection PyPep8Naming
+def test_Fs_eigval_range(
+    generator_fn: GeneratorFn, Fs_eigval_range: tuple[float, float]
+):
+    generator = generator_fn(Fs_eigval_range=Fs_eigval_range)
+    dynamics, _, _ = generator()
+    check_generated_dynamics(dynamics, generator)
+
+
+def test_transition_bias(
+    generator_fn: GeneratorFn,
+    transition_bias: bool,
+):
+    generator = generator_fn(transition_bias=transition_bias)
+    dynamics, _, _ = generator()
+    check_generated_dynamics(dynamics, generator)
+
+
+def test_cost_linear(
+    generator_fn: GeneratorFn,
+    cost_linear: bool,
+):
+    generator = generator_fn(cost_linear=cost_linear)
+    _, cost, _ = generator()
+    check_generated_cost(cost, generator)
 
 
 @pytest.mark.slow
