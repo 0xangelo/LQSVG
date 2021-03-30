@@ -368,8 +368,10 @@ class RecurrentModel(LightningModel):
 # noinspection PyTypeChecker
 @nt.suppress_named_tensor_warning()
 def test_lightning_model():
+    import lqsvg
     from .worker import make_worker
 
+    lqsvg.register_all()
     worker = make_worker(env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=1))
     model = LightningModel(worker.get_policy(), worker.env)
 
@@ -386,7 +388,6 @@ def test_lightning_model():
         )
 
     monte_carlo = model.monte_carlo_svg
-    analytic = model.analytic_svg
     true_mc = MonteCarloSVG(model.actor, model.mdp)
 
     print("Model sample:")
@@ -406,7 +407,8 @@ def test_lightning_model():
     print(traj_logp, traj_logp.shape)
 
     print("Monte Carlo value:", monte_carlo.value(samples=256))
-    print("Analytic value:", analytic.value())
+    if model.analytic_svg is not None:
+        print("Analytic value:", model.analytic_svg.value())
     print("True value:", model.gold_standard[0])
 
 
