@@ -363,6 +363,12 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
     return mat
 
 
+def _sample_eigvals(
+    low: float, high: float, size: tuple[int, ...], rng: RNG
+) -> np.ndarray:
+    return rng.uniform(low=low, high=high, size=size)
+
+
 def random_mat_with_eigval_range(
     size: int,
     eigval_range: tuple[float, float],
@@ -370,6 +376,7 @@ def random_mat_with_eigval_range(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     rng: RNG = None,
+    ignore_rank_defficiency: bool = False,
 ) -> Tensor:
     """Generate a random matrix with absolute eigenvalues in the desired range."""
     # pylint:disable=too-many-arguments
@@ -377,11 +384,16 @@ def random_mat_with_eigval_range(
         v >= 0 for v in eigval_range
     ), f"Eigenvalue range must be positive, got {eigval_range}"
     rng = np.random.default_rng(rng)
-
     low, high = eigval_range
-    eigvals = rng.uniform(
-        low=low, high=high, size=_sample_shape(horizon, stationary, n_batch) + (size,)
-    )
+    size = _sample_shape(horizon, stationary, n_batch) + (size,)
+
+    eigvals = _sample_eigvals(low, high, size, rng)
+    rank_defficient = np.any(np.abs(eigvals) < 1e-8)
+    # Assert state transition matrix isn't rank deficient if needed
+    while rank_defficient and not ignore_rank_defficiency:
+        eigvals = _sample_eigvals(low, high, size, rng)
+        rank_defficient = np.any(np.abs(eigvals) < 1e-8)
+
     # Flip sign randomly
     np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
 
