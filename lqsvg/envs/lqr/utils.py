@@ -35,7 +35,7 @@ def isstationary(dynamics: LinSDynamics) -> bool:
 
 
 def isstable(
-    dynamics: Optional[LinSDynamics] = None, eigvals: Optional[Tensor] = None
+    dynamics: Optional[LinSDynamics] = None, eigvals: Optional[np.ndarray] = None
 ) -> np.ndarray:
     """Returns whether the unactuated dynamics are stable.
 
