@@ -154,9 +154,8 @@ class MonteCarloSVG(nn.Module):
             samples: number of samples
 
         Returns:
-            A tuple with the expected policy return (as a tensor) and an
-            iterable of gradients of the expected return with respect to
-            each policy parameter
+            A tuple with the expected policy return (as a tensor) and a tuple
+            of gradients of the expected return w.r.t. each policy parameter
         """
         mc_performance = self.value(samples)
         svg = policy_svg(self.policy, mc_performance)
@@ -194,9 +193,8 @@ class AnalyticSVG(nn.Module):
         gradient w.r.t. policy parameters.
 
         Returns:
-            A tuple with the expected policy return (as a tensor) and an
-            iterable of gradients of the expected return w.r.t. each policy
-            parameter
+            A tuple with the expected policy return (as a tensor) and a tuple
+            of gradients of the expected return w.r.t. each policy parameter
         """
         value = self.value()
         svg = policy_svg(self.policy, value)
@@ -305,7 +303,7 @@ class LightningModel(pl.LightningModule):
         n_grads = self.hparams.empvar_samples - len(samples)
         with torch.enable_grad():
             samples += [
-                self.monte_carlo_svg(samples=self.hparams.mc_samples)
+                self.monte_carlo_svg(samples=self.hparams.mc_samples)[1]
                 for _ in range(n_grads)
             ]
         self.zero_grad(set_to_none=True)
