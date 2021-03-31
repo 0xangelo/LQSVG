@@ -204,7 +204,7 @@ def main():
                 "model_input_norm": None,
             }
         },
-        "recurrent_training": tune.choice([True, False]),
+        "recurrent_training": False,
         "learning_rate": tune.loguniform(3e-4, 1e-2),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
         "mc_samples": 32,
