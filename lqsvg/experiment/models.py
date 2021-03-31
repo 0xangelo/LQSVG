@@ -224,8 +224,6 @@ class LightningModel(pl.LightningModule):
 
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
 
-        self.hparams.empvar_samples = 10
-
     # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Batched trajectory log prob."""
