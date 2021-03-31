@@ -348,7 +348,7 @@ class RecurrentModel(LightningModel):
 
         trans_logp = []
         obs_, _ = init_model.rsample(init_logp.shape)
-        obs_ = obs_.refine_names(*init_logp.names, ...)
+        obs_ = obs_.rename(*init_logp.names, ...)
         for t in range(self.model.horizon):  # pylint:disable=invalid-name
             params = trans_model(obs_, act.select(dim="H", index=t))
             trans_logp += [
