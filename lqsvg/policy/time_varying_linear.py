@@ -168,6 +168,12 @@ class LQGPolicy(TorchPolicy):
     observation_space: Box
     action_space: Box
 
+    def setup(self, env: TorchLQGMixin):
+        if self.config["module"]["policy_initializer"] == "from_optimal":
+            optimal: lqr.Linear = env.solution[0]
+            self.module.actor.initialize_from_optimal(optimal)
+        self.module.model.reward.copy(env.cost)
+
     @property
     def n_state(self):
         n_state, _, _ = self.space_dims
@@ -186,12 +192,6 @@ class LQGPolicy(TorchPolicy):
     @cached_property
     def space_dims(self) -> tuple[int, int, int]:
         return lqr.dims_from_spaces(self.observation_space, self.action_space)
-
-    def initialize_from_lqg(self, env: TorchLQGMixin):
-        if self.config["module"]["policy_initializer"] == "from_optimal":
-            optimal: lqr.Linear = env.solution[0]
-            self.module.actor.initialize_from_optimal(optimal)
-        self.module.model.reward.copy(env.cost)
 
     def _make_module(
         self, obs_space: Box, action_space: Box, config: dict

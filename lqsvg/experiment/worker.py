@@ -50,7 +50,7 @@ def make_worker(*, env_config: dict, **kwargs) -> RolloutWorker:
         _use_trajectory_view_api=False,
         **kwargs
     )
-    worker.foreach_trainable_policy(lambda p, _: p.initialize_from_lqg(worker.env))
+    worker.foreach_trainable_policy(lambda p, _: p.setup(worker.env))
     return worker
 
 

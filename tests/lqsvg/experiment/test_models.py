@@ -150,7 +150,7 @@ def env(n_state: int, n_ctrl: int, horizon: int) -> TorchLQGMixin:
 @pytest.fixture
 def rllib_policy(env: TorchLQGMixin) -> LQGPolicy:
     pol = LQGPolicy(env.observation_space, env.action_space, {})
-    pol.initialize_from_lqg(env)
+    pol.setup(env)
     return pol
 
 
