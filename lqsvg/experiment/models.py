@@ -262,11 +262,6 @@ class LightningModel(pl.LightningModule):
         self.log("val/loss", loss)
         return loss
 
-    def validation_epoch_end(self, validation_step_outputs):
-        # pylint:disable=arguments-differ
-        del validation_step_outputs
-        self.value_gradient_info("val")
-
     def test_step(self, batch: tuple[Tensor, Tensor, Tensor], batch_idx: int):
         # pylint:disable=arguments-differ
         loss = self._compute_loss_on_batch(batch, batch_idx)
