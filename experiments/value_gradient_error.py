@@ -99,7 +99,6 @@ class Experiment(tune.Trainable):
         self.datamodule = build_datamodule(
             self.worker, total_trajs=self.hparams.total_trajs
         )
-        self.datamodule.collect_trajectories(prog=False)
 
     def make_lightning_trainer(self):
         logger = pl.loggers.WandbLogger(
@@ -141,13 +140,15 @@ class Experiment(tune.Trainable):
         )
 
     def step(self) -> dict:
-        self.log_env_info()
-        with utils.suppress_dataloader_warning():
-            self.trainer.fit(self.model, datamodule=self.datamodule)
+        with self.run:
+            self.log_env_info()
+            self.datamodule.collect_trajectories(prog=False)
+            with utils.suppress_dataloader_warning():
+                self.trainer.fit(self.model, datamodule=self.datamodule)
 
-            results = self.trainer.test(self.model, datamodule=self.datamodule)[0]
-            self.run.summary.update(results)
-        # self._try_save_artifact()
+                results = self.trainer.test(self.model, datamodule=self.datamodule)[0]
+                self.run.summary.update(results)
+            # self._try_save_artifact()
 
         return {tune.result.DONE: True, **results}
 
