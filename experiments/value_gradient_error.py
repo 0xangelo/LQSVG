@@ -152,14 +152,6 @@ class Experiment(tune.Trainable):
 
         return {tune.result.DONE: True, **results}
 
-    def _try_save_artifact(self):
-        try:
-            self.artifact.add_dir(self.trainer.checkpoint_callback.dirpath)
-            self.run.log_artifact(self.artifact)
-        except ValueError:
-            # Sometimes add_dir fails with 'not a directory name'. Shall investigate
-            pass
-
     def log_env_info(self):
         dynamics = self.worker.env.dynamics
         eigvals = lqg_util.stationary_eigvals(dynamics)
@@ -169,6 +161,14 @@ class Experiment(tune.Trainable):
         }
         self.run.summary.update(tests)
         self.run.summary.update({"Fs_eigvals": wandb.Histogram(eigvals)})
+
+    def _try_save_artifact(self):
+        try:
+            self.artifact.add_dir(self.trainer.checkpoint_callback.dirpath)
+            self.run.log_artifact(self.artifact)
+        except ValueError:
+            # Sometimes add_dir fails with 'not a directory name'. Shall investigate
+            pass
 
     def cleanup(self):
         self.run.finish()
