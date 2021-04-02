@@ -26,7 +26,7 @@ sklearn = "^0.0"
 matplotlib = "^3.4.0"
 seaborn = "^0.11.1"
 pytest-mock = "^3.5.1"
-jupyterlab-code-formatter = "^1.4.5"
+jupyterlab-code-formatter = "^1.4.7"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
