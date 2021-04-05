@@ -1,4 +1,4 @@
-# pylint:disable=unsubscriptable-object
+# pylint:disable=unsubscriptable-object,invalid-name
 from __future__ import annotations
 
 from functools import partial
@@ -9,6 +9,9 @@ import pytest
 from scipy.stats import norm as normal
 from scipy.stats import ortho_group
 
+from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import make_linsdynamics
+from lqsvg.envs.lqr.utils import ctrb
 from lqsvg.envs.lqr.utils import random_mat_with_eigval_range
 from lqsvg.envs.lqr.utils import random_matrix_from_eigs
 from lqsvg.envs.lqr.utils import wrap_sample_shape_to_size
@@ -96,3 +99,14 @@ def test_random_mat_with_eigval_range(
     low, high = eigval_range
     assert np.all(np.abs(eigvals) >= low)
     assert np.all(np.abs(eigvals) <= high)
+
+
+@pytest.fixture
+def dynamics(n_state: int, n_ctrl: int, horizon: int) -> lqr.LinSDynamics:
+    return make_linsdynamics(n_state, n_ctrl, horizon)
+
+
+def test_ctrb(dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
+    C = ctrb(dynamics)
+    assert isinstance(C, np.ndarray)
+    assert C.shape == (n_state, n_state * n_ctrl)
