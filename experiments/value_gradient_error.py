@@ -182,7 +182,7 @@ def main():
 
     config = {
         "wandb_dir": os.getcwd(),
-        "wandb_tags": "easy fast-val".split(),
+        "wandb_tags": "easy".split(),
         "env_config": dict(
             n_state=tune.randint(2, 11),
             n_ctrl=tune.randint(2, 11),
