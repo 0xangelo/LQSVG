@@ -75,7 +75,7 @@ def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
     """
     # pylint:disable=invalid-name
     n_state, _, _ = dims_from_dynamics(dynamics)
-    C = ctrb(dynamics).numpy()
+    C = ctrb(dynamics)
     return np.linalg.matrix_rank(C) == n_state
 
 
@@ -102,7 +102,7 @@ def is_pbh_ctrb(dynamics: LinSDynamics) -> np.ndarray:
     """
     # pylint:disable=invalid-name,unused-variable
     assert isstationary(dynamics)
-    A, B = map(lambda x: x.select("H", 0).numpy(), dynamics_factors(dynamics))
+    A, B = map(lambda x: x.numpy(), stationary_dynamics_factors(dynamics))
     _, col_eigvecs = np.linalg.eig(A)
 
     # Check if some eigenvector of A is linearly independent of all columns of B
@@ -145,7 +145,7 @@ def isstabilizable(dynamics: LinSDynamics) -> np.ndarray:
     """
     # pylint:disable=invalid-name
     assert isstationary(dynamics)
-    F_s, F_a = map(lambda x: x.select("H", 0).numpy(), dynamics_factors(dynamics))
+    F_s, F_a = map(lambda x: x.numpy(), stationary_dynamics_factors(dynamics))
     eigvals, _ = np.linalg.eig(F_s)
 
     tests = []
@@ -184,6 +184,14 @@ def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
     return F_s, F_a
 
 
+def stationary_dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
+    """Returns the decomposed transition matrix of a stationary system."""
+    # pylint:disable=invalid-name
+    # noinspection PyTypeChecker
+    F_s, F_a = (x.select("H", 0) for x in dynamics_factors(dynamics))
+    return F_s, F_a
+
+
 def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
     """Returns the eigenvalues of unactuated stationary transition dynamics.
 
@@ -192,24 +200,24 @@ def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
     """
     # pylint:disable=invalid-name
     assert isstationary(dynamics), "Can't pass non-stationary dynamics"
-    F_s, _ = dynamics_factors(dynamics)
-    F_s = F_s.select("H", 0)
+    F_s, _ = stationary_dynamics_factors(dynamics)
     # Assume last two dimensions correspond to rows and cols respectively
     eigvals, _ = np.linalg.eig(F_s.numpy())
     return eigvals
 
 
-def ctrb(dynamics: LinSDynamics) -> Tensor:
+def ctrb(dynamics: LinSDynamics) -> np.ndarray:
     """Returns the controllability matrix for a stationary linear system.
 
     This function accepts batched dynamics.
     """
     # pylint:disable=invalid-name
-    F_s, F_a = dynamics_factors(dynamics)
-    F_s, F_a = F_s.select("H", 0), F_a.select("H", 0)
+    A, B = (x.numpy() for x in stationary_dynamics_factors(dynamics))
     n_state, _, _ = dims_from_dynamics(dynamics)
     # Assumes the last two dimensions correspond to rows and columns respectively
-    C = torch.cat([torch.matrix_power(F_s, i) @ F_a for i in range(n_state)], dim=-1)
+    C = np.concatenate(
+        [np.linalg.matrix_power(A, i) @ B for i in range(n_state)], axis=-1
+    )
     return C
 
 
@@ -217,17 +225,17 @@ def make_controllable(dynamics: LinSDynamics) -> LinSDynamics:
     """Compute controllable dynamics from reference one."""
     # pylint:disable=invalid-name
     n_state, _, _ = dims_from_dynamics(dynamics)
-    F_s, F_a = dynamics_factors(dynamics)
+    # noinspection PyTypeChecker
+    A, B = (x.numpy() for x in stationary_dynamics_factors(dynamics))
 
     # Compute eigendecomp of Fs
-    # noinspection PyTypeChecker
-    A = F_s.select("H", 0).numpy()
     _, col_eigvec = np.linalg.eig(A)
-    # Ensure Fa has a component in each eigenvector direction
+    # Ensure a column of Fa has a component in each eigenvector direction
     comb = np.ones(n_state, dtype=A.dtype) / np.sqrt(n_state)
-    B = col_eigvec @ comb[..., np.newaxis]
-    F_a = torch.from_numpy(np.concatenate([F_a[..., :-1].numpy(), B], axis=-1))
+    B_col = col_eigvec @ comb[..., np.newaxis]
 
+    F_s = torch.from_numpy(A)
+    F_a = torch.from_numpy(np.concatenate([B[..., :-1], B_col], axis=-1))
     F = (
         torch.cat([F_s, F_a], dim=-1)
         .expand_as(dynamics.F)
@@ -330,10 +338,30 @@ def random_normal_matrix(
     n_batch: Optional[int] = None,
     rng: RNG = None,
 ) -> Tensor:
-    # pylint:disable=missing-function-docstring,too-many-arguments
+    """Matrix with Normal i.i.d. entries."""
+    # pylint:disable=too-many-arguments
     mat_shape = (row_size, col_size)
     shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
     mat = nt.matrix(as_float_tensor(rng.normal(size=shape)))
+    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+    return mat
+
+
+def random_uniform_matrix(
+    row_size: int,
+    col_size: int,
+    horizon: int,
+    stationary: bool = False,
+    low: float = 0.0,
+    high: float = 1.0,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    """Matrix with Uniform i.i.d. entries."""
+    # pylint:disable=too-many-arguments
+    mat_shape = (row_size, col_size)
+    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
+    mat = nt.matrix(as_float_tensor(rng.uniform(low=low, high=high, size=shape)))
     mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
     return mat
 
@@ -430,6 +458,7 @@ def random_mat_with_eigval_range(
 ###############################################################################
 
 
+# noinspection PyArgumentList
 def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
     """Retrieve LQG dimensions from linear feedback policy.
 
@@ -479,6 +508,7 @@ def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
 
     Expects observation as a named 'vector' tensor.
     """
+    # noinspection PyArgumentList
     state, time = nt.split(obs, [obs.size("R") - 1, 1], dim="R")
     time = time.int()
     return state, time
