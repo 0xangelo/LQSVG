@@ -403,9 +403,7 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
     # Assume last dimension is "R"
     ortho = _random_orthogonal_matrix(eigvals.shape[:-1])
 
-    mat = ortho.transpose(*range(ortho.ndim - 2), -1, -2) @ (
-        eigvals[..., np.newaxis] * ortho
-    )
+    mat = (ortho * eigvals[..., np.newaxis]) @ ortho.swapaxes(-2, -1)
     return mat
 
 
