@@ -7,18 +7,13 @@ import numpy as np
 import torch
 from gym.spaces import Box
 from scipy.stats import ortho_group
-from torch import IntTensor
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.np_util import make_spd_matrix
-from lqsvg.np_util import np_expand
-from lqsvg.np_util import RNG
+from lqsvg.np_util import RNG, make_spd_matrix, np_expand
 from lqsvg.torch.utils import as_float_tensor
 
-from .types import Linear
-from .types import LinSDynamics
-
+from .types import Linear, LinSDynamics
 
 ###############################################################################
 # Diagnostics
@@ -414,10 +409,41 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
     return mat
 
 
-def _sample_eigvals(
-    low: float, high: float, size: tuple[int, ...], rng: RNG
+def sample_eigvals(
+    num: int, low: float, high: float, size: tuple[int, ...], rng: RNG
 ) -> np.ndarray:
-    return rng.uniform(low=low, high=high, size=size)
+    """Sample values from the open interval (`low`, `high`).
+
+    This function uses `np.linspace` and `Generator.choice` to sample
+    eigenvalues with multiplicity 1.
+
+    Flips the sign of each eigenvalue randomly.
+
+    Warning:
+        This function is very slow
+
+    Args:
+        num: number of distinct eigenvalues per sample
+        low: lowest absolute eigenvalue
+        high: highest absolute eigenvalue
+        size: shape for the batch
+        rng: random number generator
+    """
+    rng = np.random.default_rng(rng)
+
+    space = np.linspace(start=low, stop=high, num=1002, endpoint=True)[1:-1]
+    samples = np.stack(
+        [
+            rng.choice(space, size=num, replace=False)
+            for _ in range(np.prod(size, dtype=int))
+        ]
+    )
+    eigvals = samples.reshape(size + (num,))
+
+    # Flip sign randomly
+    np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
+
+    return eigvals
 
 
 def random_mat_with_eigval_range(
@@ -436,17 +462,14 @@ def random_mat_with_eigval_range(
     ), f"Eigenvalue range must be positive, got {eigval_range}"
     rng = np.random.default_rng(rng)
     low, high = eigval_range
-    size = _sample_shape(horizon, stationary, n_batch) + (size,)
+    batch_shape = _sample_shape(horizon, stationary, n_batch)
 
-    eigvals = _sample_eigvals(low, high, size, rng)
+    eigvals = sample_eigvals(size, low, high, batch_shape, rng)
     rank_defficient = np.any(np.abs(eigvals) < 1e-8)
     # Assert state transition matrix isn't rank deficient if needed
     while rank_defficient and not ignore_rank_defficiency:
-        eigvals = _sample_eigvals(low, high, size, rng)
+        eigvals = sample_eigvals(size, low, high, batch_shape, rng)
         rank_defficient = np.any(np.abs(eigvals) < 1e-8)
-
-    # Flip sign randomly
-    np.negative(eigvals, where=rng.uniform(size=eigvals.shape) < 0.5, out=eigvals)
 
     mat = random_matrix_from_eigs(eigvals, rng=rng)
     mat = nt.matrix(as_float_tensor(mat))
