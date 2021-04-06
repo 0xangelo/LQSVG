@@ -3,27 +3,22 @@ Linear Quadratic Regulator (LQR):
 Please see http://rail.eecs.berkeley.edu/deeprlcourse/static/slides/lec-10.pdf
 for notation and more details on LQR.
 """
-from typing import List
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 
-from .named import refine_cost_input
-from .named import refine_dynamics_input
-from .named import refine_linear_input
-from .named import refine_linear_output
-from .named import refine_quadratic_output
-from .named import refine_sdynamics_input
-from .named import unnamed
-from .types import LinDynamics
-from .types import Linear
-from .types import LinSDynamics
-from .types import LQG
-from .types import LQR
-from .types import QuadCost
-from .types import Quadratic
+from .named import (
+    refine_cost_input,
+    refine_dynamics_input,
+    refine_linear_input,
+    refine_linear_output,
+    refine_quadratic_output,
+    refine_sdynamics_input,
+    unnamed,
+)
+from .types import LQG, LQR, LinDynamics, Linear, LinSDynamics, QuadCost, Quadratic
 
 
 def transpose(tensor: Tensor):

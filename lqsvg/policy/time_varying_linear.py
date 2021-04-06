@@ -6,8 +6,7 @@ from typing import Optional
 
 import torch.nn as nn
 from gym.spaces import Box
-from raylab.options import configure
-from raylab.options import option
+from raylab.options import configure, option
 from raylab.policy import TorchPolicy
 from raylab.policy.action_dist import WrapDeterministicPolicy
 from raylab.policy.modules.model import StochasticModel
@@ -15,17 +14,18 @@ from raylab.policy.modules.model import StochasticModel
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules import LinearDynamics
-from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.envs.lqr.modules.general import LQGModule
+from lqsvg.envs.lqr.modules.general import EnvModule, LQGModule
 
-from .modules import BatchNormModel
-from .modules import InitStateModel
-from .modules import LayerNormModel
-from .modules import LinearTransModel
-from .modules import QuadRewardModel
-from .modules import ResidualModel
-from .modules import TVLinearPolicy
-from .modules import TVLinearTransModel
+from .modules import (
+    BatchNormModel,
+    InitStateModel,
+    LayerNormModel,
+    LinearTransModel,
+    QuadRewardModel,
+    ResidualModel,
+    TVLinearPolicy,
+    TVLinearTransModel,
+)
 
 
 def glorot_init_policy(module: nn.Module):

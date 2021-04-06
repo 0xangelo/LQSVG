@@ -3,9 +3,11 @@ import torch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr.modules.dynamics.common import assemble_scale_tril
-from lqsvg.envs.lqr.modules.dynamics.common import disassemble_covariance
-from lqsvg.envs.lqr.modules.dynamics.common import softplusinv
+from lqsvg.envs.lqr.modules.dynamics.common import (
+    assemble_scale_tril,
+    disassemble_covariance,
+    softplusinv,
+)
 from lqsvg.torch.utils import make_spd_matrix
 
 

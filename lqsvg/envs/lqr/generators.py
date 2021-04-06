@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Optional
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -13,23 +12,19 @@ from dataclasses_json import DataClassJsonMixin
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.np_util import make_spd_matrix
-from lqsvg.np_util import RNG
+from lqsvg.np_util import RNG, make_spd_matrix
 from lqsvg.torch.utils import as_float_tensor
 
 from .named import refine_lqr
-from .types import AnyDynamics
-from .types import Box
-from .types import GaussInit
-from .types import LinDynamics
-from .types import LinSDynamics
-from .types import QuadCost
-from .utils import expand_and_refine
-from .utils import np_expand_horizon
-from .utils import random_mat_with_eigval_range
-from .utils import random_normal_matrix
-from .utils import random_normal_vector
-from .utils import random_spd_matrix
+from .types import AnyDynamics, Box, GaussInit, LinDynamics, LinSDynamics, QuadCost
+from .utils import (
+    expand_and_refine,
+    np_expand_horizon,
+    random_mat_with_eigval_range,
+    random_normal_matrix,
+    random_normal_vector,
+    random_spd_matrix,
+)
 
 
 @dataclass

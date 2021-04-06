@@ -17,8 +17,7 @@ from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
-from .utils import linear_feedback_cossim
-from .utils import linear_feedback_norm
+from .utils import linear_feedback_cossim, linear_feedback_norm
 
 
 class ExpectedValue(nn.Module):
@@ -361,6 +360,7 @@ class RecurrentModel(LightningModel):
 @nt.suppress_named_tensor_warning()
 def test_lightning_model():
     import lqsvg
+
     from .worker import make_worker
 
     lqsvg.register_all()

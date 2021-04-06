@@ -1,11 +1,9 @@
-from typing import Any
-from typing import Iterable
+from typing import Any, Iterable
 
 import pytest
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr.types import LinSDynamics
-from lqsvg.envs.lqr.types import QuadCost
+from lqsvg.envs.lqr.types import LinSDynamics, QuadCost
 
 
 def standard_fixture(params: Iterable[Any], name: str) -> callable:

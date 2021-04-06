@@ -4,13 +4,10 @@ from __future__ import annotations
 from raylab.policy.modules.model import StochasticModel
 from raylab.torch.nn.distributions.types import SampleLogp
 from raylab.utils.types import TensorDict
-from torch import nn
-from torch import Tensor
+from torch import Tensor, nn
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr.utils import pack_obs
-from lqsvg.envs.lqr.utils import unpack_obs
-
+from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 
 __all__ = [
     "StochasticModelWrapper",

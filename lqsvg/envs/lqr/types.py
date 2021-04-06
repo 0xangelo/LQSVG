@@ -1,7 +1,6 @@
 """Common type annotations."""
 from collections import namedtuple
-from typing import Tuple
-from typing import Union
+from typing import Tuple, Union
 
 from torch import Tensor
 

@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from typing import Callable
-from typing import Union
+from typing import Callable, Union
 
 import gym
 import numpy as np
 import pytest
 from ray.rllib import VectorEnv
 
-from lqsvg.envs.lqr.gym import RandomLQGEnv
-from lqsvg.envs.lqr.gym import RandomVectorLQG
+from lqsvg.envs.lqr.gym import RandomLQGEnv, RandomVectorLQG
 
-from .utils import allclose_cost
-from .utils import allclose_dynamics
-from .utils import standard_fixture
+from .utils import allclose_cost, allclose_dynamics, standard_fixture
 
 EnvCreator = Callable[[dict], Union[gym.Env, VectorEnv]]
 

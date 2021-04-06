@@ -11,10 +11,12 @@ from scipy.stats import ortho_group
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_linsdynamics
-from lqsvg.envs.lqr.utils import ctrb
-from lqsvg.envs.lqr.utils import random_mat_with_eigval_range
-from lqsvg.envs.lqr.utils import random_matrix_from_eigs
-from lqsvg.envs.lqr.utils import wrap_sample_shape_to_size
+from lqsvg.envs.lqr.utils import (
+    ctrb,
+    random_mat_with_eigval_range,
+    random_matrix_from_eigs,
+    wrap_sample_shape_to_size,
+)
 
 from .utils import standard_fixture
 

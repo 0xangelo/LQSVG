@@ -9,6 +9,7 @@ __version__ = poetry_version.extract(source_file=__file__)
 def register_all_agents():
     """Register all trainer names in Tune."""
     from ray.tune import register_trainable
+
     from lqsvg.agents.registry import AGENTS
 
     for name, trainer_import in AGENTS.items():
@@ -18,6 +19,7 @@ def register_all_agents():
 def register_all_environments():
     """Register all custom environments in Tune."""
     from ray.tune import register_env
+
     from lqsvg.envs.registry import ENVS
 
     for name, creator in ENVS.items():

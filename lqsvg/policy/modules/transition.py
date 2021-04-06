@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from lqsvg.envs.lqr.generators import make_linsdynamics
-from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.envs.lqr.modules import TVLinearDynamicsModule
-
+from lqsvg.envs.lqr.modules import LinearDynamicsModule, TVLinearDynamicsModule
 
 __all__ = ["TVLinearTransModel", "LinearTransModel"]
 

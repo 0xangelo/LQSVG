@@ -1,8 +1,7 @@
 """Linear dynamics models."""
 from __future__ import annotations
 
-from abc import ABCMeta
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import Optional
 
 import torch
@@ -12,12 +11,9 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.utils import isstationary
-from lqsvg.envs.lqr.utils import unpack_obs
+from lqsvg.envs.lqr.utils import isstationary, unpack_obs
 
-from .common import assemble_scale_tril
-from .common import disassemble_covariance
-from .common import TVMultivariateNormal
+from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
 
 
 class CovarianceCholesky(nn.Module):

@@ -2,19 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
 from dataclasses_json import DataClassJsonMixin
-from ray.rllib import RolloutWorker
-from ray.rllib import SampleBatch
+from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
-from torch.utils.data import DataLoader
-from torch.utils.data import random_split
-from torch.utils.data import TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 import lqsvg
 import lqsvg.torch.named as nt

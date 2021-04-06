@@ -4,7 +4,6 @@ from __future__ import annotations
 from lqsvg.envs.lqr.generators import make_quadcost
 from lqsvg.envs.lqr.modules import QuadraticReward
 
-
 __all__ = ["QuadRewardModel"]
 
 

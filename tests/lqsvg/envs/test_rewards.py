@@ -6,7 +6,6 @@ from raylab.envs import get_reward_fn
 from lqsvg.envs.registry import ENVS
 from lqsvg.envs.rewards import REWARDS
 
-
 VALID_ENVS = sorted(list(set(ENVS.keys()).intersection(set(REWARDS.keys()))))
 ENV_CONFIGS = ({}, {"max_episode_steps": 200, "time_aware": True})
 

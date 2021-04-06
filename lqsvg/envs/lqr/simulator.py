@@ -9,8 +9,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from .types import Linear
-from .types import LQR
+from .types import LQR, Linear
 
 
 class LQRSim(nn.Module):

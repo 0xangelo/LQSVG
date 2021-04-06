@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Optional
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
-from torch import Generator
-from torch import Tensor
+from torch import Generator, Tensor
 
 import lqsvg.np_util as np_util
 

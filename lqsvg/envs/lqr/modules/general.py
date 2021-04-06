@@ -8,8 +8,7 @@ from torch import Tensor
 
 from lqsvg.envs import lqr
 
-from .dynamics import InitStateDynamics
-from .dynamics import LinearDynamics
+from .dynamics import InitStateDynamics, LinearDynamics
 from .reward import QuadraticReward
 
 

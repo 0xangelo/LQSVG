@@ -1,16 +1,11 @@
 # pylint:disable=missing-docstring,invalid-name
-from typing import Tuple
-from typing import Union
+from typing import Tuple, Union
 
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 
-from .types import LinDynamics
-from .types import Linear
-from .types import LinSDynamics
-from .types import QuadCost
-from .types import Quadratic
+from .types import LinDynamics, Linear, LinSDynamics, QuadCost, Quadratic
 
 
 def unnamed(
