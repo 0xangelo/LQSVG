@@ -8,10 +8,7 @@ from typing import Union
 
 import torch
 import torch.nn.functional as F
-from torch import IntTensor
-from torch import LongTensor
-from torch import Tensor
-
+from torch import IntTensor, LongTensor, Tensor
 
 MATRIX_NAMES = (..., "R", "C")
 VECTOR_NAMES = MATRIX_NAMES[:-1]

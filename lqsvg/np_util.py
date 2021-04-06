@@ -6,7 +6,6 @@ from typing import Union
 import numpy as np
 from numpy.random._generator import Generator
 
-
 RNG = Union[int, Generator, None]
 
 

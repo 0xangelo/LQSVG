@@ -3,15 +3,16 @@ import pytest
 import torch
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr import LinDynamics
-from lqsvg.envs.lqr import LinSDynamics
-from lqsvg.envs.lqr import NamedLQGControl
-from lqsvg.envs.lqr import NamedLQGPrediction
-from lqsvg.envs.lqr import NamedLQRControl
-from lqsvg.envs.lqr import NamedLQRPrediction
-from lqsvg.envs.lqr import QuadCost
-from lqsvg.envs.lqr.generators import make_linsdynamics
-from lqsvg.envs.lqr.generators import make_quadcost
+from lqsvg.envs.lqr import (
+    LinDynamics,
+    LinSDynamics,
+    NamedLQGControl,
+    NamedLQGPrediction,
+    NamedLQRControl,
+    NamedLQRPrediction,
+    QuadCost,
+)
+from lqsvg.envs.lqr.generators import make_linsdynamics, make_quadcost
 
 
 @pytest.fixture

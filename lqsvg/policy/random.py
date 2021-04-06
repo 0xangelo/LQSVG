@@ -1,9 +1,5 @@
 # pylint:disable=missing-module-docstring
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
-from typing import Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from ray.rllib import Policy
 from ray.rllib.evaluation import MultiAgentEpisode

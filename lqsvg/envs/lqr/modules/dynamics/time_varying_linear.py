@@ -1,19 +1,15 @@
 """Time-varying linear dynamics models."""
-from typing import Optional
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch import IntTensor
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import unpack_obs
 
-from .common import assemble_scale_tril
-from .common import disassemble_covariance
-from .common import TVMultivariateNormal
+from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
 from .linear import LinearDynamics
 
 

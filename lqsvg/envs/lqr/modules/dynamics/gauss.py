@@ -4,16 +4,13 @@ from typing import List
 import raylab.torch.nn.distributions as ptd
 import torch
 import torch.nn as nn
-from raylab.torch.nn.distributions.types import DistParams
-from raylab.torch.nn.distributions.types import SampleLogp
+from raylab.torch.nn.distributions.types import DistParams, SampleLogp
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 
-from .common import assemble_scale_tril
-from .common import disassemble_covariance
-from .common import TVMultivariateNormal
+from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
 
 
 class InitStateDynamics(ptd.Distribution):

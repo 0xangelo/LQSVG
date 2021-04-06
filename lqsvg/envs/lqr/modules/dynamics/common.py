@@ -1,11 +1,9 @@
 """Shared implementations between init state and transition dynamics."""
-from typing import List
-from typing import Tuple
+from typing import List, Tuple
 
 import raylab.torch.nn.distributions as ptd
 import torch
-from raylab.torch.nn.distributions.types import DistParams
-from raylab.torch.nn.distributions.types import SampleLogp
+from raylab.torch.nn.distributions.types import DistParams, SampleLogp
 from torch import Tensor
 
 import lqsvg.torch.named as nt

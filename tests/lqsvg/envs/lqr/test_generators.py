@@ -2,26 +2,23 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable
-from typing import Optional
-from typing import Type
-from typing import Union
+from typing import Callable, Optional, Type, Union
 
 import pytest
 import torch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr.generators import box_ddp_random_lqr
-from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.envs.lqr.generators import make_linsdynamics
-from lqsvg.envs.lqr.generators import make_lqr
-from lqsvg.envs.lqr.generators import make_lqr_linear_navigation
-from lqsvg.envs.lqr.generators import make_quadcost
-from lqsvg.envs.lqr.generators import stack_lqs
-from lqsvg.envs.lqr.types import LinDynamics
-from lqsvg.envs.lqr.types import LinSDynamics
-from lqsvg.envs.lqr.types import QuadCost
+from lqsvg.envs.lqr.generators import (
+    LQGGenerator,
+    box_ddp_random_lqr,
+    make_linsdynamics,
+    make_lqr,
+    make_lqr_linear_navigation,
+    make_quadcost,
+    stack_lqs,
+)
+from lqsvg.envs.lqr.types import LinDynamics, LinSDynamics, QuadCost
 
 from .utils import standard_fixture
 

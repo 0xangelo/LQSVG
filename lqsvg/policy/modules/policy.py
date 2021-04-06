@@ -5,10 +5,7 @@ from typing import Union
 
 import torch
 from raylab.policy.modules.actor import DeterministicPolicy
-from torch import IntTensor
-from torch import LongTensor
-from torch import nn
-from torch import Tensor
+from torch import IntTensor, LongTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr

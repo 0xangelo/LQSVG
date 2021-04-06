@@ -1,8 +1,6 @@
 import pytest
 
-from .mock_env import MockEnv
-from .mock_env import MockReward
-from .mock_env import MockTermination
+from .mock_env import MockEnv, MockReward, MockTermination
 
 
 # ==============================================================================
@@ -25,6 +23,8 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "slow" in item.keywords:
                 item.add_marker(skip_slow)
+
+
 # ==============================================================================
 
 
@@ -40,6 +40,7 @@ def init_ray():
 @pytest.fixture(autouse=True, scope="session")
 def disable_gym_logger_warnings():
     import logging
+
     import gym
 
     gym.logger.set_level(logging.ERROR)
@@ -47,9 +48,10 @@ def disable_gym_logger_warnings():
 
 @pytest.fixture(autouse=True, scope="session")
 def register_envs():
-    import lqsvg
     import raylab
     import raylab.envs as envs
+
+    import lqsvg
 
     lqsvg.register_all_environments()
     raylab.register_all_environments()

@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from lqsvg.torch.utils import default_generator_seed
-from lqsvg.torch.utils import default_rng
+from lqsvg.torch.utils import default_generator_seed, default_rng
 
 
 @pytest.fixture(params=(None, 123, torch.Generator()))

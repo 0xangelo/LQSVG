@@ -6,7 +6,6 @@ from raylab.envs import get_termination_fn
 from lqsvg.envs.registry import ENVS
 from lqsvg.envs.termination import TERMINATIONS
 
-
 VALID_ENVS = sorted(list(set(ENVS.keys()).intersection(set(TERMINATIONS.keys()))))
 ENV_CONFIGS = (
     {},

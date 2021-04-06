@@ -2,35 +2,27 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import List
-from typing import Optional
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 import gym  # pylint:disable=import-self
 import numpy as np
 import torch
 from ray.rllib.env import VectorEnv
-from ray.rllib.utils.typing import EnvActionType
-from ray.rllib.utils.typing import EnvInfoDict
-from ray.rllib.utils.typing import EnvObsType
-from ray.rllib.utils.typing import EnvType
+from ray.rllib.utils.typing import EnvActionType, EnvInfoDict, EnvObsType, EnvType
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 
 from .generators import LQGGenerator
-from .modules import InitStateDynamics
-from .modules import LQGModule
-from .modules import QuadraticReward
-from .modules import TVLinearDynamicsModule
+from .modules import (
+    InitStateDynamics,
+    LQGModule,
+    QuadraticReward,
+    TVLinearDynamicsModule,
+)
 from .solvers import NamedLQGControl
-from .types import GaussInit
-from .types import Linear
-from .types import LinSDynamics
-from .types import QuadCost
-from .types import Quadratic
-from .utils import dims_from_dynamics
-from .utils import spaces_from_dims
+from .types import GaussInit, Linear, LinSDynamics, QuadCost, Quadratic
+from .utils import dims_from_dynamics, spaces_from_dims
 
 Obs = np.ndarray
 Act = np.ndarray
