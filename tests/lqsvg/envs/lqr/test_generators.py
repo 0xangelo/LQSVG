@@ -12,6 +12,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import (
     LQGGenerator,
     box_ddp_random_lqr,
+    make_lindynamics,
     make_linsdynamics,
     make_lqr,
     make_lqr_linear_navigation,
@@ -212,6 +213,7 @@ def check_cost(
 
 
 def test_stationary(generator_fn: GeneratorFn, stationary: bool):
+    # noinspection PyArgumentList
     generator = generator_fn(stationary=stationary)
     dynamics, cost, _ = generator()
 
@@ -220,16 +222,17 @@ def test_stationary(generator_fn: GeneratorFn, stationary: bool):
 
 
 def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
+    # noinspection PyArgumentList
     generator = generator_fn(rand_trans_cov=sample_covariance)
     dynamics, _, _ = generator()
 
     check_generated_dynamics(dynamics, generator)
 
 
-# noinspection PyPep8Naming
 def test_passive_eigval_range(
     generator_fn: GeneratorFn, passive_eigval_range: tuple[float, float]
 ):
+    # noinspection PyArgumentList
     generator = generator_fn(passive_eigval_range=passive_eigval_range)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
@@ -239,6 +242,7 @@ def test_transition_bias(
     generator_fn: GeneratorFn,
     transition_bias: bool,
 ):
+    # noinspection PyArgumentList
     generator = generator_fn(transition_bias=transition_bias)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
@@ -248,6 +252,7 @@ def test_cost_linear(
     generator_fn: GeneratorFn,
     cost_linear: bool,
 ):
+    # noinspection PyArgumentList
     generator = generator_fn(cost_linear=cost_linear)
     _, cost, _ = generator()
     check_generated_cost(cost, generator)
@@ -264,15 +269,22 @@ def test_make_linsdynamics(
     passive_eigval_range: tuple[float, float],
     transition_bias: bool,
 ):
-    dynamics = make_linsdynamics(
+    dynamics = make_lindynamics(
         n_state,
         n_ctrl,
         horizon,
         stationary=stationary,
-        sample_covariance=sample_covariance,
-        rng=seed,
         passive_eigval_range=passive_eigval_range,
         transition_bias=transition_bias,
+        rng=seed,
+    )
+    dynamics = make_linsdynamics(
+        dynamics,
+        n_state,
+        horizon,
+        stationary=stationary,
+        sample_covariance=sample_covariance,
+        rng=seed,
     )
     check_dynamics(
         dynamics,

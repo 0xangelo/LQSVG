@@ -12,25 +12,30 @@ from lqsvg.envs.lqr import (
     NamedLQRPrediction,
     QuadCost,
 )
-from lqsvg.envs.lqr.generators import make_linsdynamics, make_quadcost
+from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics, make_quadcost
 
 
 @pytest.fixture
-def stationary_stochastic_dynamics(n_state, n_ctrl, horizon, seed):
-    dynamics = make_linsdynamics(
+def stationary_deterministic_dynamics(
+    n_state: int, n_ctrl: int, horizon: int, seed: int
+):
+    return make_lindynamics(n_state, n_ctrl, horizon, stationary=True, rng=seed)
+
+
+@pytest.fixture
+def stationary_stochastic_dynamics(
+    stationary_deterministic_dynamics: LinDynamics,
+    n_state: int,
+    horizon: int,
+    seed: int,
+):
+    return make_linsdynamics(
+        stationary_deterministic_dynamics,
         state_size=n_state,
-        ctrl_size=n_ctrl,
         horizon=horizon,
         stationary=True,
         rng=seed,
     )
-    return dynamics
-
-
-@pytest.fixture
-def stationary_deterministic_dynamics(stationary_stochastic_dynamics):
-    F, f, _ = stationary_stochastic_dynamics
-    return LinDynamics(F=F, f=f)
 
 
 @pytest.fixture
