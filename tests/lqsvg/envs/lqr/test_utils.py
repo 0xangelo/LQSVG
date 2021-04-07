@@ -26,6 +26,7 @@ def dim(request) -> int:
     return request.param
 
 
+# noinspection PyUnresolvedReferences
 @pytest.fixture
 def sampler(dim: int) -> callable[[int], np.ndarray]:
     call = normal.rvs if dim == 0 else partial(ortho_group.rvs, dim=3)
@@ -36,6 +37,7 @@ def sampler(dim: int) -> callable[[int], np.ndarray]:
     return _sample
 
 
+# noinspection PyUnresolvedReferences
 def test_wrap_sample_shape_to_size(sampler: callable[[int], np.ndarray], dim: int):
     wrapped = wrap_sample_shape_to_size(sampler, dim)
 
@@ -60,7 +62,7 @@ def test_wrap_sample_shape_to_size(sampler: callable[[int], np.ndarray], dim: in
 
 
 vec_dim = standard_fixture((2, 3, 4), "VecDim")
-batch_shape = standard_fixture(((), (1,), (2,), (2, 1)), "BatchShape")
+batch_shape = standard_fixture([(), (1,), (2,), (2, 1)], "BatchShape")
 
 
 @pytest.fixture()
@@ -71,9 +73,47 @@ def eigvals(vec_dim: int, batch_shape: tuple[int, ...], seed: int) -> np.ndarray
 
 
 def test_random_matrix_from_eigs(eigvals: np.ndarray, seed: int):
-    mat = random_matrix_from_eigs(eigvals, rng=seed)
-    eigvals_, _ = np.linalg.eig(mat)
-    assert np.allclose(np.sort(eigvals_, axis=-1), np.sort(eigvals, axis=-1))
+    mat, eigvecs = random_matrix_from_eigs(eigvals, rng=seed)
+    check_mat_eigdecomp(mat, eigvals, eigvecs)
+
+
+def sort_eigfactors(
+    eigval: np.ndarray, eigvec: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    idxs = np.argsort(eigval, axis=-1)
+    return np.take_along_axis(eigval, idxs, axis=-1), np.take_along_axis(
+        eigvec, idxs[..., np.newaxis], axis=-1
+    )
+
+
+def scalar_to_matrix(arr: np.ndarray) -> np.ndarray:
+    return arr[..., np.newaxis, np.newaxis]
+
+
+def vector_to_matrix(arr: np.ndarray) -> np.ndarray:
+    """In column form."""
+    return arr[..., np.newaxis]
+
+
+def check_mat_eigdecomp(mat: np.ndarray, eigvals: np.ndarray, eigvecs: np.ndarray):
+    assert eigvecs.shape == eigvals.shape + eigvals.shape[-1:]
+
+    for idx in range(eigvals.shape[-1]):
+        mat_prod = mat @ vector_to_matrix(eigvecs[..., idx])
+        eig_prod = scalar_to_matrix(eigvals[..., idx]) * vector_to_matrix(
+            eigvecs[..., idx]
+        )
+        assert np.allclose(mat_prod, eig_prod)
+
+    eigvals, eigvecs = sort_eigfactors(eigvals, eigvecs)
+    _vals, _vecs = np.linalg.eig(mat)
+    _vals, _vecs = sort_eigfactors(_vals, _vecs)
+    assert np.allclose(eigvals, _vals)
+    abs_cossim = np.abs(
+        np.sum(eigvecs * _vecs, axis=-1)
+        / (np.linalg.norm(eigvecs, axis=-1) * np.linalg.norm(_vecs, axis=-1))
+    )
+    assert np.allclose(abs_cossim, 1.0)
 
 
 mat_dim = standard_fixture((2, 3, 4), "MatDim")
@@ -81,6 +121,7 @@ eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
+# noinspection PyArgumentList
 def test_random_mat_with_eigval_range(
     mat_dim: int,
     eigval_range: tuple[float, float],

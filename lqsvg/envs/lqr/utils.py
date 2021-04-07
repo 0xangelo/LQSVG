@@ -379,7 +379,9 @@ def random_spd_matrix(
     return mat
 
 
-def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
+def random_matrix_from_eigs(
+    eigvals: np.ndarray, rng: RNG = None
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate random matrix with specified eigenvalues.
 
     Supports batched inputs. Assumes `eigvals` is a named vector tensor.
@@ -391,7 +393,7 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
         rng: random number generator seed
 
     Returns:
-        A random matrix with given eigenvalues.
+        A random matrix with given eigenvalues and its eigenvectors as a matrix
     """
     rng = np.random.default_rng(rng)
 
@@ -401,10 +403,10 @@ def random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG = None) -> np.ndarray:
         lambda s: ortho_group.rvs(dim, size=s, random_state=rng), dim=2
     )
     # Assume last dimension is "R"
-    ortho = _random_orthogonal_matrix(eigvals.shape[:-1])
+    ortho: np.ndarray = _random_orthogonal_matrix(eigvals.shape[:-1])
 
-    mat = (ortho * eigvals[..., np.newaxis]) @ ortho.swapaxes(-2, -1)
-    return mat
+    mat = (ortho * eigvals[..., np.newaxis, :]) @ ortho.swapaxes(-2, -1)
+    return mat, ortho
 
 
 def sample_eigvals(
@@ -469,7 +471,7 @@ def random_mat_with_eigval_range(
         eigvals = sample_eigvals(size, low, high, batch_shape, rng)
         rank_defficient = np.any(np.abs(eigvals) < 1e-8)
 
-    mat = random_matrix_from_eigs(eigvals, rng=rng)
+    mat, _ = random_matrix_from_eigs(eigvals, rng=rng)
     mat = nt.matrix(as_float_tensor(mat))
     return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
 
