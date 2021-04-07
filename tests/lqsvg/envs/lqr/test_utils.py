@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Optional
 
 import numpy as np
 import pytest
@@ -13,6 +12,7 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import (
     ctrb,
+    minimal_sample_shape,
     random_mat_with_eigval_range,
     random_matrix_from_eigs,
     wrap_sample_shape_to_size,
@@ -101,7 +101,7 @@ def vector_to_matrix(arr: np.ndarray) -> np.ndarray:
 
 
 def check_mat_eigdecomp(mat: np.ndarray, eigvals: np.ndarray, eigvecs: np.ndarray):
-    assert eigvecs.shape == eigvals.shape + eigvals.shape[-1:]
+    assert mat.shape == eigvecs.shape == eigvals.shape + eigvals.shape[-1:]
 
     for idx in range(eigvals.shape[-1]):
         mat_prod = mat @ vector_to_matrix(eigvecs[..., idx])
@@ -126,21 +126,23 @@ eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
+@pytest.fixture()
+def sample_shape(horizon: int, stationary: bool, n_batch: int) -> tuple[int, ...]:
+    return minimal_sample_shape(horizon=horizon, stationary=stationary, n_batch=n_batch)
+
+
 def test_random_mat_with_eigval_range(
     mat_dim: int,
     eigval_range: tuple[float, float],
-    horizon: int,
-    n_batch: Optional[int],
+    sample_shape: tuple[int, ...],
     rng: RNG,
 ):
     mat, _, _ = random_mat_with_eigval_range(
-        mat_dim, eigval_range=eigval_range, horizon=horizon, n_batch=n_batch, rng=rng
+        mat_dim, eigval_range=eigval_range, sample_shape=sample_shape, rng=rng
     )
 
-    assert mat.shape[-1] == mat_dim
-    assert mat.shape[-2] == mat_dim
-    assert mat.shape[0] == horizon
-    assert not n_batch or mat.shape[1] == n_batch
+    assert mat.shape[-2:] == (mat_dim, mat_dim)
+    assert mat.shape[:-2] == sample_shape
 
     eigvals, _ = np.linalg.eig(mat)
     low, high = eigval_range
