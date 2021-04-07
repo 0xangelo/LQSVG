@@ -84,7 +84,7 @@ class LQGGenerator(DataClassJsonMixin):
             A tuple containing parameters for linear stochastic dynamics,
             quadratic costs, and Normal inital state distribution.
         """
-        dynamics = make_linsdynamics(
+        dynamics = make_lindynamics(
             self.n_state,
             self.n_ctrl,
             self.horizon,
@@ -93,7 +93,15 @@ class LQGGenerator(DataClassJsonMixin):
             rng=self._rng,
             passive_eigval_range=self.passive_eigval_range,
             transition_bias=self.transition_bias,
+        )
+        dynamics = make_linsdynamics(
+            dynamics,
+            self.n_state,
+            self.horizon,
+            stationary=self.stationary,
+            n_batch=n_batch,
             sample_covariance=self.rand_trans_cov,
+            rng=self._rng,
         )
         cost = make_quadcost(
             self.n_state,
@@ -202,46 +210,35 @@ def make_lindynamics(
     return LinDynamics(F, f)
 
 
-# noinspection PyIncorrectDocstring
 def make_linsdynamics(
+    dynamics: LinDynamics,
     state_size: int,
-    ctrl_size: int,
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
     sample_covariance: bool = True,
     rng: RNG = None,
-    **linear_kwargs
 ) -> LinSDynamics:
-    """Generate stochastic linear dynamics parameters.
+    """Generate stochastic linear dynamics from linear deterministic dynamics.
+
+    Warning:
+        This function does not check if `state_size`, `horizon`, `stationary`,
+        and `nbatch` are compatible with `dynamics` (i.e., if the dynamics
+        satisfy these parameters), but passing incompatible dynamics may lead
+        to errors downstream.
 
     Args:
+        dynamics: linear deterministic transition dynamics
         state_size: size of state vector
-        ctrl_size: size of control vector
         horizon: length of the horizon
         stationary: whether dynamics vary with time
         n_batch: batch size, if any
         sample_covariance: whether to sample a random SPD matrix for the
             Gaussian covariance or use the identity matrix.
-        passive_eigval_range: range of eigenvalues for the unnactuated system.
-            If None, samples the F_s matrix entries independently from a
-            standard normal distribution
-        transition_bias: whether to use a non-zero bias vector for transition
-            dynamics
         rng: random number generator, seed, or None
     """
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
-
-    F, f = make_lindynamics(
-        state_size,
-        ctrl_size,
-        horizon,
-        stationary=stationary,
-        n_batch=n_batch,
-        rng=rng,
-        **linear_kwargs
-    )
 
     if sample_covariance:
         W = random_spd_matrix(
@@ -252,6 +249,7 @@ def make_linsdynamics(
             nt.matrix(torch.eye(state_size)), 2, horizon=horizon, n_batch=n_batch
         )
 
+    F, f = dynamics
     return LinSDynamics(F, f, W)
 
 

@@ -10,7 +10,7 @@ from scipy.stats import norm as normal
 from scipy.stats import ortho_group
 
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.generators import make_linsdynamics
+from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import (
     ctrb,
     random_mat_with_eigval_range,
@@ -150,7 +150,8 @@ def test_random_mat_with_eigval_range(
 
 @pytest.fixture
 def dynamics(n_state: int, n_ctrl: int, horizon: int) -> lqr.LinSDynamics:
-    return make_linsdynamics(n_state, n_ctrl, horizon)
+    dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=True)
+    return make_linsdynamics(dynamics, n_state, horizon, stationary=True)
 
 
 def test_ctrb(dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
