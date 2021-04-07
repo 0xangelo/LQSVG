@@ -15,16 +15,9 @@ import lqsvg.torch.named as nt
 from lqsvg.np_util import RNG, make_spd_matrix
 from lqsvg.torch.utils import as_float_tensor
 
+from . import utils
 from .named import refine_lqr
 from .types import AnyDynamics, Box, GaussInit, LinDynamics, LinSDynamics, QuadCost
-from .utils import (
-    expand_and_refine,
-    np_expand_horizon,
-    random_mat_with_eigval_range,
-    random_normal_matrix,
-    random_normal_vector,
-    random_spd_matrix,
-)
 
 
 @dataclass
@@ -187,26 +180,65 @@ def make_lindynamics(
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
 
-    kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
-    if passive_eigval_range:
-        Fs, _, _ = random_mat_with_eigval_range(
-            state_size, eigval_range=passive_eigval_range, **kwargs
-        )
-        Fs = expand_and_refine(
-            nt.matrix(as_float_tensor(Fs)), 2, horizon=horizon, n_batch=n_batch
-        )
-    else:
-        Fs = random_normal_matrix(state_size, state_size, **kwargs)
-    Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
+    Fs, _, _ = generate_passive(
+        state_size,
+        eigval_range=passive_eigval_range,
+        horizon=horizon,
+        stationary=stationary,
+        n_batch=n_batch,
+        rng=rng,
+    )
+    Fa = generate_active(Fs, ctrl_size, rng=rng)
+
+    Fs = utils.expand_and_refine(
+        nt.matrix(as_float_tensor(Fs)), 2, horizon=horizon, n_batch=n_batch
+    )
+    Fa = utils.expand_and_refine(
+        nt.matrix(as_float_tensor(Fa)), 2, horizon=horizon, n_batch=n_batch
+    )
     F = torch.cat((Fs, Fa), dim="C")
 
     if bias:
-        f = random_normal_vector(state_size, **kwargs)
+        f = utils.random_normal_vector(
+            state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
+        )
     else:
-        f = expand_and_refine(
+        f = utils.expand_and_refine(
             nt.vector(torch.zeros(state_size)), 1, horizon=horizon, n_batch=n_batch
         )
     return LinDynamics(F, f)
+
+
+def generate_passive(
+    state_size: int,
+    horizon: int,
+    stationary: bool,
+    n_batch: Optional[int] = None,
+    eigval_range: Optional[tuple[float, float]] = None,
+    rng: RNG = None,
+) -> (np.ndarray, np.ndarray, np.ndarray):
+    """Generate the unnactuated part of a linear dynamical system."""
+    # pylint:disable=too-many-arguments
+    sample_shape = utils.minimal_sample_shape(
+        horizon, stationary=stationary, n_batch=n_batch
+    )
+    if eigval_range:
+        mat, eigval, eigvec = utils.random_mat_with_eigval_range(
+            state_size, eigval_range=eigval_range, sample_shape=sample_shape, rng=rng
+        )
+    else:
+        mat = utils.random_normal_matrix(
+            state_size, state_size, sample_shape=sample_shape, rng=rng
+        )
+        eigval, eigvec = np.linalg.eig(mat)
+    return mat, eigval, eigvec
+
+
+def generate_active(passive: np.ndarray, ctrl_size: int, rng: RNG = None) -> np.ndarray:
+    """Generate the actuated part of a linear dynamical system."""
+    rng = np.random.default_rng(rng)
+    Fa = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
+    return Fa
 
 
 def make_linsdynamics(
@@ -240,11 +272,11 @@ def make_linsdynamics(
     rng = np.random.default_rng(rng)
 
     if sample_covariance:
-        W = random_spd_matrix(
+        W = utils.random_spd_matrix(
             state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
         )
     else:
-        W = expand_and_refine(
+        W = utils.expand_and_refine(
             nt.matrix(torch.eye(state_size)), 2, horizon=horizon, n_batch=n_batch
         )
 
@@ -281,7 +313,7 @@ def make_quadcost(
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
 
-    C = random_spd_matrix(n_tau, **kwargs)
+    C = utils.random_spd_matrix(n_tau, **kwargs)
     if not cross_terms:
         C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
         C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
@@ -292,9 +324,9 @@ def make_quadcost(
         C = torch.cat((C_s, C_a), dim="C")
 
     if linear:
-        c = random_normal_vector(n_tau, **kwargs)
+        c = utils.random_normal_vector(n_tau, **kwargs)
     else:
-        c = expand_and_refine(
+        c = utils.expand_and_refine(
             nt.vector(torch.zeros(n_tau)), 1, horizon=horizon, n_batch=n_batch
         )
     return QuadCost(C, c)
@@ -328,8 +360,8 @@ def make_gaussinit(
         sig = torch.eye(state_size)
 
     return GaussInit(
-        mu=expand_and_refine(nt.vector(mu), 1, n_batch=n_batch),
-        sig=expand_and_refine(nt.matrix(sig), 2, n_batch=n_batch),
+        mu=utils.expand_and_refine(nt.vector(mu), 1, n_batch=n_batch),
+        sig=utils.expand_and_refine(nt.matrix(sig), 2, n_batch=n_batch),
     )
 
 
@@ -355,13 +387,13 @@ def make_lqr_linear_navigation(
     state_size = ctrl_size = goal.shape[0]
 
     F = np.concatenate([np.identity(state_size), np.identity(ctrl_size)], axis=1)
-    F = np_expand_horizon(F, horizon)
+    F = utils.np_expand_horizon(F, horizon)
     f = np.zeros((horizon, state_size))
 
     C = np.diag([2.0] * state_size + [2.0 * beta] * ctrl_size)
-    C = np_expand_horizon(C, horizon)
+    C = utils.np_expand_horizon(C, horizon)
     c = np.concatenate([-2.0 * goal, np.zeros((ctrl_size,))], axis=0)
-    c = np_expand_horizon(c, horizon)
+    c = utils.np_expand_horizon(c, horizon)
 
     bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
     # Avoid tensor writing to un-writable np.array

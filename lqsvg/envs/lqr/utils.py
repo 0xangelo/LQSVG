@@ -300,9 +300,14 @@ def expand_and_refine(
     return tensor
 
 
-def _sample_shape(
+def minimal_sample_shape(
     horizon: int, stationary: bool = False, n_batch: Optional[int] = None
 ) -> tuple[int, ...]:
+    """Minimal sample shape from horizon, stationarity, and batch size.
+
+    This works in tandem with expand_and_refine to standardize horizon and
+    batch dimensions.
+    """
     horizon_shape = () if stationary else (horizon,)
     batch_shape = () if n_batch is None else (n_batch,)
     return horizon_shape + batch_shape
@@ -319,27 +324,21 @@ def random_normal_vector(
     rng = np.random.default_rng(rng)
 
     vec_shape = (size,)
-    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + vec_shape
+    shape = (
+        minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
+        + vec_shape
+    )
     vec = nt.vector(as_float_tensor(rng.normal(size=shape)))
     vec = expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
     return vec
 
 
 def random_normal_matrix(
-    row_size: int,
-    col_size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    """Matrix with Normal i.i.d. entries."""
-    # pylint:disable=too-many-arguments
-    mat_shape = (row_size, col_size)
-    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
-    mat = nt.matrix(as_float_tensor(rng.normal(size=shape)))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
+    row_size: int, col_size: int, sample_shape: tuple[int, ...] = (), rng: RNG = None
+) -> np.ndarray:
+    """Matrix with standard Normal i.i.d. entries."""
+    rng = np.random.default_rng(rng)
+    return rng.normal(size=sample_shape + (row_size, col_size))
 
 
 def random_uniform_matrix(
@@ -355,7 +354,10 @@ def random_uniform_matrix(
     """Matrix with Uniform i.i.d. entries."""
     # pylint:disable=too-many-arguments
     mat_shape = (row_size, col_size)
-    shape = _sample_shape(horizon, stationary=stationary, n_batch=n_batch) + mat_shape
+    shape = (
+        minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
+        + mat_shape
+    )
     mat = nt.matrix(as_float_tensor(rng.uniform(low=low, high=high, size=shape)))
     mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
     return mat
@@ -371,7 +373,9 @@ def random_spd_matrix(
     # pylint:disable=missing-function-docstring
     mat = make_spd_matrix(
         size,
-        sample_shape=_sample_shape(horizon, stationary=stationary, n_batch=n_batch),
+        sample_shape=minimal_sample_shape(
+            horizon, stationary=stationary, n_batch=n_batch
+        ),
         rng=rng,
     )
     mat = nt.matrix(as_float_tensor(mat))
@@ -449,9 +453,7 @@ def sample_eigvals(
 def random_mat_with_eigval_range(
     size: int,
     eigval_range: tuple[float, float],
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
+    sample_shape: tuple[int, ...] = (),
     rng: RNG = None,
     ignore_rank_defficiency: bool = False,
 ) -> (np.ndarray, np.ndarray, np.ndarray):
@@ -462,13 +464,12 @@ def random_mat_with_eigval_range(
     ), f"Eigenvalue range must be positive, got {eigval_range}"
     rng = np.random.default_rng(rng)
     low, high = eigval_range
-    batch_shape = _sample_shape(horizon, stationary, n_batch)
 
-    eigvals = sample_eigvals(size, low, high, batch_shape, rng)
+    eigvals = sample_eigvals(size, low, high, sample_shape, rng)
     rank_defficient = np.any(np.abs(eigvals) < 1e-8)
     # Assert state transition matrix isn't rank deficient if needed
     while rank_defficient and not ignore_rank_defficiency:
-        eigvals = sample_eigvals(size, low, high, batch_shape, rng)
+        eigvals = sample_eigvals(size, low, high, sample_shape, rng)
         rank_defficient = np.any(np.abs(eigvals) < 1e-8)
 
     mat, eigvecs = random_matrix_from_eigs(eigvals, rng=rng)
