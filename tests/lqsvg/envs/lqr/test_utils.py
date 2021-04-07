@@ -113,12 +113,12 @@ def check_mat_eigdecomp(mat: np.ndarray, eigvals: np.ndarray, eigvecs: np.ndarra
     eigvals, eigvecs = sort_eigfactors(eigvals, eigvecs)
     _vals, _vecs = np.linalg.eig(mat)
     _vals, _vecs = sort_eigfactors(_vals, _vecs)
-    assert np.allclose(eigvals, _vals)
+    assert np.allclose(eigvals, _vals), "Not all eigvals match"
     abs_cossim = np.abs(
         np.sum(eigvecs * _vecs, axis=-1)
         / (np.linalg.norm(eigvecs, axis=-1) * np.linalg.norm(_vecs, axis=-1))
     )
-    assert np.allclose(abs_cossim, 1.0)
+    assert np.allclose(abs_cossim, 1.0), "Cosine similarity should be 1 or -1"
 
 
 mat_dim = standard_fixture((2, 3, 4), "MatDim")
@@ -137,17 +137,17 @@ def test_random_mat_with_eigval_range(
     sample_shape: tuple[int, ...],
     rng: RNG,
 ):
-    mat, _, _ = random_mat_with_eigval_range(
+    mat, eigval, eigvec = random_mat_with_eigval_range(
         mat_dim, eigval_range=eigval_range, sample_shape=sample_shape, rng=rng
     )
 
     assert mat.shape[-2:] == (mat_dim, mat_dim)
     assert mat.shape[:-2] == sample_shape
 
-    eigvals, _ = np.linalg.eig(mat)
+    check_mat_eigdecomp(mat, eigval, eigvec)
     low, high = eigval_range
-    assert np.all(np.abs(eigvals) >= low)
-    assert np.all(np.abs(eigvals) <= high)
+    assert np.all(np.abs(eigval) >= low)
+    assert np.all(np.abs(eigval) <= high)
 
 
 @pytest.fixture
