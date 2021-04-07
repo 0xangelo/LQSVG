@@ -90,9 +90,9 @@ class LQGGenerator(DataClassJsonMixin):
             self.horizon,
             stationary=self.stationary,
             n_batch=n_batch,
-            rng=self._rng,
             passive_eigval_range=self.passive_eigval_range,
-            transition_bias=self.transition_bias,
+            bias=self.transition_bias,
+            rng=self._rng,
         )
         dynamics = make_linsdynamics(
             dynamics,
@@ -167,7 +167,7 @@ def make_lindynamics(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     passive_eigval_range: Optional[tuple[float, float]] = None,
-    transition_bias: bool = True,
+    bias: bool = True,
     rng: RNG = None,
 ) -> LinDynamics:
     """Generate linear transition matrices.
@@ -181,8 +181,7 @@ def make_lindynamics(
         passive_eigval_range: range of eigenvalues for the unnactuated system.
             If None, samples the F_s matrix entries independently from a
             standard normal distribution
-        transition_bias: whether to use a non-zero bias vector for transition
-            dynamics
+        bias: whether to use a non-zero bias vector for transition dynamics
         rng: random number generator, seed, or None
     """
     # pylint:disable=too-many-arguments
@@ -201,7 +200,7 @@ def make_lindynamics(
     Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
     F = torch.cat((Fs, Fa), dim="C")
 
-    if transition_bias:
+    if bias:
         f = random_normal_vector(state_size, **kwargs)
     else:
         f = expand_and_refine(

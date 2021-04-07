@@ -275,7 +275,7 @@ def test_make_linsdynamics(
         horizon,
         stationary=stationary,
         passive_eigval_range=passive_eigval_range,
-        transition_bias=transition_bias,
+        bias=transition_bias,
         rng=seed,
     )
     dynamics = make_linsdynamics(
