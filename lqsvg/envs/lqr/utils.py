@@ -403,10 +403,10 @@ def random_matrix_from_eigs(
         lambda s: ortho_group.rvs(dim, size=s, random_state=rng), dim=2
     )
     # Assume last dimension is "R"
-    ortho: np.ndarray = _random_orthogonal_matrix(eigvals.shape[:-1])
+    eigvecs: np.ndarray = _random_orthogonal_matrix(eigvals.shape[:-1])
 
-    mat = (ortho * eigvals[..., np.newaxis, :]) @ ortho.swapaxes(-2, -1)
-    return mat, ortho
+    mat = eigvecs @ (eigvals[..., np.newaxis] * eigvecs.swapaxes(-2, -1))
+    return mat, eigvecs
 
 
 def sample_eigvals(
