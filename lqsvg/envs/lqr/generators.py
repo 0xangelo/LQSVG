@@ -37,7 +37,7 @@ class LQGGenerator(DataClassJsonMixin):
         horizon: task horizon
         stationary: whether dynamics and cost parameters should be
             constant over time or vary by timestep
-        Fs_eigval_range: range of eigenvalues for the unnactuated system
+        passive_eigval_range: range of eigenvalues for the unnactuated system
         transition_bias: whether to use a non-zero bias vector for transition
             dynamics
         rand_trans_cov: whether to sample a random SPD matrix for the
@@ -57,7 +57,7 @@ class LQGGenerator(DataClassJsonMixin):
     n_ctrl: int
     horizon: int
     stationary: bool = True
-    Fs_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0)
+    passive_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0)
     transition_bias: bool = False
     rand_trans_cov: bool = True
     rand_init_cov: bool = False
@@ -91,7 +91,7 @@ class LQGGenerator(DataClassJsonMixin):
             stationary=self.stationary,
             n_batch=n_batch,
             rng=self._rng,
-            Fs_eigval_range=self.Fs_eigval_range,
+            passive_eigval_range=self.passive_eigval_range,
             transition_bias=self.transition_bias,
             sample_covariance=self.rand_trans_cov,
         )
@@ -152,14 +152,13 @@ def stack_lqs(*systems: tuple[AnyDynamics, QuadCost]) -> tuple[AnyDynamics, Quad
     return dynamics, cost
 
 
-# noinspection PyPep8Naming
 def make_lindynamics(
     state_size: int,
     ctrl_size: int,
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    Fs_eigval_range: Optional[tuple[float, float]] = None,
+    passive_eigval_range: Optional[tuple[float, float]] = None,
     transition_bias: bool = True,
     rng: RNG = None,
 ) -> LinDynamics:
@@ -171,9 +170,9 @@ def make_lindynamics(
         horizon: length of the horizon
         stationary: whether dynamics vary with time
         n_batch: batch size, if any
-        Fs_eigval_range: range of eigenvalues for the unnactuated system. If None,
-            samples the F_s matrix entries independently from a standard normal
-            distribution
+        passive_eigval_range: range of eigenvalues for the unnactuated system.
+            If None, samples the F_s matrix entries independently from a
+            standard normal distribution
         transition_bias: whether to use a non-zero bias vector for transition
             dynamics
         rng: random number generator, seed, or None
@@ -182,8 +181,13 @@ def make_lindynamics(
     rng = np.random.default_rng(rng)
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
-    if Fs_eigval_range:
-        Fs = random_mat_with_eigval_range(state_size, Fs_eigval_range, **kwargs)
+    if passive_eigval_range:
+        Fs, _, _ = random_mat_with_eigval_range(
+            state_size, eigval_range=passive_eigval_range, **kwargs
+        )
+        Fs = expand_and_refine(
+            nt.matrix(as_float_tensor(Fs)), 2, horizon=horizon, n_batch=n_batch
+        )
     else:
         Fs = random_normal_matrix(state_size, state_size, **kwargs)
     Fa = random_normal_matrix(state_size, ctrl_size, **kwargs)
@@ -219,9 +223,9 @@ def make_linsdynamics(
         n_batch: batch size, if any
         sample_covariance: whether to sample a random SPD matrix for the
             Gaussian covariance or use the identity matrix.
-        Fs_eigval_range: range of eigenvalues for the unnactuated system. If None,
-            samples the F_s matrix entries independently from a standard normal
-            distribution
+        passive_eigval_range: range of eigenvalues for the unnactuated system.
+            If None, samples the F_s matrix entries independently from a
+            standard normal distribution
         transition_bias: whether to use a non-zero bias vector for transition
             dynamics
         rng: random number generator, seed, or None
@@ -332,54 +336,6 @@ def make_gaussinit(
     )
 
 
-def make_lqr(
-    state_size: int,
-    ctrl_size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    cost_linear: bool = False,
-    rng: RNG = None,
-    **linear_kwargs
-) -> tuple[LinDynamics, QuadCost]:
-    # pylint:disable=too-many-arguments
-    """Random LQR generator used in backpropagation-planning.
-
-    Args:
-        state_size: Integer size for state
-        ctrl_size: Integer size for controls
-        horizon: Integer number of decision steps
-        stationary: Whether to create time-invariant dynamics and cost
-        n_batch: Batch size (number of LQR samples)
-        cost_linear: whether to include a linear term in addition to the
-            quadratic one in the cost function
-        rng: Numpy random number generator or integer seed
-
-    Source::
-        https://github.com/renato-scaroni/backpropagation-planning/blob/master/src/Modules/Envs/lqr.py
-    """
-    rng = np.random.default_rng(rng)
-    dynamics = make_lindynamics(
-        state_size,
-        ctrl_size,
-        horizon,
-        stationary=stationary,
-        n_batch=n_batch,
-        rng=rng,
-        **linear_kwargs
-    )
-    cost = make_quadcost(
-        state_size,
-        ctrl_size,
-        horizon,
-        stationary=stationary,
-        linear=cost_linear,
-        n_batch=n_batch,
-        rng=rng,
-    )
-    return dynamics, cost
-
-
 ###############################################################################
 # Navigation environment
 ###############################################################################
@@ -470,3 +426,56 @@ def _box_ddp_random_cost(
 
     c = torch.zeros(horizon, dim)
     return QuadCost(C, c)
+
+
+###############################################################################
+# Deprecated full LQR generation
+###############################################################################
+
+
+def make_lqr(
+    state_size: int,
+    ctrl_size: int,
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    cost_linear: bool = False,
+    rng: RNG = None,
+    **linear_kwargs
+) -> tuple[LinDynamics, QuadCost]:
+    # pylint:disable=too-many-arguments
+    """Random LQR generator used in backpropagation-planning.
+
+    Args:
+        state_size: Integer size for state
+        ctrl_size: Integer size for controls
+        horizon: Integer number of decision steps
+        stationary: Whether to create time-invariant dynamics and cost
+        n_batch: Batch size (number of LQR samples)
+        cost_linear: whether to include a linear term in addition to the
+            quadratic one in the cost function
+        rng: Numpy random number generator or integer seed
+
+    Source::
+        https://github.com/renato-scaroni/backpropagation-planning/blob/master/src/Modules/Envs/lqr.py
+    """
+    rng = np.random.default_rng(rng)
+    dynamics = make_lindynamics(
+        state_size,
+        ctrl_size,
+        horizon,
+        stationary=stationary,
+        n_batch=n_batch,
+        rng=rng,
+        **linear_kwargs
+    )
+    cost = make_quadcost(
+        state_size,
+        ctrl_size,
+        horizon,
+        stationary=stationary,
+        linear=cost_linear,
+        n_batch=n_batch,
+        rng=rng,
+    )
+    return dynamics, cost

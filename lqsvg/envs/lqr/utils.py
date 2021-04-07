@@ -454,7 +454,7 @@ def random_mat_with_eigval_range(
     n_batch: Optional[int] = None,
     rng: RNG = None,
     ignore_rank_defficiency: bool = False,
-) -> Tensor:
+) -> (np.ndarray, np.ndarray, np.ndarray):
     """Generate a random matrix with absolute eigenvalues in the desired range."""
     # pylint:disable=too-many-arguments
     assert all(
@@ -471,9 +471,8 @@ def random_mat_with_eigval_range(
         eigvals = sample_eigvals(size, low, high, batch_shape, rng)
         rank_defficient = np.any(np.abs(eigvals) < 1e-8)
 
-    mat, _ = random_matrix_from_eigs(eigvals, rng=rng)
-    mat = nt.matrix(as_float_tensor(mat))
-    return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+    mat, eigvecs = random_matrix_from_eigs(eigvals, rng=rng)
+    return mat, eigvals, eigvecs
 
 
 ###############################################################################
