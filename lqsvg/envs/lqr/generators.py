@@ -52,14 +52,14 @@ class LQGGenerator(DataClassJsonMixin):
             initializing LQG parameters
     """
 
-    # pylint:disable=too-many-instance-attributes,invalid-name
+    # pylint:disable=too-many-instance-attributes
     n_state: int
     n_ctrl: int
     horizon: int
     stationary: bool = True
     passive_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0)
     transition_bias: bool = False
-    rand_trans_cov: bool = True
+    rand_trans_cov: bool = False
     rand_init_cov: bool = False
     cost_linear: bool = False
     cost_cross: bool = False
