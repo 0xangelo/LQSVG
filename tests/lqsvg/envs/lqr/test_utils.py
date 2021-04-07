@@ -17,6 +17,7 @@ from lqsvg.envs.lqr.utils import (
     random_matrix_from_eigs,
     wrap_sample_shape_to_size,
 )
+from lqsvg.np_util import RNG
 
 from .utils import standard_fixture
 
@@ -65,15 +66,19 @@ vec_dim = standard_fixture((2, 3, 4), "VecDim")
 batch_shape = standard_fixture([(), (1,), (2,), (2, 1)], "BatchShape")
 
 
-@pytest.fixture()
-def eigvals(vec_dim: int, batch_shape: tuple[int, ...], seed: int) -> np.ndarray:
-    rng = np.random.default_rng(seed)
+@pytest.fixture
+def rng(seed: int) -> RNG:
+    return np.random.default_rng(seed)
+
+
+@pytest.fixture
+def eigvals(vec_dim: int, batch_shape: tuple[int, ...], rng: RNG) -> np.ndarray:
     shape = batch_shape + (vec_dim,)
     return rng.uniform(low=-1.0, high=1.0, size=shape)
 
 
-def test_random_matrix_from_eigs(eigvals: np.ndarray, seed: int):
-    mat, eigvecs = random_matrix_from_eigs(eigvals, rng=seed)
+def test_random_matrix_from_eigs(eigvals: np.ndarray, rng: RNG):
+    mat, eigvecs = random_matrix_from_eigs(eigvals, rng=rng)
     check_mat_eigdecomp(mat, eigvals, eigvecs)
 
 
@@ -127,10 +132,10 @@ def test_random_mat_with_eigval_range(
     eigval_range: tuple[float, float],
     horizon: int,
     n_batch: Optional[int],
-    seed: int,
+    rng: RNG,
 ):
     mat = random_mat_with_eigval_range(
-        mat_dim, eigval_range=eigval_range, horizon=horizon, n_batch=n_batch, rng=seed
+        mat_dim, eigval_range=eigval_range, horizon=horizon, n_batch=n_batch, rng=rng
     )
 
     assert mat.size("C") == mat_dim
