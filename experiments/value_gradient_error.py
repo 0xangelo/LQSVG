@@ -22,8 +22,7 @@ import lqsvg.envs.lqr.utils as lqg_util
 import lqsvg.experiment.utils as utils
 import lqsvg.torch.named as nt
 from lqsvg.experiment.data import build_datamodule
-from lqsvg.experiment.models import LightningModel
-from lqsvg.experiment.models import RecurrentModel
+from lqsvg.experiment.models import LightningModel, RecurrentModel
 from lqsvg.experiment.worker import make_worker
 
 
@@ -188,7 +187,7 @@ def main():
             n_ctrl=tune.randint(2, 11),
             horizon=tune.randint(1, 200),
             stationary=True,
-            Fs_eigval_range=(0.0, 1.0),
+            passive_eigval_range=(0.0, 1.0),
             transition_bias=False,
             rand_trans_cov=False,
             rand_init_cov=False,

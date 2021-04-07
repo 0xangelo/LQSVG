@@ -24,7 +24,9 @@ from .utils import standard_fixture
 
 GeneratorFn = Callable[[], LQGGenerator]
 
-Fs_eigval_range = standard_fixture([None, (0.0, 1.0), (0.5, 1.5)], "FsEigvalRange")
+passive_eigval_range = standard_fixture(
+    [None, (0.0, 1.0), (0.5, 1.5)], "PassiveEigvals"
+)
 transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
 cost_linear = standard_fixture((True, False), "CostLinear")
@@ -225,10 +227,10 @@ def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
 
 
 # noinspection PyPep8Naming
-def test_Fs_eigval_range(
-    generator_fn: GeneratorFn, Fs_eigval_range: tuple[float, float]
+def test_passive_eigval_range(
+    generator_fn: GeneratorFn, passive_eigval_range: tuple[float, float]
 ):
-    generator = generator_fn(Fs_eigval_range=Fs_eigval_range)
+    generator = generator_fn(passive_eigval_range=passive_eigval_range)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
 
@@ -259,7 +261,7 @@ def test_make_linsdynamics(
     stationary: bool,
     sample_covariance: bool,
     seed: int,
-    Fs_eigval_range: tuple[float, float],
+    passive_eigval_range: tuple[float, float],
     transition_bias: bool,
 ):
     dynamics = make_linsdynamics(
@@ -269,7 +271,7 @@ def test_make_linsdynamics(
         stationary=stationary,
         sample_covariance=sample_covariance,
         rng=seed,
-        Fs_eigval_range=Fs_eigval_range,
+        passive_eigval_range=passive_eigval_range,
         transition_bias=transition_bias,
     )
     check_dynamics(
@@ -312,7 +314,7 @@ def test_make_lqr(
     horizon: int,
     stationary: bool,
     seed: int,
-    Fs_eigval_range: Optional[tuple[float, float]],
+    passive_eigval_range: Optional[tuple[float, float]],
     transition_bias: bool,
     cost_linear: bool,
 ):
@@ -323,7 +325,7 @@ def test_make_lqr(
         horizon=horizon,
         stationary=stationary,
         rng=seed,
-        Fs_eigval_range=Fs_eigval_range,
+        passive_eigval_range=passive_eigval_range,
         transition_bias=transition_bias,
         cost_linear=cost_linear,
     )

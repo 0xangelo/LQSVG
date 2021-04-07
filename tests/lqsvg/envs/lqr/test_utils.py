@@ -126,7 +126,6 @@ eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
-# noinspection PyArgumentList
 def test_random_mat_with_eigval_range(
     mat_dim: int,
     eigval_range: tuple[float, float],
@@ -134,16 +133,16 @@ def test_random_mat_with_eigval_range(
     n_batch: Optional[int],
     rng: RNG,
 ):
-    mat = random_mat_with_eigval_range(
+    mat, _, _ = random_mat_with_eigval_range(
         mat_dim, eigval_range=eigval_range, horizon=horizon, n_batch=n_batch, rng=rng
     )
 
-    assert mat.size("C") == mat_dim
-    assert mat.size("R") == mat_dim
-    assert mat.size("H") == horizon
-    assert not n_batch or mat.size("B") == n_batch
+    assert mat.shape[-1] == mat_dim
+    assert mat.shape[-2] == mat_dim
+    assert mat.shape[0] == horizon
+    assert not n_batch or mat.shape[1] == n_batch
 
-    eigvals, _ = np.linalg.eig(mat.numpy())
+    eigvals, _ = np.linalg.eig(mat)
     low, high = eigval_range
     assert np.all(np.abs(eigvals) >= low)
     assert np.all(np.abs(eigvals) <= high)
