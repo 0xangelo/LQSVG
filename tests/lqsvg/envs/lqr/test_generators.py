@@ -171,12 +171,6 @@ def check_dynamics(
     assert_row_size(F, n_state)
     assert_row_size(f, n_state)
     assert_col_size(F, n_state + n_ctrl)
-    if W is not None:
-        assert_horizon_len(W, horizon)
-        assert_row_size(W, n_state)
-        assert_col_size(W, n_state)
-        eigval_W, _ = torch.symeig(nt.unnamed(W))
-        assert eigval_W.ge(0).all()
 
     if controllable:
         A, B = stationary_dynamics_factors(dynamics)
@@ -192,11 +186,30 @@ def check_dynamics(
     if horizon > 1:
         assert stationary == nt.allclose(F, F.select("H", 0))
         assert not transition_bias or stationary == nt.allclose(f, f.select("H", 0))
-        assert (
-            W is None
-            or not sample_covariance
-            or stationary == nt.allclose(W, W.select("H", 0))
-        )
+
+    if W is not None:
+        check_dynamics_covariance(W, n_state, horizon, stationary, sample_covariance)
+
+
+def check_dynamics_covariance(
+    W: Tensor, n_state: int, horizon: int, stationary: int, sample_covariance: bool
+):
+    assert_horizon_len(W, horizon)
+    assert_row_size(W, n_state)
+    assert_col_size(W, n_state)
+
+    assert nt.allclose(W, nt.transpose(W))
+    eigval, _ = torch.symeig(nt.unnamed(W))
+    assert eigval.gt(0).all()
+
+    assert sample_covariance != nt.allclose(W, nt.matrix(torch.eye(n_state)))
+
+    # noinspection PyTypeChecker
+    assert (
+        horizon == 1
+        or not sample_covariance
+        or stationary == nt.allclose(W, W.select("H", 0))
+    )
 
 
 def check_cost(
@@ -280,33 +293,24 @@ def test_cost_linear(
 
 
 @pytest.mark.slow
-def test_make_linsdynamics(
+def test_make_lindynamics(
     n_state: int,
     n_ctrl: int,
     horizon: int,
     stationary: bool,
-    controllable: bool,
-    sample_covariance: bool,
-    seed: int,
     passive_eigval_range: tuple[float, float],
+    controllable: bool,
     transition_bias: bool,
+    seed: int,
 ):
     dynamics = make_lindynamics(
         n_state,
         n_ctrl,
         horizon,
         stationary=stationary,
-        controllable=controllable,
         passive_eigval_range=passive_eigval_range,
+        controllable=controllable,
         bias=transition_bias,
-        rng=seed,
-    )
-    dynamics = make_linsdynamics(
-        dynamics,
-        n_state,
-        horizon,
-        stationary=stationary,
-        sample_covariance=sample_covariance,
         rng=seed,
     )
     check_dynamics(
@@ -314,11 +318,35 @@ def test_make_linsdynamics(
         n_state,
         n_ctrl,
         horizon,
-        stationary,
+        stationary=stationary,
         controllable=controllable,
         transition_bias=transition_bias,
-        sample_covariance=sample_covariance,
+        sample_covariance=False,
     )
+
+
+@pytest.fixture()
+def lindynamics(n_state: int, n_ctrl: int, horizon: int, seed: int) -> LinDynamics:
+    return make_lindynamics(n_state, n_ctrl, horizon, rng=seed)
+
+
+def test_make_linsdynamics(
+    lindynamics: LinDynamics,
+    n_state: int,
+    horizon: int,
+    stationary: bool,
+    sample_covariance: bool,
+):
+    linsdynamics = make_linsdynamics(
+        lindynamics, stationary=stationary, sample_covariance=sample_covariance
+    )
+    F, f = lindynamics
+    F_new, f_new, W = linsdynamics
+
+    assert nt.allclose(F, F_new)
+    assert nt.allclose(f, f_new)
+
+    check_dynamics_covariance(W, n_state, horizon, stationary, sample_covariance)
 
 
 @pytest.mark.slow
