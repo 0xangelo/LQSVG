@@ -13,9 +13,7 @@ class TVLinearTransModel(TVLinearDynamicsModule):
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=False)
-        dynamics = make_linsdynamics(
-            dynamics, n_state, horizon, stationary=False, sample_covariance=True
-        )
+        dynamics = make_linsdynamics(dynamics, stationary=False, sample_covariance=True)
         super().__init__(dynamics)
 
 
@@ -24,7 +22,5 @@ class LinearTransModel(LinearDynamicsModule):
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=True)
-        dynamics = make_linsdynamics(
-            dynamics, n_state, horizon, stationary=True, sample_covariance=True
-        )
+        dynamics = make_linsdynamics(dynamics, stationary=True, sample_covariance=True)
         super().__init__(dynamics)
