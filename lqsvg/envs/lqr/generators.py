@@ -31,6 +31,8 @@ class LQGGenerator(DataClassJsonMixin):
         stationary: whether dynamics and cost parameters should be
             constant over time or vary by timestep
         passive_eigval_range: range of eigenvalues for the unnactuated system
+        controllable: whether to ensure the actuator dynamics (the B matrix of
+            the (A,B) pair) make the system controllable
         transition_bias: whether to use a non-zero bias vector for transition
             dynamics
         rand_trans_cov: whether to sample a random SPD matrix for the
@@ -51,6 +53,7 @@ class LQGGenerator(DataClassJsonMixin):
     horizon: int
     stationary: bool = True
     passive_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0)
+    controllable: bool = False
     transition_bias: bool = False
     rand_trans_cov: bool = False
     rand_init_cov: bool = False
@@ -77,6 +80,20 @@ class LQGGenerator(DataClassJsonMixin):
             A tuple containing parameters for linear stochastic dynamics,
             quadratic costs, and Normal inital state distribution.
         """
+        dynamics = self.make_dynamics(n_batch)
+        cost = self.make_cost(n_batch)
+        init = self.make_init(n_batch)
+        return dynamics, cost, init
+
+    def make_dynamics(self, n_batch: Optional[int] = None) -> LinSDynamics:
+        """Generates random LQG transition dynamics.
+
+        Args:
+            n_batch: batch size, if any
+
+        Returns:
+            Parameters for linear stochastic dynamics
+        """
         dynamics = make_lindynamics(
             self.n_state,
             self.n_ctrl,
@@ -84,6 +101,7 @@ class LQGGenerator(DataClassJsonMixin):
             stationary=self.stationary,
             n_batch=n_batch,
             passive_eigval_range=self.passive_eigval_range,
+            controllable=self.controllable,
             bias=self.transition_bias,
             rng=self._rng,
         )
@@ -96,7 +114,18 @@ class LQGGenerator(DataClassJsonMixin):
             sample_covariance=self.rand_trans_cov,
             rng=self._rng,
         )
-        cost = make_quadcost(
+        return dynamics
+
+    def make_cost(self, n_batch: Optional[int] = None) -> QuadCost:
+        """Generates random LQG cost function
+
+        Args:
+            n_batch: batch size, if any
+
+        Returns:
+            Parameters for quadratic costs
+        """
+        return make_quadcost(
             self.n_state,
             self.n_ctrl,
             self.horizon,
@@ -106,14 +135,22 @@ class LQGGenerator(DataClassJsonMixin):
             cross_terms=self.cost_cross,
             rng=self._rng,
         )
-        init = make_gaussinit(
+
+    def make_init(self, n_batch: Optional[int] = None) -> GaussInit:
+        """Generates random LQG initial state distribution.
+
+        Args:
+            n_batch: batch size, if any
+
+        Returns:
+            Parameters for Gaussian initial state distribution
+        """
+        return make_gaussinit(
             state_size=self.n_state,
             n_batch=n_batch,
             sample_covariance=self.rand_init_cov,
             rng=self._rng,
         )
-
-        return dynamics, cost, init
 
     @contextmanager
     def config(self, **kwargs):
@@ -160,6 +197,7 @@ def make_lindynamics(
     stationary: bool = False,
     n_batch: Optional[int] = None,
     passive_eigval_range: Optional[tuple[float, float]] = None,
+    controllable: bool = False,
     bias: bool = True,
     rng: RNG = None,
 ) -> LinDynamics:
@@ -174,13 +212,15 @@ def make_lindynamics(
         passive_eigval_range: range of eigenvalues for the unnactuated system.
             If None, samples the F_s matrix entries independently from a
             standard normal distribution
+        controllable: whether to ensure the actuator dynamics (the B matrix of
+            the (A,B) pair) make the system controllable
         bias: whether to use a non-zero bias vector for transition dynamics
         rng: random number generator, seed, or None
     """
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
 
-    Fs, _, _ = generate_passive(
+    Fs, _, eigvec = generate_passive(
         state_size,
         eigval_range=passive_eigval_range,
         horizon=horizon,
@@ -188,7 +228,9 @@ def make_lindynamics(
         n_batch=n_batch,
         rng=rng,
     )
-    Fa = generate_active(Fs, ctrl_size, rng=rng)
+    Fa = generate_active(
+        Fs, ctrl_size, eigvec=eigvec, controllable=controllable, rng=rng
+    )
 
     Fs = utils.expand_and_refine(
         nt.matrix(as_float_tensor(Fs)), 2, horizon=horizon, n_batch=n_batch
@@ -234,11 +276,40 @@ def generate_passive(
     return mat, eigval, eigvec
 
 
-def generate_active(passive: np.ndarray, ctrl_size: int, rng: RNG = None) -> np.ndarray:
-    """Generate the actuated part of a linear dynamical system."""
+def generate_active(
+    passive: np.ndarray,
+    ctrl_size: int,
+    eigvec: Optional[np.ndarray] = None,
+    controllable: bool = False,
+    rng: RNG = None,
+) -> np.ndarray:
+    """Generate the actuated part of a linear dynamical system.
+
+    Args:
+        passive: the passive state dynamics
+        ctrl_size: size of the control vector
+        eigvec: optional column eigenvectors of the passive dynamics.
+            Required if `controllable` is True
+        controllable: whether to ensure the final linear dynamical
+            system is controllable
+        rng: random number generator parameter
+    """
     rng = np.random.default_rng(rng)
-    Fa = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
-    return Fa
+
+    if controllable:
+        assert eigvec is not None
+        # Generate initial actuator dynamics with non-zero elements
+        B = 1 - rng.uniform(size=passive.shape[:-1] + (ctrl_size,))
+        # Ensure final actuator dynamics have a component in each eigenvector
+        # direction
+        B = eigvec @ B
+    else:
+        B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
+
+    # Downscale by sqrt of state size, such that a vector of 1's
+    # has a norm of 1
+    scale = np.sqrt(passive.shape[-1])
+    return scale * B
 
 
 def make_linsdynamics(

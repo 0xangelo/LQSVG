@@ -4,6 +4,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Callable, Optional, Type, Union
 
+import numpy as np
 import pytest
 import torch
 from torch import Tensor
@@ -20,6 +21,7 @@ from lqsvg.envs.lqr.generators import (
     stack_lqs,
 )
 from lqsvg.envs.lqr.types import LinDynamics, LinSDynamics, QuadCost
+from lqsvg.envs.lqr.utils import stationary_dynamics_factors
 
 from .utils import standard_fixture
 
@@ -28,6 +30,7 @@ GeneratorFn = Callable[[], LQGGenerator]
 passive_eigval_range = standard_fixture(
     [None, (0.0, 1.0), (0.5, 1.5)], "PassiveEigvals"
 )
+controllable = standard_fixture((True, False), "Controllable")
 transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
 cost_linear = standard_fixture((True, False), "CostLinear")
@@ -78,6 +81,7 @@ def check_generated_dynamics(
         generator.n_ctrl,
         generator.horizon,
         stationary=generator.stationary,
+        controllable=generator.controllable,
         transition_bias=generator.transition_bias,
         sample_covariance=generator.rand_trans_cov,
     )
@@ -150,9 +154,11 @@ def check_dynamics(
     n_ctrl: int,
     horizon: int,
     stationary: bool,
+    controllable: bool,
     transition_bias: bool,
     sample_covariance: Optional[bool] = None,
 ):
+    # pylint:disable=too-many-locals
     assert_all_tensor(*dynamics)
 
     if isinstance(dynamics, LinDynamics):
@@ -171,6 +177,14 @@ def check_dynamics(
         assert_col_size(W, n_state)
         eigval_W, _ = torch.symeig(nt.unnamed(W))
         assert eigval_W.ge(0).all()
+
+    if controllable:
+        A, B = stationary_dynamics_factors(dynamics)
+        A, B = A.numpy(), B.numpy()
+        ctrb = np.concatenate(
+            [np.linalg.matrix_power(A, i) @ B for i in range(n_state)], axis=-1
+        )
+        assert np.linalg.matrix_rank(ctrb) == n_state
 
     if not transition_bias:
         assert nt.allclose(torch.zeros_like(f), f)
@@ -221,6 +235,13 @@ def test_stationary(generator_fn: GeneratorFn, stationary: bool):
     check_generated_cost(cost, generator)
 
 
+def test_controllable(generator_fn: GeneratorFn, controllable: bool):
+    # noinspection PyArgumentList
+    generator = generator_fn(controllable=controllable)
+    dynamics, _, _ = generator()
+    check_generated_dynamics(dynamics, generator)
+
+
 def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
     # noinspection PyArgumentList
     generator = generator_fn(rand_trans_cov=sample_covariance)
@@ -264,6 +285,7 @@ def test_make_linsdynamics(
     n_ctrl: int,
     horizon: int,
     stationary: bool,
+    controllable: bool,
     sample_covariance: bool,
     seed: int,
     passive_eigval_range: tuple[float, float],
@@ -274,6 +296,7 @@ def test_make_linsdynamics(
         n_ctrl,
         horizon,
         stationary=stationary,
+        controllable=controllable,
         passive_eigval_range=passive_eigval_range,
         bias=transition_bias,
         rng=seed,
@@ -292,6 +315,7 @@ def test_make_linsdynamics(
         n_ctrl,
         horizon,
         stationary,
+        controllable=controllable,
         transition_bias=transition_bias,
         sample_covariance=sample_covariance,
     )
@@ -319,7 +343,9 @@ def test_make_quadcost(
     )
 
 
-@pytest.mark.slow
+@pytest.mark.skip(
+    reason="combinatorial explosion and overlap with dynamics and cost tests"
+)
 def test_make_lqr(
     n_state: int,
     n_ctrl: int,
@@ -347,6 +373,7 @@ def test_make_lqr(
         n_ctrl,
         horizon,
         stationary=stationary,
+        controllable=False,
         transition_bias=transition_bias,
     )
     check_cost(cost, n_state, n_ctrl, horizon, stationary, cost_linear)
@@ -389,7 +416,13 @@ def test_box_ddp_random_lqr(timestep, ctrl_coeff, horizon, seed):
     n_state = dynamics.F.shape[-2]
     n_ctrl = dynamics.F.shape[-1] - n_state
     check_dynamics(
-        dynamics, n_state, n_ctrl, horizon, stationary=True, transition_bias=False
+        dynamics,
+        n_state,
+        n_ctrl,
+        horizon,
+        stationary=True,
+        controllable=True,
+        transition_bias=False,
     )
     check_cost(cost, n_state, n_ctrl, horizon, stationary=True, linear=False)
 
@@ -411,5 +444,13 @@ def beta(ctrl_coeff):
 
 def test_make_lqr_linear_navigation(goal, beta, horizon):
     dynamics, cost, _ = make_lqr_linear_navigation(goal, beta, horizon)
-    check_dynamics(dynamics, 2, 2, horizon, stationary=True, transition_bias=False)
+    check_dynamics(
+        dynamics,
+        2,
+        2,
+        horizon,
+        stationary=True,
+        controllable=True,
+        transition_bias=False,
+    )
     check_cost(cost, 2, 2, horizon, stationary=True, linear=True)
