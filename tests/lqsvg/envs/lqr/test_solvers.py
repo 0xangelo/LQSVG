@@ -116,11 +116,6 @@ def test_lqr_control(
     check_quadratic(v_val, horizon + 1, n_state)
 
 
-@pytest.fixture(params=(0.0, 0.1), ids=lambda x: f"StdDev:{x}")
-def stddev(request):
-    return request.param
-
-
 @pytest.fixture
 def rand_policy(
     lqr_control: NamedLQRControl,
