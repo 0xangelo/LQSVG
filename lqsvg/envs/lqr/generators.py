@@ -297,12 +297,14 @@ def generate_active(
     if controllable:
         assert eigvec is not None
         # Generate initial actuator dynamics with non-zero elements
-        B = 1 - rng.uniform(size=passive.shape[:-1] + (ctrl_size,))
+        # B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
+        B = rng.uniform(size=passive.shape[:-1] + (ctrl_size,)) + 0.5
         # Ensure final actuator dynamics have a component in each eigenvector
         # direction
         B = eigvec @ B
     else:
-        B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
+        B = rng.uniform(size=passive.shape[:-1] + (ctrl_size,)) + 0.5
+        # B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
 
     # Downscale by sqrt of state size, such that a vector of 1's
     # has a norm of 1
