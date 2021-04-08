@@ -99,26 +99,23 @@ def is_pbh_ctrb(dynamics: AnyDynamics) -> np.ndarray:
     Raises:
          AssertionError: if the (batch of) dynamics is not stationary
     """
-    # pylint:disable=invalid-name,unused-variable
+    # pylint:disable=invalid-name
     assert isstationary(dynamics)
     A, B = map(lambda x: x.numpy(), stationary_dynamics_factors(dynamics))
-    _, col_eigvecs = np.linalg.eig(A)
+    eigvals, _ = np.linalg.eig(A)
 
-    # Check if some eigenvector of A is linearly independent of all columns of B
-    row_eigvecs = col_eigvecs.transpose(*range(col_eigvecs.ndim - 2), -1, -2)
-    tol = np.finfo(B.dtype).eps
-    # tol = 1e-7
-    return ~np.any(np.all(np.abs(row_eigvecs @ B) < tol, axis=-1), axis=-1)
+    # Align arrays with new 'test' dimension for each eigval
+    A = A[..., np.newaxis, :, :]
+    B = B[..., np.newaxis, :, :]
+    eigvals = eigvals[..., np.newaxis, np.newaxis]
 
-    # n_state, _, _ = dims_from_dynamics(dynamics)
-    # # Align arrays with new 'test' dimension for each eigval
-    # A = A[..., np.newaxis, :, :]
-    # lam_eye = eigvals[..., np.newaxis, np.newaxis] * np.eye(n_state)
-    # A, lam_eye = np.broadcast_arrays(A, lam_eye)
-    # B = B[..., np.newaxis, :, :].repeat(n_state, axis=-3)
-    #
-    # pbh = np.concatenate([lam_eye - A, B], axis=-1)
-    # return np.all(np.linalg.matrix_rank(pbh, tol=1e-8) == n_state, axis=-1)
+    n_state, _, _ = dims_from_dynamics(dynamics)
+    lam_eye = eigvals * np.eye(n_state)
+    A, lam_eye = np.broadcast_arrays(A, lam_eye)
+    B = B.repeat(n_state, axis=-3)
+
+    pbh = np.concatenate([lam_eye - A, B], axis=-1)
+    return np.all(np.linalg.matrix_rank(pbh) == n_state, axis=-1)
 
 
 def isstabilizable(dynamics: AnyDynamics) -> np.ndarray:
