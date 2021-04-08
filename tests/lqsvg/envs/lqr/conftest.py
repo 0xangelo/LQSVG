@@ -23,7 +23,7 @@ def n_tau(n_state, n_ctrl):
     return n_state + n_ctrl
 
 
-@pytest.fixture(params=[1] + list(range(0, 101, 10))[1:], ids=lambda x: f"Horizon:{x}")
+@pytest.fixture(params=[1, 10, 100], ids=lambda x: f"Horizon:{x}")
 def horizon(request):
     return request.param
 
