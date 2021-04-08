@@ -13,29 +13,33 @@ import lqsvg.torch.named as nt
 from lqsvg.np_util import RNG, make_spd_matrix, np_expand
 from lqsvg.torch.utils import as_float_tensor
 
-from .types import Linear, LinSDynamics
+from .types import AnyDynamics, LinDynamics, Linear, LinSDynamics
 
 ###############################################################################
 # Diagnostics
 ###############################################################################
 
 
-def isstationary(dynamics: LinSDynamics) -> bool:
+def isstationary(dynamics: AnyDynamics) -> bool:
     """Returns whether the dynamics are stationary (time-invariant)."""
     return (
         nt.allclose(dynamics.F, dynamics.F.select("H", 0))
         and nt.allclose(dynamics.f, dynamics.f.select("H", 0))
-        and nt.allclose(dynamics.W, dynamics.W.select("H", 0))
+        and (
+            isinstance(dynamics, LinDynamics)
+            or nt.allclose(dynamics.W, dynamics.W.select("H", 0))
+        )
     )
 
 
 def isstable(
-    dynamics: Optional[LinSDynamics] = None, eigvals: Optional[np.ndarray] = None
+    dynamics: Optional[AnyDynamics] = None, eigvals: Optional[np.ndarray] = None
 ) -> np.ndarray:
     """Returns whether the unactuated dynamics are stable.
 
     A linear, stationary, discrete-time system is stable iff the all the
-    eigenvalues of F_s live in the unit circle of the complex plane.
+    eigenvalues of the passive dynamics (F_s) live in the unit circle of the
+    complex plane.
 
     Note:
         It is not obvious if this condition is generalizable to non-stationary
@@ -56,7 +60,7 @@ def isstable(
     return stable
 
 
-def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
+def iscontrollable(dynamics: AnyDynamics) -> np.ndarray:
     """Returns whether the stationary dynamics are controllable.
 
     This function accepts a batch of linear dynamics.
@@ -74,7 +78,7 @@ def iscontrollable(dynamics: LinSDynamics) -> np.ndarray:
     return np.linalg.matrix_rank(C) == n_state
 
 
-def is_pbh_ctrb(dynamics: LinSDynamics) -> np.ndarray:
+def is_pbh_ctrb(dynamics: AnyDynamics) -> np.ndarray:
     """Returns whether the stationary dynamics are controllable.
 
     Uses the Hautus Lemma for controllability::
@@ -117,7 +121,7 @@ def is_pbh_ctrb(dynamics: LinSDynamics) -> np.ndarray:
     # return np.all(np.linalg.matrix_rank(pbh, tol=1e-8) == n_state, axis=-1)
 
 
-def isstabilizable(dynamics: LinSDynamics) -> np.ndarray:
+def isstabilizable(dynamics: AnyDynamics) -> np.ndarray:
     """Returns whether the stationary dynamics are stabilizable.
 
     Uses the Hautus Lemma for stabilizability::
@@ -163,7 +167,7 @@ def isstabilizable(dynamics: LinSDynamics) -> np.ndarray:
 ###############################################################################
 
 
-def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
+def dims_from_dynamics(dynamics: AnyDynamics) -> tuple[int, int, int]:
     """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
     n_state = dynamics.F.size("R")
     n_ctrl = dynamics.F.size("C") - n_state
@@ -171,7 +175,7 @@ def dims_from_dynamics(dynamics: LinSDynamics) -> tuple[int, int, int]:
     return n_state, n_ctrl, horizon
 
 
-def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
+def dynamics_factors(dynamics: AnyDynamics) -> tuple[Tensor, Tensor]:
     """Returns the unactuated and actuaded parts of the transition matrix."""
     # pylint:disable=invalid-name
     n_state, n_ctrl, _ = dims_from_dynamics(dynamics)
@@ -179,7 +183,7 @@ def dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
     return F_s, F_a
 
 
-def stationary_dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]:
+def stationary_dynamics_factors(dynamics: AnyDynamics) -> tuple[Tensor, Tensor]:
     """Returns the decomposed transition matrix of a stationary system."""
     # pylint:disable=invalid-name
     # noinspection PyTypeChecker
@@ -187,7 +191,7 @@ def stationary_dynamics_factors(dynamics: LinSDynamics) -> tuple[Tensor, Tensor]
     return F_s, F_a
 
 
-def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
+def stationary_eigvals(dynamics: AnyDynamics) -> np.ndarray:
     """Returns the eigenvalues of unactuated stationary transition dynamics.
 
     Raises:
@@ -201,7 +205,7 @@ def stationary_eigvals(dynamics: LinSDynamics) -> np.ndarray:
     return eigvals
 
 
-def ctrb(dynamics: LinSDynamics) -> np.ndarray:
+def ctrb(dynamics: AnyDynamics) -> np.ndarray:
     """Returns the controllability matrix for a stationary linear system.
 
     This function accepts batched dynamics.
@@ -216,7 +220,7 @@ def ctrb(dynamics: LinSDynamics) -> np.ndarray:
     return C
 
 
-def make_controllable(dynamics: LinSDynamics) -> LinSDynamics:
+def make_controllable(dynamics: AnyDynamics) -> LinSDynamics:
     """Compute controllable dynamics from reference one."""
     # pylint:disable=invalid-name
     n_state, _, _ = dims_from_dynamics(dynamics)
@@ -236,7 +240,12 @@ def make_controllable(dynamics: LinSDynamics) -> LinSDynamics:
         .expand_as(dynamics.F)
         .refine_names(*dynamics.F.names)
     )
-    return LinSDynamics(F=F, f=dynamics.f, W=dynamics.W)
+
+    if isinstance(dynamics, LinSDynamics):
+        new = LinSDynamics(F=F, f=dynamics.f, W=dynamics.W)
+    else:
+        new = LinDynamics(F=F, f=dynamics.f)
+    return new
 
 
 ###############################################################################
