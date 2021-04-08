@@ -107,8 +107,6 @@ class LQGGenerator(DataClassJsonMixin):
         )
         dynamics = make_linsdynamics(
             dynamics,
-            self.n_state,
-            self.horizon,
             stationary=self.stationary,
             n_batch=n_batch,
             sample_covariance=self.rand_trans_cov,
@@ -314,8 +312,6 @@ def generate_active(
 
 def make_linsdynamics(
     dynamics: LinDynamics,
-    state_size: int,
-    horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
     sample_covariance: bool = True,
@@ -324,15 +320,13 @@ def make_linsdynamics(
     """Generate stochastic linear dynamics from linear deterministic dynamics.
 
     Warning:
-        This function does not check if `state_size`, `horizon`, `stationary`,
-        and `nbatch` are compatible with `dynamics` (i.e., if the dynamics
-        satisfy these parameters), but passing incompatible dynamics may lead
-        to errors downstream.
+        This function does not check if `stationary`, and `nbatch` are
+        compatible with `dynamics` (i.e., if the dynamics satisfy these
+        parameters), but passing incompatible dynamics may lead to errors
+        downstream.
 
     Args:
         dynamics: linear deterministic transition dynamics
-        state_size: size of state vector
-        horizon: length of the horizon
         stationary: whether dynamics vary with time
         n_batch: batch size, if any
         sample_covariance: whether to sample a random SPD matrix for the
@@ -341,6 +335,7 @@ def make_linsdynamics(
     """
     # pylint:disable=too-many-arguments
     rng = np.random.default_rng(rng)
+    state_size, _, horizon = utils.dims_from_dynamics(dynamics)
 
     if sample_covariance:
         W = utils.random_spd_matrix(

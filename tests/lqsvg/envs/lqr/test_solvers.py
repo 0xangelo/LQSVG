@@ -24,17 +24,10 @@ def stationary_deterministic_dynamics(
 
 @pytest.fixture
 def stationary_stochastic_dynamics(
-    stationary_deterministic_dynamics: LinDynamics,
-    n_state: int,
-    horizon: int,
-    seed: int,
+    stationary_deterministic_dynamics: LinDynamics, seed: int
 ):
     return make_linsdynamics(
-        stationary_deterministic_dynamics,
-        state_size=n_state,
-        horizon=horizon,
-        stationary=True,
-        rng=seed,
+        stationary_deterministic_dynamics, stationary=True, rng=seed
     )
 
 
