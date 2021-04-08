@@ -153,7 +153,7 @@ def test_random_mat_with_eigval_range(
 @pytest.fixture
 def dynamics(n_state: int, n_ctrl: int, horizon: int) -> lqr.LinSDynamics:
     dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=True)
-    return make_linsdynamics(dynamics, n_state, horizon, stationary=True)
+    return make_linsdynamics(dynamics, stationary=True)
 
 
 def test_ctrb(dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
