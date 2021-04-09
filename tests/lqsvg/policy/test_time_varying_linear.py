@@ -6,12 +6,29 @@ from gym.spaces import Box
 from raylab.utils.exploration import GaussianNoise
 
 from lqsvg.envs.lqr import spaces_from_dims
+from lqsvg.envs.lqr.gym import RandomLQGEnv, TorchLQGMixin
+from lqsvg.policy.modules.policy import TVLinearPolicy
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 
+@pytest.fixture(params=(2, 3))
+def n_state(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=(2, 3))
+def n_ctrl(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=(1, 20))
+def horizon(request) -> int:
+    return request.param
+
+
 @pytest.fixture
-def env_config() -> dict:
-    return dict(n_state=2, n_ctrl=2, horizon=100)
+def env_config(n_state: int, n_ctrl: int, horizon: int) -> dict:
+    return dict(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon)
 
 
 @pytest.fixture
@@ -39,3 +56,32 @@ def test_does_not_explore_by_default(mocker, policy: LQGPolicy, obs: np.ndarray)
 
     assert "explore" in expl.call_args.kwargs
     assert expl.call_args.kwargs["explore"] is False
+
+
+@pytest.fixture()
+def env(env_config: dict) -> TorchLQGMixin:
+    return RandomLQGEnv(env_config)
+
+
+def test_inits_stabilizing_policy(mocker, env: TorchLQGMixin):
+    placer = mocker.spy(TVLinearPolicy, "initialize_to_stabilize")
+
+    abs_low, abs_high = 0.2, 0.5
+    policy = LQGPolicy(
+        env.observation_space,
+        env.action_space,
+        config={
+            "policy": {
+                "module": {
+                    "policy_initializer": {
+                        "min_abs_eigv": abs_low,
+                        "max_abs_eigv": abs_high,
+                    }
+                }
+            }
+        },
+    )
+    policy.setup(env)
+    assert placer.called
+    assert placer.call_args.kwargs["abs_low"] == abs_low
+    assert placer.call_args.kwargs["abs_high"] == abs_high
