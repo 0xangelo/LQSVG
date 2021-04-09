@@ -294,22 +294,37 @@ def generate_active(
     """
     rng = np.random.default_rng(rng)
 
+    active_shape = passive.shape[:-1] + (ctrl_size,)
+    # Generate initial actuator dynamics with unit norm columns
+    B = _unit_col_matrix(active_shape, rng)
+
     if controllable:
         assert eigvec is not None
-        # Generate initial actuator dynamics with non-zero elements
-        # B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
-        B = rng.uniform(size=passive.shape[:-1] + (ctrl_size,)) + 0.5
-        # Ensure final actuator dynamics have a component in each eigenvector
-        # direction
+        # Ensure final actuator dynamics have a non-zero component in each
+        # passive eigenvector direction
+        while np.any(np.abs(B) < 1e-8):
+            B = _unit_col_matrix(active_shape, rng)
         B = eigvec @ B
-    else:
-        B = rng.uniform(size=passive.shape[:-1] + (ctrl_size,)) + 0.5
-        # B = rng.normal(size=passive.shape[:-1] + (ctrl_size,))
 
-    # Downscale by sqrt of state size, such that a vector of 1's
-    # has a norm of 1
-    scale = np.sqrt(passive.shape[-1])
-    return scale * B
+    return B
+
+
+def _randn_mat_and_norm(
+    shape: tuple[int, ...], rng: RNG
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate matrix with i.i.d. std Gaussian entries and its column norms."""
+    mat = rng.normal(size=shape)
+    col_norm = np.linalg.norm(mat, axis=-2, keepdims=True)  # Reduce over each column
+    return mat, col_norm
+
+
+def _unit_col_matrix(shape: tuple[int, ...], rng: RNG) -> np.ndarray:
+    """Generate matrix with columns uniformly distributed on the unit sphere."""
+    mat, norm = _randn_mat_and_norm(shape, rng)
+    while np.any(norm < 1e-4):
+        mat, norm = _randn_mat_and_norm(shape, rng)
+    # Ensure each column vector has norm 1
+    return mat / norm
 
 
 def make_linsdynamics(
