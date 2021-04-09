@@ -420,9 +420,9 @@ def random_matrix_from_eigs(
 
 
 def sample_eigvals(
-    num: int, low: float, high: float, size: tuple[int, ...], rng: RNG
+    num: int, abs_low: float, abs_high: float, size: tuple[int, ...], rng: RNG
 ) -> np.ndarray:
-    """Sample values from the open interval (`low`, `high`).
+    """Sample values with absolutes uniformly distributed in (`low`, `high`).
 
     This function uses `np.linspace` and `Generator.choice` to sample
     eigenvalues with multiplicity 1.
@@ -434,14 +434,14 @@ def sample_eigvals(
 
     Args:
         num: number of distinct eigenvalues per sample
-        low: lowest absolute eigenvalue
-        high: highest absolute eigenvalue
+        abs_low: lowest absolute eigenvalue
+        abs_high: highest absolute eigenvalue
         size: shape for the batch
         rng: random number generator
     """
     rng = np.random.default_rng(rng)
 
-    space = np.linspace(start=low, stop=high, num=1002, endpoint=True)[1:-1]
+    space = np.linspace(start=abs_low, stop=abs_high, num=1002, endpoint=True)[1:-1]
     samples = np.stack(
         [
             rng.choice(space, size=num, replace=False)
