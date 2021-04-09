@@ -397,14 +397,16 @@ def make_quadcost(
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
 
     C = utils.random_spd_matrix(n_tau, **kwargs)
-    if not cross_terms:
-        C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
-        C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
-        C_as, C_aa = nt.split(C_a, [state_size, ctrl_size], dim="R")
+    C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
+    C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
+    C_as, C_aa = nt.split(C_a, [state_size, ctrl_size], dim="R")
 
-        C_s = torch.cat((C_ss, torch.zeros_like(C_sa)), dim="R")
-        C_a = torch.cat((torch.zeros_like(C_as), C_aa), dim="R")
-        C = torch.cat((C_s, C_a), dim="C")
+    if not cross_terms:
+        C_sa, C_as = torch.zeros_like(C_sa), torch.zeros_like(C_as)
+
+    C_s = torch.cat((C_ss, C_sa), dim="R")
+    C_a = torch.cat((C_as, C_aa), dim="R")
+    C = torch.cat((C_s, C_a), dim="C")
 
     if linear:
         c = utils.random_normal_vector(n_tau, **kwargs)
