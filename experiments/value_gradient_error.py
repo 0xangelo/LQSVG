@@ -159,7 +159,7 @@ class Experiment(tune.Trainable):
             "controllability": lqg_util.iscontrollable(dynamics),
         }
         self.run.summary.update(tests)
-        self.run.summary.update({"Fs_eigvals": wandb.Histogram(eigvals)})
+        self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
     def _try_save_artifact(self):
         try:
@@ -181,13 +181,14 @@ def main():
 
     config = {
         "wandb_dir": os.getcwd(),
-        "wandb_tags": "easy".split(),
+        "wandb_tags": "easy unstable controllable".split(),
         "env_config": dict(
             n_state=tune.randint(2, 11),
             n_ctrl=tune.randint(2, 11),
             horizon=tune.randint(1, 200),
             stationary=True,
-            passive_eigval_range=(0.0, 1.0),
+            passive_eigval_range=(0.5, 1.5),
+            controllable=True,
             transition_bias=False,
             rand_trans_cov=False,
             rand_init_cov=False,
@@ -197,7 +198,7 @@ def main():
         ),
         "policy": {
             "module": {
-                "policy_initializer": "xavier_uniform",
+                "policy_initializer": {"min_abs_eigv": 0.0, "max_abs_eigv": 1.0},
                 "model_initializer": "xavier_uniform",
                 "stationary_model": True,
                 "residual_model": True,
