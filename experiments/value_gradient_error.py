@@ -202,7 +202,7 @@ def main():
                 "model_initializer": "xavier_uniform",
                 "stationary_model": True,
                 "residual_model": True,
-                "model_input_norm": None,
+                "model_input_norm": tune.grid_search(["LayerNorm", "BatchNorm"]),
             }
         },
         "recurrent_training": False,
