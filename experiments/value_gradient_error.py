@@ -181,13 +181,13 @@ def main():
 
     config = {
         "wandb_dir": os.getcwd(),
-        "wandb_tags": "easy unstable controllable".split(),
+        "wandb_tags": "easy stable controllable".split(),
         "env_config": dict(
             n_state=tune.randint(2, 11),
             n_ctrl=tune.randint(2, 11),
             horizon=tune.randint(1, 200),
             stationary=True,
-            passive_eigval_range=(0.5, 1.5),
+            passive_eigval_range=(0.0, 1.0),
             controllable=True,
             transition_bias=False,
             rand_trans_cov=False,
@@ -202,7 +202,7 @@ def main():
                 "model_initializer": "xavier_uniform",
                 "stationary_model": True,
                 "residual_model": True,
-                "model_input_norm": tune.grid_search(["LayerNorm", "BatchNorm"]),
+                "model_input_norm": tune.grid_search([None, "LayerNorm", "BatchNorm"]),
             }
         },
         "recurrent_training": False,
