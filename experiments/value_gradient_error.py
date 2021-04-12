@@ -21,7 +21,7 @@ import lqsvg
 import lqsvg.envs.lqr.utils as lqg_util
 import lqsvg.experiment.utils as utils
 import lqsvg.torch.named as nt
-from lqsvg.experiment.data import build_datamodule
+from lqsvg.experiment.data import build_trajectory_datamodule
 from lqsvg.experiment.models import LightningModel, RecurrentModel
 from lqsvg.experiment.worker import make_worker
 
@@ -95,7 +95,7 @@ class Experiment(tune.Trainable):
         self.model.hparams.empvar_samples = self.hparams.empvar_samples
 
     def make_datamodule(self):
-        self.datamodule = build_datamodule(
+        self.datamodule = build_trajectory_datamodule(
             self.worker, total_trajs=self.hparams.total_trajs
         )
 
@@ -141,7 +141,7 @@ class Experiment(tune.Trainable):
     def step(self) -> dict:
         with self.run:
             self.log_env_info()
-            self.datamodule.collect_trajectories(prog=False)
+            self.datamodule.build_dataset(prog=False)
             with utils.suppress_dataloader_warning():
                 self.trainer.fit(self.model, datamodule=self.datamodule)
 

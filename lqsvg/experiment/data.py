@@ -10,15 +10,12 @@ import torch
 from dataclasses_json import DataClassJsonMixin
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 
-import lqsvg
-import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 
 from .tqdm_util import collect_with_progress
 from .utils import group_batch_episodes
-from .worker import make_worker
 
 
 @dataclass
@@ -48,64 +45,74 @@ def batched(trajs: list[SampleBatch], key: str) -> Tensor:
     return torch.stack([torch.from_numpy(traj[key]) for traj in trajs], dim=0)
 
 
-class TrajectoryData(pl.LightningDataModule):
-    """Data module for on-policy trajectory data in LQG envs."""
+def check_worker_config(worker: RolloutWorker):
+    """Verify that worker collects full trajectories on an LQG."""
+    assert worker.rollout_fragment_length == worker.env.horizon * worker.num_envs
+    assert worker.batch_mode == "truncate_episodes"
+    assert isinstance(worker.env, TorchLQGMixin)
+
+
+def collect_trajs_from_worker(
+    worker: RolloutWorker, total_trajs: int, progress: bool = False
+) -> list[SampleBatch]:
+    """Use rollout worker to collect trajectories in the environment."""
+    sample_batch = collect_with_progress(worker, total_trajs, prog=progress)
+    sample_batch = group_batch_episodes(sample_batch)
+
+    trajs = sample_batch.split_by_episode()
+    traj_counts = [t.count for t in trajs]
+    assert all(c == worker.env.horizon for c in traj_counts), traj_counts
+    total_ts = sum(t.count for t in trajs)
+    assert total_ts == total_trajs * worker.env.horizon, total_ts
+
+    return trajs
+
+
+def split_dataset(
+    dataset: Dataset, train_val_test_split: tuple[float, float, float]
+) -> tuple[Dataset, Dataset, Dataset]:
+    """Split generic dataset into train, validation, and test datasets."""
+    train, val, test = train_val_test_split
+    # noinspection PyTypeChecker
+    total_samples = len(dataset)
+    train_samples = int(train * total_samples)
+    holdout_samples = total_samples - train_samples
+    val_samples = int((val / (val + test)) * holdout_samples)
+    test_samples = holdout_samples - val_samples
+
+    train_data, val_data, test_data = random_split(
+        dataset, (train_samples, val_samples, test_samples)
+    )
+    return train_data, val_data, test_data
+
+
+class DataModule(pl.LightningDataModule):
+    """Generic datamodule for dynamics model training."""
 
     spec_cls = DataModuleSpec
 
     def __init__(self, rollout_worker: RolloutWorker, spec: DataModuleSpec):
         super().__init__()
         self.worker = rollout_worker
-        assert (
-            self.worker.rollout_fragment_length
-            == self.worker.env.horizon * self.worker.num_envs
-        )
-        assert self.worker.batch_mode == "truncate_episodes"
-        assert isinstance(self.worker.env, TorchLQGMixin)
+        check_worker_config(self.worker)
 
         self.spec = spec
         self.full_dataset = None
         self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
-    def collect_trajectories(self, prog: bool = True):
+    def collect_trajectories(self, prog: bool = True) -> list[SampleBatch]:
         """Sample trajectories with rollout worker and build dataset."""
-        sample_batch = collect_with_progress(
-            self.worker, self.spec.total_trajs, prog=prog
+        return collect_trajs_from_worker(
+            self.worker, self.spec.total_trajs, progress=prog
         )
-        sample_batch = group_batch_episodes(sample_batch)
 
-        trajs = sample_batch.split_by_episode()
-        traj_counts = [t.count for t in trajs]
-        assert all(c == self.worker.env.horizon for c in traj_counts), traj_counts
-        total_ts = sum(t.count for t in trajs)
-        assert total_ts == self.spec.total_trajs * self.worker.env.horizon, total_ts
-
-        self.full_dataset = self.trajectory_dataset(trajs)
-
-    @staticmethod
-    def trajectory_dataset(trajs: list[SampleBatch]) -> TensorDataset:
-        """Concat and convert a list of trajectories into a tensor dataset."""
-        dataset = TensorDataset(
-            batched(trajs, SampleBatch.CUR_OBS),
-            batched(trajs, SampleBatch.ACTIONS),
-            batched(trajs, SampleBatch.NEXT_OBS),
-        )
-        assert len(dataset) == len(trajs)
-        return dataset
+    def build_dataset(self, prog: bool = False):
+        """Create the full dataset of experiences."""
 
     def setup(self, stage: Optional[str] = None):
         del stage
-        spec = self.spec
-        train_trajs = int(spec.train_val_test_split[0] * spec.total_trajs)
-        holdout_trajs = spec.total_trajs - train_trajs
-        val_trajs = int(
-            (spec.train_val_test_split[1] / sum(spec.train_val_test_split[1:]))
-            * holdout_trajs
-        )
-        test_trajs = holdout_trajs - val_trajs
-
-        self.train_dataset, self.val_dataset, self.test_dataset = random_split(
-            self.full_dataset, (train_trajs, val_trajs, test_trajs)
+        self.train_dataset, self.val_dataset, self.test_dataset = split_dataset(
+            self.full_dataset, self.spec.train_val_test_split
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -137,55 +144,51 @@ class TrajectoryData(pl.LightningDataModule):
         pass
 
 
-def build_datamodule(worker: RolloutWorker, **kwargs):
+class TrajectoryData(DataModule):
+    """Data module for on-policy trajectory data in LQG envs."""
+
+    def build_dataset(self, prog: bool = False):
+        trajs = self.collect_trajectories(prog=prog)
+        self.full_dataset = self.trajectory_dataset(trajs)
+
+    @staticmethod
+    def trajectory_dataset(trajs: list[SampleBatch]) -> TensorDataset:
+        """Concat and convert a list of trajectories into a tensor dataset."""
+        dataset = TensorDataset(
+            batched(trajs, SampleBatch.CUR_OBS),
+            batched(trajs, SampleBatch.ACTIONS),
+            batched(trajs, SampleBatch.NEXT_OBS),
+        )
+        assert len(dataset) == len(trajs)
+        return dataset
+
+
+class TransitionData(DataModule):
+    """Data module for on-policy transition data in LQG envs."""
+
+    def build_dataset(self, prog: bool = True):
+        """Sample trajectories with rollout worker and build dataset."""
+        trajs = collect_trajs_from_worker(
+            self.worker, self.spec.total_trajs, progress=prog
+        )
+        self.full_dataset = self.transition_dataset(trajs)
+
+    @staticmethod
+    def transition_dataset(trajs: list[SampleBatch]) -> TensorDataset:
+        """Convert a list of trajectories into a transition tensor dataset."""
+        transitions = SampleBatch.concat_samples(trajs)
+
+        dataset = TensorDataset(
+            torch.from_numpy(transitions[SampleBatch.CUR_OBS]),
+            torch.from_numpy(transitions[SampleBatch.ACTIONS]),
+            torch.from_numpy(transitions[SampleBatch.NEXT_OBS]),
+        )
+        assert len(dataset) == transitions.count
+        return dataset
+
+
+def build_trajectory_datamodule(worker: RolloutWorker, **kwargs):
     # pylint:disable=missing-function-docstring
     data_spec = DataModuleSpec(**kwargs)
     datamodule = TrajectoryData(worker, data_spec)
     return datamodule
-
-
-def check_dataloaders(datamodule):
-    """For testing only."""
-    env = datamodule.worker.env
-    horizon = env.horizon
-    n_state = env.n_state
-    n_ctrl = env.n_ctrl
-
-    for loader in (
-        datamodule.train_dataloader(),
-        datamodule.val_dataloader(),
-        datamodule.test_dataloader(),
-    ):
-        batch_size = min(datamodule.spec.batch_size, len(loader.dataset))
-        batch = next(iter(loader))
-        assert len(batch) == 3
-        obs, act, new_obs = batch
-
-        def tensor_info(tensor: Tensor, dim: int, batch_size: int = batch_size) -> str:
-            return f"{tensor.shape}, B: {batch_size}, H: {horizon}, dim: {dim}"
-
-        assert obs.shape == (batch_size, horizon, n_state + 1), tensor_info(
-            obs, n_state
-        )
-        assert act.shape == (batch_size, horizon, n_ctrl), tensor_info(act, n_ctrl)
-        assert new_obs.shape == (batch_size, horizon, n_state + 1), tensor_info(
-            new_obs, n_state
-        )
-
-
-def test_datamodule():
-    # pylint:disable=missing-function-docstring
-    lqsvg.register_all()
-    # Create and initialize
-    with nt.suppress_named_tensor_warning():
-        worker = make_worker(
-            env_config=dict(n_state=2, n_ctrl=2, horizon=100, num_envs=10)
-        )
-    datamodule = build_datamodule(worker, total_trajs=100)
-    datamodule.collect_trajectories()
-    datamodule.setup()
-    check_dataloaders(datamodule)
-
-
-if __name__ == "__main__":
-    test_datamodule()
