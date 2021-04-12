@@ -8,8 +8,8 @@ import pytest
 from ray.rllib import VectorEnv
 
 from lqsvg.envs.lqr.gym import RandomLQGEnv, RandomVectorLQG
-
-from .utils import allclose_cost, allclose_dynamics, standard_fixture
+from lqsvg.testing.compare import allclose_cost, allclose_dynamics
+from lqsvg.testing.fixture import standard_fixture
 
 EnvCreator = Callable[[dict], Union[gym.Env, VectorEnv]]
 
