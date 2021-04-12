@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CsvFileAttributes">
+    <option name="attributeMap">
+      <map>
+        <entry key="/experiments/results/Experiment_2021-04-11_13-49-50/Experiment_eec90_00000_0_horizon=22,n_ctrl=6,n_state=3,learning_rate=0.0014951,model_input_norm=None,weight_decay=3.2494e-05_2021-04-11_13-49-51/progress.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
