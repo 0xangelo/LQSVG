@@ -1,6 +1,6 @@
 import pytest
 
-from .utils import standard_fixture
+from lqsvg.testing.fixture import standard_fixture
 
 
 @pytest.fixture(params=(42, 69, 37), ids=lambda x: f"Seed:{x}")

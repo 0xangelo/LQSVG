@@ -18,8 +18,7 @@ from lqsvg.envs.lqr.utils import (
     wrap_sample_shape_to_size,
 )
 from lqsvg.np_util import RNG
-
-from .utils import standard_fixture
+from lqsvg.testing.fixture import standard_fixture
 
 
 @pytest.fixture(params=(0, 2))

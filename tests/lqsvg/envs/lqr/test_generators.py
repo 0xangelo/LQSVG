@@ -22,8 +22,7 @@ from lqsvg.envs.lqr.generators import (
 )
 from lqsvg.envs.lqr.types import LinDynamics, LinSDynamics, QuadCost
 from lqsvg.envs.lqr.utils import stationary_dynamics_factors
-
-from .utils import standard_fixture
+from lqsvg.testing.fixture import standard_fixture
 
 GeneratorFn = Callable[[], LQGGenerator]
 
