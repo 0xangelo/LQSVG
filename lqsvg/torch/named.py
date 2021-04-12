@@ -123,12 +123,16 @@ def index_select(
 
 
 def index_by(tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]) -> Tensor:
-    aligned = tensor.align_to(dim, ...)
+    int_dim = tensor.names.index(dim)
     vector_index = unnamed(index).reshape(-1)
-    selected = torch.index_select(unnamed(aligned), dim=0, index=vector_index)
-    reshaped = selected.reshape(*(index.shape + aligned.shape[1:]))
-    refined = reshaped.refine_names(*(index.names + aligned.names[1:]))
-    return refined.align_to(*(n if n != dim else ... for n in tensor.names))
+    selected = torch.index_select(unnamed(tensor), dim=int_dim, index=vector_index)
+    reshaped = selected.reshape(
+        tensor.shape[:int_dim] + index.shape + tensor.shape[int_dim + 1 :]
+    )
+    refined = reshaped.refine_names(
+        *(tensor.names[:int_dim] + index.names + tensor.names[int_dim + 1 :])
+    )
+    return refined
 
 
 def diagonal(tensor: Tensor, *args, dim1: str = "R", dim2: str = "C", **kwargs):
