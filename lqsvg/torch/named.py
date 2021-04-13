@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import warnings
 from contextlib import contextmanager
-from typing import Union
+from typing import Optional, Union
 
 import torch
 import torch.nn.functional as F
-from torch import IntTensor, LongTensor, Tensor
+from torch import BoolTensor, IntTensor, LongTensor, Tensor
 
 MATRIX_NAMES = (..., "R", "C")
 VECTOR_NAMES = MATRIX_NAMES[:-1]
@@ -159,6 +159,12 @@ def allclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> bool:
     return torch.allclose(unnamed(inpt), unnamed(other), *args, **kwargs)
 
 
+def isclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> BoolTensor:
+    names = inpt.names
+    inpt, other = unnamed(inpt, other)
+    return torch.isclose(inpt, other, *args, **kwargs).refine_names(*names)
+
+
 def where(
     condition: Tensor, branch_a: Tensor, branch_b: Tensor, *args, **kwargs
 ) -> Tensor:
@@ -173,3 +179,12 @@ def split(
     tensor: Tensor, split_size_or_sections: Union[int, list[int]], dim: str
 ) -> tuple[Tensor, ...]:
     return torch.split(tensor, split_size_or_sections, dim=tensor.names.index(dim))
+
+
+def reduce_all(
+    tensor: BoolTensor, dim: Optional[str] = None, keepdim: bool = False, **kwargs
+) -> BoolTensor:
+    idx = tensor.names.index(dim) if dim else None
+    names = tuple(x for x in tensor.names if not dim or keepdim or x != dim)
+    result = torch.all(unnamed(tensor), dim=idx, keepdim=keepdim, **kwargs)
+    return result.refine_names(*names)
