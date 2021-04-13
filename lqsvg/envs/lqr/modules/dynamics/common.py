@@ -67,13 +67,17 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
     def _logp(
         self, loc: Tensor, scale_tril: Tensor, time: Tensor, value: Tensor
     ) -> Tensor:
-
+        # Align input tensors
         state, time_ = unpack_obs(value)
+        loc = loc.align_as(state)
+        time, time_ = torch.broadcast_tensors(time, time_)
+
+        # Consider normal and absorving state transitions
         time_ = nt.vector_to_scalar(time_)
         trans_logp = self._trans_logp(loc, scale_tril, state, time_)
-
         absorving_logp = self._absorving_logp(loc, state, time_)
 
+        # Filter results
         time = nt.vector_to_scalar(time)
         terminal = (
             time.eq(self.horizon) if self.horizon else torch.zeros_like(time).bool()
