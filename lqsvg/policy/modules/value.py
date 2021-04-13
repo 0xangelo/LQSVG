@@ -8,8 +8,6 @@ from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Quadratic
-
-# noinspection PyTypeChecker
 from lqsvg.envs.lqr.utils import unpack_obs
 
 
@@ -21,20 +19,51 @@ def index_quadratic_parameters(
     linear = nt.horizon(nt.vector(linear))
     const = nt.horizon(nt.scalar(const))
     index = nt.vector_to_scalar(time)
+    # noinspection PyTypeChecker
     quad, linear, const = map(
         lambda x: nt.index_by(x, dim="H", index=index), (quad, linear, const)
     )
     return quad, linear, const
 
 
-class QuadVValue(VValue):
-    """Quadratic time-varying state-value function."""
+class QuadraticMixin:
+    """Adds update and standard form to a quadratic NN module."""
 
-    n_state: int
-    horizon: int
     quad: nn.Parameter
     linear: nn.Parameter
     const: nn.Parameter
+
+    def standard_form(self) -> Quadratic:
+        """Return parameters in standard quadratic form.
+
+        Returns:
+            Tuple with matrix, vector, and scalar parameters, including
+            their gradients (cloned)
+        """
+        params = (self.quad, self.linear, self.const)
+        refines = (nt.matrix, nt.vector, nt.scalar)
+        quadratic = tuple(nt.horizon(r(p)) for r, p in zip(refines, params))
+        for tensor, param in zip(quadratic, params):
+            tensor.grad = None if param.grad is None else param.grad.clone()
+        # noinspection PyTypeChecker
+        return quadratic
+
+    def update(self, quadratic: Quadratic):
+        """Update parameters to existing quadratic."""
+        params = (self.quad, self.linear, self.const)
+        for param, tensor in zip(params, quadratic):
+            param.data.copy_(tensor.data)
+
+
+class QuadVValue(VValue, QuadraticMixin):
+    """Quadratic time-varying state-value function.
+
+    Clones the tensors from a quadratic and sets them as parameters, avoiding
+    in-place modification of the original quadratic's tensors.
+    """
+
+    n_state: int
+    horizon: int
 
     def __init__(self, quadratic: Quadratic):
         super().__init__()
@@ -44,7 +73,7 @@ class QuadVValue(VValue):
         # noinspection PyArgumentList
         self.horizon = quad.size("H") - 1
         self.quad, self.linear, self.const = map(
-            lambda x: nn.Parameter(nt.unnamed(x)), quadratic
+            lambda x: nn.Parameter(nt.unnamed(x.clone())), quadratic
         )
 
     def forward(self, obs: Tensor) -> Tensor:
@@ -61,14 +90,15 @@ class QuadVValue(VValue):
         return nt.matrix_to_scalar(val)
 
 
-class QuadQValue(QValue):
-    """Quadratic time-varying action-value function."""
+class QuadQValue(QValue, QuadraticMixin):
+    """Quadratic time-varying action-value function.
+
+    Clones the tensors from a quadratic and sets them as parameters, avoiding
+    in-place modification of the original quadratic's tensors.
+    """
 
     n_tau: int
     horizon: int
-    quad: nn.Parameter
-    linear: nn.Parameter
-    const: nn.Parameter
 
     def __init__(self, quadratic: Quadratic):
         super().__init__()
@@ -78,7 +108,7 @@ class QuadQValue(QValue):
         # noinspection PyArgumentList
         self.horizon = quad.size("H")
         self.quad, self.linear, self.const = map(
-            lambda x: nn.Parameter(nt.unnamed(x)), quadratic
+            lambda x: nn.Parameter(nt.unnamed(x.clone())), quadratic
         )
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
