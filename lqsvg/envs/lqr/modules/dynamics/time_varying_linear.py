@@ -86,7 +86,7 @@ class TVLinearDynamicsModule(LinearDynamics):
     def __init__(self, dynamics: lqr.LinSDynamics):
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
         params = TVLinearNormalParams(*dynamics)
-        dist = TVMultivariateNormal()
+        dist = TVMultivariateNormal(self.horizon)
         super().__init__(params, dist)
         self.F = self.params.F
         self.f = self.params.f

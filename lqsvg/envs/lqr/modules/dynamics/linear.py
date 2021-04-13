@@ -65,12 +65,12 @@ class LinearNormalParams(nn.Module):
         scale_tril = self.scale_tril()
 
         tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
-        loc = F @ tau + nt.vector_to_matrix(f)
-        return {
-            "loc": nt.matrix_to_vector(loc),
-            "scale_tril": scale_tril,
-            "time": time + 1,
-        }
+        terminal = time.eq(self.horizon)
+        loc = nt.where(
+            terminal, state, nt.matrix_to_vector(F @ tau + nt.vector_to_matrix(f))
+        )
+        time_ = nt.where(terminal, time, time + 1)
+        return {"loc": loc, "scale_tril": scale_tril, "time": time_}
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring
@@ -111,7 +111,7 @@ class LinearDynamicsModule(LinearDynamics):
     def __init__(self, dynamics: lqr.LinSDynamics):
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
         params = LinearNormalParams(dynamics, horizon=self.horizon)
-        dist = TVMultivariateNormal()
+        dist = TVMultivariateNormal(self.horizon)
         super().__init__(params, dist)
         self.F = self.params.F
         self.f = self.params.f
