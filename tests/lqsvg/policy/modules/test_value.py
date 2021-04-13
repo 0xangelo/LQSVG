@@ -131,3 +131,44 @@ def test_quadqvalue(
     assert not nt.allclose(obs.grad, torch.zeros_like(obs))
     assert act.grad is not None
     assert not nt.allclose(act.grad, torch.zeros_like(act))
+
+
+@pytest.fixture()
+def vvalue_other(n_state: int, horizon: int, seed: int) -> Quadratic:
+    seed = seed + 1
+    V = random_spd_matrix(size=n_state, horizon=horizon + 1, rng=seed)
+    v = random_normal_vector(size=n_state, horizon=horizon + 1, rng=seed)
+    c = random_normal_vector(size=1, horizon=horizon + 1, rng=seed).squeeze("R")
+    return V, v, c
+
+
+@pytest.fixture()
+def qvalue_other(n_state: int, n_ctrl: int, horizon: int, seed: int) -> Quadratic:
+    seed = seed + 1
+    n_tau = n_state + n_ctrl
+    Q = random_spd_matrix(size=n_tau, horizon=horizon, rng=seed)
+    q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
+    c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
+    return Q, q, c
+
+
+def test_vvalue_update(vvalue_params: Quadratic, vvalue_other: Quadratic):
+    vvalue = QuadVValue(vvalue_params)
+    before = [p.clone() for p in vvalue.parameters()]
+    vvalue.update(vvalue_other)
+    after = [p.clone() for p in vvalue.parameters()]
+
+    allclose_parameters = [torch.allclose(b, a) for b, a in zip(before, after)]
+    allclose_inputs = [nt.allclose(a, b) for a, b in zip(vvalue_params, vvalue_other)]
+    assert all(allclose_parameters) == all(allclose_inputs)
+
+
+def test_qvalue_update(qvalue_params: Quadratic, qvalue_other: Quadratic):
+    qvalue = QuadQValue(qvalue_params)
+    before = [p.clone() for p in qvalue.parameters()]
+    qvalue.update(qvalue_other)
+    after = [p.clone() for p in qvalue.parameters()]
+
+    allclose_parameters = [torch.allclose(b, a) for b, a in zip(before, after)]
+    allclose_inputs = [nt.allclose(a, b) for a, b in zip(qvalue_params, qvalue_other)]
+    assert all(allclose_parameters) == all(allclose_inputs)
