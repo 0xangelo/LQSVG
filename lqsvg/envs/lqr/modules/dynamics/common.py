@@ -4,10 +4,10 @@ from typing import List, Tuple
 import raylab.torch.nn.distributions as ptd
 import torch
 from raylab.torch.nn.distributions.types import DistParams, SampleLogp
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr.utils import unpack_obs
+from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 
 
 def softplusinv(tensor: Tensor, *, beta: float = 1) -> Tensor:
@@ -53,7 +53,7 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
 
 def _unpack_params(
     params: DistParams, sample_shape: List[int] = ()
-) -> Tuple[Tensor, Tensor, Tensor]:
+) -> Tuple[Tensor, Tensor, IntTensor]:
     loc = params["loc"]
     scale_tril = params["scale_tril"]
     time = params["time"]
@@ -65,12 +65,12 @@ def _unpack_params(
     return loc, scale_tril, time
 
 
-def _gen_sample(loc: Tensor, scale_tril: Tensor, time: Tensor) -> Tensor:
+def _gen_sample(loc: Tensor, scale_tril: Tensor, time: IntTensor) -> Tensor:
     dist = torch.distributions.MultivariateNormal(
         loc=nt.unnamed(loc), scale_tril=nt.unnamed(scale_tril)
     )
     sample = dist.rsample().refine_names(*loc.names)
-    return torch.cat([sample, time.float()], dim="R")
+    return pack_obs(sample, time)
 
 
 def _logp(loc: Tensor, scale_tril: Tensor, time: Tensor, value: Tensor) -> Tensor:
@@ -82,8 +82,8 @@ def _logp(loc: Tensor, scale_tril: Tensor, time: Tensor, value: Tensor) -> Tenso
         *(n for n in state.names if n != "R")
     )
     logp = nt.where(
-        time_.squeeze("R") == time.squeeze("R"),
+        time_.squeeze("R").eq(time.squeeze("R")),
         logp_,
-        torch.full_like(logp_, fill_value=float("nan")).refine_names(*logp_.names),
+        torch.full_like(logp_, fill_value=float("nan")),
     )
     return logp
