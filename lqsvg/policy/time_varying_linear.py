@@ -20,11 +20,10 @@ from .modules import (
     BatchNormModel,
     InitStateModel,
     LayerNormModel,
+    LinearTransitionModel,
     QuadRewardModel,
     ResidualModel,
-    StationaryLinearTransModel,
     TVLinearPolicy,
-    TVLinearTransModel,
 )
 
 
@@ -83,13 +82,12 @@ class TimeVaryingLinear(nn.Module):
     def _trans_model(
         self, n_state: int, n_ctrl: int, horizon: int, config: dict
     ) -> StochasticModel:
-        if config["stationary_model"]:
-            trans = StationaryLinearTransModel(n_state, n_ctrl, horizon)
-        else:
-            trans = TVLinearTransModel(n_state, n_ctrl, horizon)
+        trans = LinearTransitionModel(
+            n_state, n_ctrl, horizon, stationary=config["stationary_model"]
+        )
 
+        # Wrap model if needed
         trans = self._input_processing(trans, n_state, config["model_input_norm"])
-
         # This should be last, otherwise we may be learning residuals between
         # normalized states and unnormalized next states
         if config["residual_model"]:

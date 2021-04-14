@@ -5,22 +5,15 @@ from __future__ import annotations
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 
-__all__ = ["TVLinearTransModel", "StationaryLinearTransModel"]
+__all__ = ["LinearTransitionModel"]
 
 
-class TVLinearTransModel(LinearDynamicsModule):
-    """Time-varying linear Gaussian transition model."""
+class LinearTransitionModel(LinearDynamicsModule):
+    """Linear Gaussian transition model."""
 
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=False)
-        dynamics = make_linsdynamics(dynamics, stationary=False, sample_covariance=True)
-        super().__init__(dynamics, stationary=False)
-
-
-class StationaryLinearTransModel(LinearDynamicsModule):
-    """Stationary linear Gaussian transition model."""
-
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=True)
-        dynamics = make_linsdynamics(dynamics, stationary=True, sample_covariance=True)
-        super().__init__(dynamics, stationary=True)
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
+        dynamics = make_lindynamics(n_state, n_ctrl, horizon, stationary=stationary)
+        dynamics = make_linsdynamics(
+            dynamics, stationary=stationary, sample_covariance=True
+        )
+        super().__init__(dynamics, stationary=stationary)
