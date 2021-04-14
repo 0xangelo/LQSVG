@@ -22,13 +22,14 @@ class CovarianceCholesky(nn.Module):
     beta: float = 0.2
     ltril: nn.Parameter
     pre_diag: nn.Parameter
+    horizon: int
     stationary: bool
 
-    def __init__(self, sigma: Tensor, stationary: bool):
+    def __init__(self, sigma: Tensor, horizon: int, stationary: bool):
         super().__init__()
-        sigma = nt.horizon(nt.matrix(sigma))
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
+        self.horizon = horizon
         self.stationary = stationary
 
     def forward(self, index: Optional[IntTensor] = None) -> Tensor:
@@ -63,7 +64,7 @@ class TVLinearNormalParams(nn.Module):
         F, f, W = dynamics
         self.F = nn.Parameter(nt.unnamed(F))
         self.f = nn.Parameter(nt.unnamed(f))
-        self.scale_tril = CovarianceCholesky(W, stationary=stationary)
+        self.scale_tril = CovarianceCholesky(W, horizon=horizon, stationary=stationary)
         self.horizon = horizon
         self.stationary = stationary
 
@@ -168,49 +169,6 @@ class LinearDynamicsModule(LinearDynamics):
             F, f, W = map(self.expand_horizon, dynamics)
             dynamics = lqr.LinSDynamics(F=F, f=f, W=W)
         return dynamics
-
-    def expand_horizon(self, tensor: Tensor) -> Tensor:
-        """Expand a tensor along the horizon dim."""
-        zip_names = zip(tensor.shape, tensor.names)
-        new_shape = tuple(self.horizon if n == "H" else s for s, n in zip_names)
-        return tensor.expand(new_shape)
-
-
-class TVLinearDynamicsModule(LinearDynamics):
-    """Time-varying linear stochastic model from dynamics."""
-
-    def __init__(self, dynamics: lqr.LinSDynamics):
-        # pylint:disable=invalid-name
-        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-        params = TVLinearNormalParams(dynamics, horizon=self.horizon, stationary=False)
-        dist = TVMultivariateNormal(self.horizon)
-        super().__init__(params, dist)
-        self.F = self.params.F
-        self.f = self.params.f
-
-
-class StationaryLinearDynamicsModule(LinearDynamics):
-    """Linear stochastic model from dynamics."""
-
-    def __init__(self, dynamics: lqr.LinSDynamics):
-        # pylint:disable=invalid-name
-        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-
-        assert isstationary(dynamics)
-        F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
-        stationary = lqr.LinSDynamics(F, f, W)
-
-        params = TVLinearNormalParams(stationary, horizon=self.horizon, stationary=True)
-        dist = TVMultivariateNormal(self.horizon)
-        super().__init__(params, dist)
-        self.F = self.params.F
-        self.f = self.params.f
-
-    def standard_form(self) -> lqr.LinSDynamics:
-        # pylint:disable=invalid-name
-        dynamics = super().standard_form()
-        F, f, W = map(self.expand_horizon, dynamics)
-        return lqr.LinSDynamics(F=F, f=f, W=W)
 
     def expand_horizon(self, tensor: Tensor) -> Tensor:
         """Expand a tensor along the horizon dim."""
