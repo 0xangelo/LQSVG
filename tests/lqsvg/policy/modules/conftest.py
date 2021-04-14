@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch import Tensor
 
-from lqsvg.envs.lqr.utils import pack_obs
+from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import default_generator_seed
@@ -38,6 +38,14 @@ def last_obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor
     time = nt.vector(torch.full_like(state[..., :1], fill_value=horizon))
     # noinspection PyTypeChecker
     return pack_obs(state, time).requires_grad_(True)
+
+
+@pytest.fixture
+def mix_obs(obs: Tensor, last_obs: Tensor) -> Tensor:
+    _, time = unpack_obs(obs)
+    mix = nt.where(torch.rand_like(time.float()) < 0.5, obs, last_obs)
+    mix.retain_grad()
+    return mix
 
 
 @pytest.fixture()
