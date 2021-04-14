@@ -935,7 +935,7 @@ test = ["coverage", "requests", "pytest", "pytest-cov", "pytest-tornasync", "pyt
 
 [[package]]
 name = "jupyterlab"
-version = "3.0.13"
+version = "3.0.14"
 description = "The JupyterLab server extension."
 category = "dev"
 optional = false
@@ -945,7 +945,7 @@ python-versions = ">=3.6"
 ipython = "*"
 jinja2 = ">=2.10"
 jupyter-core = "*"
-jupyter-packaging = ">=0.7.3,<0.8.0"
+jupyter-packaging = ">=0.7,<1.0"
 jupyter-server = ">=1.4,<2.0"
 jupyterlab-server = ">=2.3,<3.0"
 nbclassic = ">=0.2,<1.0"
@@ -2451,7 +2451,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "53600860936a2a3ad2b016a90343d30ed732d4931f4fd32344484e8d83a170b7"
+content-hash = "5fcae09a5742b9b477930c4cdcb10617e4a4d38d2a01757e45fac584d02ca082"
 
 [metadata.files]
 absl-py = [
@@ -2936,8 +2936,8 @@ jupyter-server = [
     {file = "jupyter_server-1.6.0.tar.gz", hash = "sha256:348f2c744d1fa1676d314475e0be357a95b21cbe6e19d15c2a25a9ea647f99d2"},
 ]
 jupyterlab = [
-    {file = "jupyterlab-3.0.13-py3-none-any.whl", hash = "sha256:f15beb21274d619fbfeffa1fe9235e2f2dffaca981096b4a4474ae6e69fb5914"},
-    {file = "jupyterlab-3.0.13.tar.gz", hash = "sha256:6aefaf11251309ffdd66ef20025f5165aeec26d59a83c76e4d02cc8f593bc9dc"},
+    {file = "jupyterlab-3.0.14-py3-none-any.whl", hash = "sha256:223ad786032119f495edc894a81925b6cc327a184f150adbc4e5ef94965d4921"},
+    {file = "jupyterlab-3.0.14.tar.gz", hash = "sha256:713a84991dfcca8c0bc260911f1bd54ac25a386a86285713b9555a60f795059b"},
 ]
 jupyterlab-code-formatter = [
     {file = "jupyterlab_code_formatter-1.4.10-py3-none-any.whl", hash = "sha256:10a7f2ab44a4539a44ec6bf3fc3b27e7ed22c7ab975e6503823e21d7e60abae7"},
