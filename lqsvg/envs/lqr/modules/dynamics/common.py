@@ -69,7 +69,7 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
     ) -> Tensor:
         # Align input tensors
         state, time_ = unpack_obs(value)
-        loc = loc.align_as(state)
+        loc, state = torch.broadcast_tensors(loc, state)
         time, time_ = torch.broadcast_tensors(time, time_)
 
         # Consider normal and absorving state transitions
