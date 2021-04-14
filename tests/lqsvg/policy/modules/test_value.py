@@ -9,12 +9,8 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Quadratic
-from lqsvg.envs.lqr.utils import pack_obs, random_normal_vector, random_spd_matrix
+from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix
 from lqsvg.policy.modules.value import QuadQValue, QuadVValue
-from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import default_generator_seed
-
-batch_shape = standard_fixture([(), (1,), (4,)], "BatchShape")
 
 
 @pytest.fixture()
@@ -32,35 +28,6 @@ def qvalue_params(n_state: int, n_ctrl: int, horizon: int, seed: int) -> Quadrat
     q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
     c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
     return Q, q, c
-
-
-@pytest.fixture()
-def obs(n_state: int, horizon: int, batch_shape: tuple[int, ...], seed: int) -> Tensor:
-    with default_generator_seed(seed):
-        state = nt.vector(torch.randn(batch_shape + (n_state,)))
-        time = nt.vector(
-            torch.randint_like(nt.unnamed(state[..., :1]), low=0, high=horizon)
-        )
-        # noinspection PyTypeChecker
-        return pack_obs(state, time)
-
-
-@pytest.fixture()
-def last_obs(
-    n_state: int, horizon: int, batch_shape: tuple[int, ...], seed: int
-) -> Tensor:
-    with default_generator_seed(seed):
-        state = nt.vector(torch.randn(batch_shape + (n_state,)))
-        time = nt.vector(torch.full_like(state[..., :1], fill_value=horizon))
-        # noinspection PyTypeChecker
-        return pack_obs(state, time)
-
-
-@pytest.fixture()
-def act(n_state: int, n_ctrl: int, batch_shape: tuple[int, ...], seed: int) -> Tensor:
-    del n_state
-    with default_generator_seed(seed):
-        return nt.vector(torch.randn(batch_shape + (n_ctrl,)))
 
 
 def check_state_val_and_backprop(vvalue: QuadVValue, obs: Tensor):
