@@ -155,8 +155,8 @@ def sigma(n_tau: int, horizon: int):
     )
 
 
-def test_cov_cholesky_factor(sigma: Tensor, horizon: int):
-    module = CovarianceCholesky(sigma, horizon)
+def test_cov_cholesky_factor(sigma: Tensor):
+    module = CovarianceCholesky(sigma)
     untimed = module()
 
     scale_tril = nt.cholesky(sigma)
