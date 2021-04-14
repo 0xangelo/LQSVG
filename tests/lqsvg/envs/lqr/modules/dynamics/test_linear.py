@@ -12,7 +12,10 @@ from lqsvg.envs.lqr.modules import (
     StationaryLinearDynamicsModule,
     TVLinearDynamicsModule,
 )
-from lqsvg.envs.lqr.modules.dynamics.linear import CovarianceCholesky
+from lqsvg.envs.lqr.modules.dynamics.linear import (
+    CovarianceCholesky,
+    LinearDynamicsModule,
+)
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import default_generator_seed, make_spd_matrix
@@ -120,6 +123,25 @@ class LinearDynamicsTests:
         assert nt.allclose(act.grad, torch.zeros_like(act))
 
 
+stationary = standard_fixture((True, False), "Stationary")
+
+
+class TestLinearDynamicsModule(LinearDynamicsTests):
+    @pytest.fixture
+    def dynamics(
+        self, n_state: int, n_ctrl: int, horizon: int, seed: int, stationary: bool
+    ) -> LinSDynamics:
+        # pylint:disable=too-many-arguments
+        linear = make_lindynamics(
+            n_state, n_ctrl, horizon, stationary=stationary, rng=seed
+        )
+        return make_linsdynamics(linear, stationary=stationary, rng=seed)
+
+    @pytest.fixture
+    def module(self, dynamics: LinSDynamics, stationary: bool) -> LinearDynamicsModule:
+        return LinearDynamicsModule(dynamics, stationary=stationary)
+
+
 class TestStationaryLinearDynamicsModule(LinearDynamicsTests):
     @pytest.fixture
     def dynamics(
@@ -156,7 +178,7 @@ def sigma(n_tau: int, horizon: int):
 
 
 def test_cov_cholesky_factor(sigma: Tensor):
-    module = CovarianceCholesky(sigma)
+    module = CovarianceCholesky(sigma, stationary=False)
     untimed = module()
 
     scale_tril = nt.cholesky(sigma)
