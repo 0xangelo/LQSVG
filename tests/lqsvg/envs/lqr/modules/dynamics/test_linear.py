@@ -58,8 +58,6 @@ def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
 
 
 class TestLinearDynamicsModule:
-    # pylint:disable=no-self-use
-
     @pytest.fixture()
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int
