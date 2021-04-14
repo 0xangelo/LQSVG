@@ -100,8 +100,7 @@ class LinearNormalParams(nn.Module):
         # Treat absorving states if necessary
         terminal = time.eq(self.horizon)
         loc = nt.where(terminal, state, trans_loc)
-        time_ = nt.where(terminal, time, time + 1)
-        return {"loc": loc, "scale_tril": scale_tril, "time": time_}
+        return {"loc": loc, "scale_tril": scale_tril, "time": time}
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring

@@ -29,7 +29,20 @@ def assemble_scale_tril(ltril: Tensor, pre_diag: Tensor, *, beta: float = 1) -> 
 
 
 class TVMultivariateNormal(ptd.ConditionalDistribution):
-    """Time-varying multivariate Gaussian distribution."""
+    """Time-varying multivariate Gaussian distribution.
+
+    This class' methods expect named tensors as inputs and returns named
+    tensors.
+
+    Note:
+        The `time` tensor in the distribution parameters refers to the
+        timestep preceding the next sample. Therefore, if `time = X`, the
+        timestep component of the next sample will be `time + 1`.
+
+        For this reason, `time` is allowed to take values of -1, so we
+        can generate the first sample in a sample path, which starts with
+        a timestep of 0.
+    """
 
     # pylint:disable=no-self-use,abstract-method
     horizon: Optional[int]
@@ -51,18 +64,26 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
         return sample, logp
 
     def log_prob(self, value: Tensor, params: DistParams) -> Tensor:
-        value = nt.vector(value)
         loc, scale_tril, time = _unpack_params(params)
         logp = self._logp(loc, scale_tril, time, value)
         return logp
+
+    ###########################################################################
+    # Internal API
+    ###########################################################################
 
     def _gen_sample(self, loc: Tensor, scale_tril: Tensor, time: IntTensor) -> Tensor:
         dist = torch.distributions.MultivariateNormal(
             loc=nt.unnamed(loc), scale_tril=nt.unnamed(scale_tril)
         )
-        terminal = time.eq(self.horizon) if self.horizon else torch.zeros(()).bool()
-        sample = nt.where(terminal, loc, dist.rsample().refine_names(*loc.names))
-        return pack_obs(sample, time)
+        state = dist.rsample().refine_names(*loc.names)
+        next_obs = pack_obs(state, time + 1)
+        if not self.horizon:
+            return next_obs
+
+        # Filter results
+        # We're in an absorving state if the current timestep is the horizon
+        return nt.where(time.eq(self.horizon), pack_obs(loc, time), next_obs)
 
     def _logp(
         self, loc: Tensor, scale_tril: Tensor, time: Tensor, value: Tensor
@@ -72,39 +93,48 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
         loc, state = torch.broadcast_tensors(loc, state)
         time, time_ = torch.broadcast_tensors(time, time_)
 
-        # Consider normal and absorving state transitions
+        # Consider normal state transition
+        time = nt.vector_to_scalar(time)
         time_ = nt.vector_to_scalar(time_)
-        trans_logp = self._trans_logp(loc, scale_tril, state, time_)
-        absorving_logp = self._absorving_logp(loc, state, time_)
+        trans_logp = self._trans_logp(loc, scale_tril, time, state, time_)
+        if not self.horizon:
+            return trans_logp
+
+        # If horizon is set, treat absorving state transitions
+        absorving_logp = self._absorving_logp(loc, time, state, time_)
 
         # Filter results
-        time = nt.vector_to_scalar(time)
-        terminal = (
-            time.eq(self.horizon) if self.horizon else torch.zeros_like(time).bool()
-        )
-        logp = nt.where(
-            # Logp only defined at next timestep
-            time.eq(time_),
-            # If terminal, point mass only at the same state
-            # If not terminal, density defined for states in next timestep only
-            nt.where(terminal, absorving_logp, trans_logp),
-            torch.full(time.shape, fill_value=float("nan")),
-        )
-        return logp
+        # We're in an absorving state if the current timestep is the horizon
+        return nt.where(time.eq(self.horizon), absorving_logp, trans_logp)
 
     @staticmethod
     def _trans_logp(
-        loc: Tensor, scale_tril: Tensor, state: Tensor, time: Tensor
+        loc: Tensor, scale_tril: Tensor, cur_time: Tensor, state: Tensor, time: Tensor
     ) -> Tensor:
         loc, scale_tril = nt.unnamed(loc, scale_tril)
         dist = torch.distributions.MultivariateNormal(loc=loc, scale_tril=scale_tril)
         trans_logp: Tensor = dist.log_prob(nt.unnamed(state))
+        trans_logp = nt.where(
+            # Logp only defined at next timestep
+            time.eq(cur_time + 1),
+            trans_logp,
+            torch.full(time.shape, fill_value=float("nan")),
+        )
+        # We assume time is a named scalar tensor
         return trans_logp.refine_names(*time.names)
 
     @staticmethod
-    def _absorving_logp(loc: Tensor, state: Tensor, time: Tensor) -> Tensor:
+    def _absorving_logp(
+        cur_state: Tensor, cur_time: Tensor, state: Tensor, time: Tensor
+    ) -> Tensor:
+        # We assume time is a named scalar tensor
+        # noinspection PyTypeChecker
+        cur_obs = pack_obs(cur_state, nt.scalar_to_vector(cur_time))
+        # noinspection PyTypeChecker
+        obs = pack_obs(state, nt.scalar_to_vector(time))
         return nt.where(
-            nt.reduce_all(nt.isclose(loc, state), dim="R"),
+            # Point mass only at the same state
+            nt.reduce_all(nt.isclose(cur_obs, obs), dim="R"),
             torch.zeros(time.shape),
             torch.full(time.shape, fill_value=float("nan")),
         )
