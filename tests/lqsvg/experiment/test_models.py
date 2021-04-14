@@ -19,14 +19,14 @@ from lqsvg.policy.modules import (
     BatchNormModel,
     InitStateModel,
     LayerNormModel,
+    LinearTransitionModel,
     QuadRewardModel,
     ResidualModel,
-    StationaryLinearTransModel,
     StochasticModelWrapper,
     TVLinearPolicy,
-    TVLinearTransModel,
 )
 from lqsvg.policy.time_varying_linear import LQGPolicy
+from lqsvg.testing.fixture import standard_fixture
 
 
 @pytest.fixture
@@ -42,6 +42,9 @@ def n_ctrl() -> int:
 @pytest.fixture
 def horizon() -> int:
     return 20
+
+
+stationary = standard_fixture((True, False), "Stationary")
 
 
 @pytest.fixture
@@ -66,16 +69,17 @@ def wrapper(request, n_state: int) -> callable[[StochasticModel], StochasticMode
     return cls
 
 
-@pytest.fixture(params=(TVLinearTransModel, StationaryLinearTransModel))
+@pytest.fixture
 def trans(
-    request,
     n_state: int,
     n_ctrl: int,
     horizon: int,
+    stationary: bool,
     wrapper: callable[[StochasticModel], StochasticModel],
 ) -> StochasticModel:
-    cls = request.param
-    return wrapper(cls(n_state, n_ctrl, horizon))
+    return wrapper(
+        LinearTransitionModel(n_state, n_ctrl, horizon, stationary=stationary)
+    )
 
 
 @pytest.fixture
