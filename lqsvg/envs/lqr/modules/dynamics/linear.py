@@ -1,7 +1,7 @@
 """Linear dynamics models."""
 from __future__ import annotations
 
-from abc import ABCMeta, abstractmethod
+import abc
 from typing import Optional, Tuple
 
 import torch
@@ -55,12 +55,12 @@ class TVLinearNormalParams(nn.Module):
         super().__init__()
 
         F, f, W = dynamics
-        # noinspection PyArgumentList
-        self._max_idx = F.size("H") - 1
         self.F = nn.Parameter(nt.unnamed(F))
         self.f = nn.Parameter(nt.unnamed(f))
         self.scale_tril = CovarianceCholesky(W)
         self.horizon = horizon
+        # noinspection PyArgumentList
+        self._max_idx = F.size("H") - 1
 
     def _transition_factors(
         self, index: Optional[IntTensor] = None
@@ -102,23 +102,58 @@ class TVLinearNormalParams(nn.Module):
         return lqr.LinSDynamics(F, f, covariance_matrix)
 
 
-# noinspection PyPep8Naming
-class LinearNormalParams(TVLinearNormalParams):
-    """Linear state-action conditional Gaussian parameters."""
+class LinearDynamics(StochasticModel, metaclass=abc.ABCMeta):
+    """Abstraction for linear modules usable by LQG solvers."""
 
-    # pylint:disable=invalid-name
+    n_state: int
+    n_ctrl: int
+    horizon: int
+    F: nn.Parameter
+    f: nn.Parameter
+    params: TVLinearNormalParams
 
-    def __init__(self, dynamics: lqr.LinSDynamics, horizon: Optional[int] = None):
+    def standard_form(self) -> lqr.LinSDynamics:
+        """Returns self as parameters defining a linear stochastic system."""
+        return self.params.as_linsdynamics()
+
+    def dimensions(self) -> tuple[int, int, int]:
+        """Return the state, action, and horizon size for this module."""
+        return self.n_state, self.n_ctrl, self.horizon
+
+
+class TVLinearDynamicsModule(LinearDynamics):
+    """Time-varying linear stochastic model from dynamics."""
+
+    def __init__(self, dynamics: lqr.LinSDynamics):
+        # pylint:disable=invalid-name
+        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
+        params = TVLinearNormalParams(dynamics, horizon=self.horizon)
+        dist = TVMultivariateNormal(self.horizon)
+        super().__init__(params, dist)
+        self.F = self.params.F
+        self.f = self.params.f
+
+
+class StationaryLinearDynamicsModule(LinearDynamics):
+    """Linear stochastic model from dynamics."""
+
+    def __init__(self, dynamics: lqr.LinSDynamics):
+        # pylint:disable=invalid-name
+        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
+
         assert isstationary(dynamics)
-        if horizon is None:
-            _, _, horizon = lqr.dims_from_dynamics(dynamics)
         F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
         stationary = lqr.LinSDynamics(F, f, W)
-        super().__init__(stationary, horizon=horizon)
 
-    def as_linsdynamics(self) -> lqr.LinSDynamics:
-        # pylint:disable=missing-function-docstring
-        dynamics = super().as_linsdynamics()
+        params = TVLinearNormalParams(stationary, horizon=self.horizon)
+        dist = TVMultivariateNormal(self.horizon)
+        super().__init__(params, dist)
+        self.F = self.params.F
+        self.f = self.params.f
+
+    def standard_form(self) -> lqr.LinSDynamics:
+        # pylint:disable=invalid-name
+        dynamics = super().standard_form()
         F, f, W = map(self.expand_horizon, dynamics)
         return lqr.LinSDynamics(F=F, f=f, W=W)
 
@@ -127,55 +162,3 @@ class LinearNormalParams(TVLinearNormalParams):
         zip_names = zip(tensor.shape, tensor.names)
         new_shape = tuple(self.horizon if n == "H" else s for s, n in zip_names)
         return tensor.expand(new_shape)
-
-
-class LinearDynamics(StochasticModel, metaclass=ABCMeta):
-    """Abstraction for linear modules usable by LQG solvers."""
-
-    n_state: int
-    n_ctrl: int
-    horizon: int
-    F: nn.Parameter
-    f: nn.Parameter
-
-    @abstractmethod
-    def standard_form(self) -> lqr.LinSDynamics:
-        """Returns self as parameters defining a linear stochastic system."""
-
-    def dimensions(self) -> tuple[int, int, int]:
-        """Return the state, action, and horizon size for this module."""
-        return self.n_state, self.n_ctrl, self.horizon
-
-
-class LinearDynamicsModule(LinearDynamics):
-    """Linear stochastic model from dynamics."""
-
-    # pylint:disable=invalid-name
-
-    def __init__(self, dynamics: lqr.LinSDynamics):
-        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-        params = LinearNormalParams(dynamics, horizon=self.horizon)
-        dist = TVMultivariateNormal(self.horizon)
-        super().__init__(params, dist)
-        self.F = self.params.F
-        self.f = self.params.f
-
-    def standard_form(self) -> lqr.LinSDynamics:
-        return self.params.as_linsdynamics()
-
-
-class TVLinearDynamicsModule(LinearDynamics):
-    """Time-varying linear stochastic model from dynamics."""
-
-    # pylint:disable=invalid-name
-
-    def __init__(self, dynamics: lqr.LinSDynamics):
-        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-        params = TVLinearNormalParams(dynamics, horizon=self.horizon)
-        dist = TVMultivariateNormal(self.horizon)
-        super().__init__(params, dist)
-        self.F = self.params.F
-        self.f = self.params.f
-
-    def standard_form(self) -> lqr.LinSDynamics:
-        return self.params.as_linsdynamics()

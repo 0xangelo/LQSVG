@@ -20,9 +20,9 @@ from .modules import (
     BatchNormModel,
     InitStateModel,
     LayerNormModel,
-    LinearTransModel,
     QuadRewardModel,
     ResidualModel,
+    StationaryLinearTransModel,
     TVLinearPolicy,
     TVLinearTransModel,
 )
@@ -84,7 +84,7 @@ class TimeVaryingLinear(nn.Module):
         self, n_state: int, n_ctrl: int, horizon: int, config: dict
     ) -> StochasticModel:
         if config["stationary_model"]:
-            trans = LinearTransModel(n_state, n_ctrl, horizon)
+            trans = StationaryLinearTransModel(n_state, n_ctrl, horizon)
         else:
             trans = TVLinearTransModel(n_state, n_ctrl, horizon)
 
