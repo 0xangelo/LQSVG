@@ -20,12 +20,16 @@ class CovarianceCholesky(nn.Module):
     """Covariance Cholesky factor."""
 
     beta: float = 0.2
+    ltril: nn.Parameter
+    pre_diag: nn.Parameter
+    stationary: bool
 
-    def __init__(self, sigma: Tensor):
+    def __init__(self, sigma: Tensor, stationary: bool):
         super().__init__()
         sigma = nt.horizon(nt.matrix(sigma))
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
+        self.stationary = stationary
         # noinspection PyArgumentList
         self._max_idx = sigma.size("H") - 1
 
@@ -34,11 +38,14 @@ class CovarianceCholesky(nn.Module):
         ltril, pre_diag = nt.matrix(self.ltril), nt.vector(self.pre_diag)
         ltril, pre_diag = nt.horizon(ltril), nt.horizon(pre_diag)
         if index is not None:
-            index = torch.clamp(index, max=self._max_idx)
+            if self.stationary:
+                index = torch.zeros_like(index)
+            else:
+                index = torch.clamp(index, max=self._max_idx)
             # noinspection PyTypeChecker
-            ltril = nt.index_by(ltril, dim="H", index=index)
-            # noinspection PyTypeChecker
-            pre_diag = nt.index_by(pre_diag, dim="H", index=index)
+            ltril, pre_diag = (
+                nt.index_by(x, dim="H", index=index) for x in (ltril, pre_diag)
+            )
         return assemble_scale_tril(ltril, pre_diag, beta=self.beta)
 
 
@@ -50,15 +57,17 @@ class TVLinearNormalParams(nn.Module):
     F: nn.Parameter
     f: nn.Parameter
     horizon: int
+    stationary: bool
 
-    def __init__(self, dynamics: lqr.LinSDynamics, horizon: int):
+    def __init__(self, dynamics: lqr.LinSDynamics, horizon: int, stationary: bool):
         super().__init__()
 
         F, f, W = dynamics
         self.F = nn.Parameter(nt.unnamed(F))
         self.f = nn.Parameter(nt.unnamed(f))
-        self.scale_tril = CovarianceCholesky(W)
+        self.scale_tril = CovarianceCholesky(W, stationary=stationary)
         self.horizon = horizon
+        self.stationary = stationary
         # noinspection PyArgumentList
         self._max_idx = F.size("H") - 1
 
@@ -67,8 +76,11 @@ class TVLinearNormalParams(nn.Module):
     ) -> Tuple[Tensor, Tensor]:
         F, f = nt.horizon(nt.matrix(self.F)), nt.horizon(nt.vector(self.f))
         if index is not None:
-            # Timesteps after termination use last parameters
-            index = torch.clamp(index, max=self._max_idx)
+            if self.stationary:
+                index = torch.zeros_like(index)
+            else:
+                # Timesteps after termination use last parameters
+                index = torch.clamp(index, max=self._max_idx)
             # noinspection PyTypeChecker
             F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
         return F, f
@@ -121,13 +133,60 @@ class LinearDynamics(StochasticModel, metaclass=abc.ABCMeta):
         return self.n_state, self.n_ctrl, self.horizon
 
 
+class LinearDynamicsModule(LinearDynamics):
+    """Linear stochastic model from dynamics.
+
+    Args:
+        dynamics: the linear dynamics to initialize the model with
+        stationary: whether to model stationary dynamics
+
+    Raises:
+        AssertionError: if `stationary` is True but the dynamics is not
+            stationary
+    """
+
+    stationary: bool
+
+    def __init__(self, dynamics: lqr.LinSDynamics, stationary: bool):
+        # pylint:disable=invalid-name
+        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
+        self.stationary = stationary
+
+        if stationary:
+            assert isstationary(dynamics)
+            F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
+            dynamics = lqr.LinSDynamics(F, f, W)
+
+        params = TVLinearNormalParams(
+            dynamics, horizon=self.horizon, stationary=stationary
+        )
+        dist = TVMultivariateNormal(self.horizon)
+        super().__init__(params, dist)
+        self.F = self.params.F
+        self.f = self.params.f
+
+    def standard_form(self) -> lqr.LinSDynamics:
+        # pylint:disable=invalid-name
+        dynamics = super().standard_form()
+        if self.stationary:
+            F, f, W = map(self.expand_horizon, dynamics)
+            dynamics = lqr.LinSDynamics(F=F, f=f, W=W)
+        return dynamics
+
+    def expand_horizon(self, tensor: Tensor) -> Tensor:
+        """Expand a tensor along the horizon dim."""
+        zip_names = zip(tensor.shape, tensor.names)
+        new_shape = tuple(self.horizon if n == "H" else s for s, n in zip_names)
+        return tensor.expand(new_shape)
+
+
 class TVLinearDynamicsModule(LinearDynamics):
     """Time-varying linear stochastic model from dynamics."""
 
     def __init__(self, dynamics: lqr.LinSDynamics):
         # pylint:disable=invalid-name
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-        params = TVLinearNormalParams(dynamics, horizon=self.horizon)
+        params = TVLinearNormalParams(dynamics, horizon=self.horizon, stationary=False)
         dist = TVMultivariateNormal(self.horizon)
         super().__init__(params, dist)
         self.F = self.params.F
@@ -145,7 +204,7 @@ class StationaryLinearDynamicsModule(LinearDynamics):
         F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
         stationary = lqr.LinSDynamics(F, f, W)
 
-        params = TVLinearNormalParams(stationary, horizon=self.horizon)
+        params = TVLinearNormalParams(stationary, horizon=self.horizon, stationary=True)
         dist = TVMultivariateNormal(self.horizon)
         super().__init__(params, dist)
         self.F = self.params.F
