@@ -29,7 +29,7 @@ def obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
         torch.randint_like(nt.unnamed(state[..., :1]), low=0, high=horizon)
     )
     # noinspection PyTypeChecker
-    return pack_obs(state, time)
+    return pack_obs(state, time).requires_grad_(True)
 
 
 @pytest.fixture()
@@ -37,9 +37,9 @@ def last_obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor
     state = nt.vector(torch.randn(batch_shape + (n_state,)))
     time = nt.vector(torch.full_like(state[..., :1], fill_value=horizon))
     # noinspection PyTypeChecker
-    return pack_obs(state, time)
+    return pack_obs(state, time).requires_grad_(True)
 
 
 @pytest.fixture()
 def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
-    return nt.vector(torch.randn(batch_shape + (n_ctrl,)))
+    return nt.vector(torch.randn(batch_shape + (n_ctrl,))).requires_grad_(True)

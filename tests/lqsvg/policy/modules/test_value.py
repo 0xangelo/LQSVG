@@ -31,7 +31,6 @@ def qvalue_params(n_state: int, n_ctrl: int, horizon: int, seed: int) -> Quadrat
 
 
 def check_state_val_and_backprop(vvalue: QuadVValue, obs: Tensor):
-    obs.requires_grad_(True)
     assert obs.grad is None
 
     val = vvalue(obs)
@@ -85,8 +84,6 @@ def test_quadqvalue(
     assert qvalue.horizon == horizon
     check_quadratic_parameters(qvalue, qvalue_params)
 
-    obs.requires_grad_(True)
-    act.requires_grad_(True)
     val = qvalue(obs, act)
     assert torch.is_tensor(val)
     assert val.shape == obs.shape[:-1] == act.shape[:-1]
