@@ -32,6 +32,8 @@ class InitStateDynamics(ptd.Distribution):
         self.loc = nn.Parameter(nt.unnamed(loc))
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
+        unit_vector = next(iter(nt.split(loc, 1, "R")))
+        self.register_buffer("time", -torch.ones_like(unit_vector, dtype=torch.int))
 
     def scale_tril(self) -> Tensor:
         # pylint:disable=missing-function-docstring
@@ -39,11 +41,8 @@ class InitStateDynamics(ptd.Distribution):
 
     def forward(self) -> DistParams:
         # pylint:disable=missing-function-docstring
-        return {
-            "loc": nt.vector(self.loc),
-            "scale_tril": self.scale_tril(),
-            "time": nt.vector(torch.zeros_like(self.loc[..., -1:], dtype=torch.int)),
-        }
+        loc = nt.vector(self.loc)
+        return {"loc": loc, "scale_tril": self.scale_tril(), "time": self.time}
 
     def sample(self, sample_shape: List[int] = ()) -> SampleLogp:
         params = self()
