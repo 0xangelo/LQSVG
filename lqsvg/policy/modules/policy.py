@@ -48,13 +48,14 @@ class TVLinearFeedback(nn.Module):
         obs = nt.vector(obs)
         state, time = unpack_obs(obs)
 
-        time = nt.vector_to_scalar(time)
         # noinspection PyTypeChecker
-        K, k = self._gains_at(time)
+        K, k = self._gains_at(nt.vector_to_scalar(time))
 
         ctrl = K @ nt.vector_to_matrix(state) + nt.vector_to_matrix(k)
         ctrl = nt.matrix_to_vector(ctrl)
-        return ctrl
+        # Return zeroed actions if in terminal state
+        terminal = time.eq(self.horizon)
+        return nt.where(terminal, torch.zeros_like(ctrl), ctrl)
 
     @classmethod
     def from_existing(cls, policy: lqr.Linear):
