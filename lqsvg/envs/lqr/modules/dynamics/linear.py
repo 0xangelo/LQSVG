@@ -21,19 +21,20 @@ class CovarianceCholesky(nn.Module):
 
     beta: float = 0.2
 
-    def __init__(self, sigma: Tensor, horizon: int):
+    def __init__(self, sigma: Tensor):
         super().__init__()
         sigma = nt.horizon(nt.matrix(sigma))
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
-        self.horizon = horizon
+        # noinspection PyArgumentList
+        self._max_idx = sigma.size("H") - 1
 
     def forward(self, index: Optional[IntTensor] = None) -> Tensor:
         # pylint:disable=missing-function-docstring
         ltril, pre_diag = nt.matrix(self.ltril), nt.vector(self.pre_diag)
         ltril, pre_diag = nt.horizon(ltril), nt.horizon(pre_diag)
         if index is not None:
-            index = torch.clamp(index, max=self.horizon - 1)
+            index = torch.clamp(index, max=self._max_idx)
             # noinspection PyTypeChecker
             ltril = nt.index_by(ltril, dim="H", index=index)
             # noinspection PyTypeChecker
@@ -41,27 +42,24 @@ class CovarianceCholesky(nn.Module):
         return assemble_scale_tril(ltril, pre_diag, beta=self.beta)
 
 
-class StationaryCovarianceCholesky(CovarianceCholesky):
-    """Covariance matrix stored as Cholesky factor."""
-
-    def __init__(self, sigma: Tensor):
-        assert len(sigma.shape) == 2
-        sigma = sigma.align_to("H", ...)
-        super().__init__(sigma, horizon=1)
-
-
+# noinspection PyPep8Naming
 class TVLinearNormalParams(nn.Module):
     """Time-varying linear state-action conditional Gaussian parameters."""
 
     # pylint:disable=invalid-name
-    # noinspection PyPep8Naming
+    F: nn.Parameter
+    f: nn.Parameter
+    horizon: int
+
     def __init__(self, dynamics: lqr.LinSDynamics, horizon: int):
         super().__init__()
 
         F, f, W = dynamics
+        # noinspection PyArgumentList
+        self._max_idx = F.size("H") - 1
         self.F = nn.Parameter(nt.unnamed(F))
         self.f = nn.Parameter(nt.unnamed(f))
-        self.scale_tril = CovarianceCholesky(W, horizon)
+        self.scale_tril = CovarianceCholesky(W)
         self.horizon = horizon
 
     def _transition_factors(
@@ -70,7 +68,7 @@ class TVLinearNormalParams(nn.Module):
         F, f = nt.horizon(nt.matrix(self.F)), nt.horizon(nt.vector(self.f))
         if index is not None:
             # Timesteps after termination use last parameters
-            index = torch.clamp(index, max=self.horizon - 1)
+            index = torch.clamp(index, max=self._max_idx)
             # noinspection PyTypeChecker
             F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
         return F, f
@@ -105,52 +103,30 @@ class TVLinearNormalParams(nn.Module):
 
 
 # noinspection PyPep8Naming
-class LinearNormalParams(nn.Module):
+class LinearNormalParams(TVLinearNormalParams):
     """Linear state-action conditional Gaussian parameters."""
 
     # pylint:disable=invalid-name
-    F: nn.Parameter
-    f: nn.Parameter
 
     def __init__(self, dynamics: lqr.LinSDynamics, horizon: Optional[int] = None):
-        super().__init__()
         assert isstationary(dynamics)
-        self.F = nn.Parameter(nt.unnamed(dynamics.F.select("H", 0)))
-        self.f = nn.Parameter(nt.unnamed(dynamics.f.select("H", 0)))
-        self.scale_tril = StationaryCovarianceCholesky(dynamics.W.select("H", 0))
         if horizon is None:
             _, _, horizon = lqr.dims_from_dynamics(dynamics)
-        self.horizon = horizon
-
-    def _transition_factors(self) -> tuple[Tensor, Tensor]:
-        return nt.matrix(self.F), nt.vector(self.f)
-
-    def forward(self, obs: Tensor, action: Tensor):
-        # pylint:disable=missing-function-docstring
-        obs, action = (nt.vector(x) for x in (obs, action))
-        state, time = unpack_obs(obs)
-        F, f = self._transition_factors()
-        scale_tril = self.scale_tril(nt.vector_to_scalar(time))
-
-        tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
-        terminal = time.eq(self.horizon)
-        loc = nt.where(
-            terminal, state, nt.matrix_to_vector(F @ tau + nt.vector_to_matrix(f))
-        )
-        time_ = nt.where(terminal, time, time + 1)
-        return {"loc": loc, "scale_tril": scale_tril, "time": time_}
+        F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
+        stationary = lqr.LinSDynamics(F, f, W)
+        super().__init__(stationary, horizon=horizon)
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring
-        F, f = self._transition_factors()
-        scale_tril = self.scale_tril()
-        W = scale_tril @ nt.transpose(scale_tril)
-        F, f, W = map(self.expand_and_refine_horizon, (F, f, W))
+        dynamics = super().as_linsdynamics()
+        F, f, W = map(self.expand_horizon, dynamics)
         return lqr.LinSDynamics(F=F, f=f, W=W)
 
-    def expand_and_refine_horizon(self, tensor: Tensor) -> Tensor:
-        """Expand a tensor to the horizon length and name the new dim."""
-        return nt.horizon(tensor.expand((self.horizon,) + tensor.shape))
+    def expand_horizon(self, tensor: Tensor) -> Tensor:
+        """Expand a tensor along the horizon dim."""
+        zip_names = zip(tensor.shape, tensor.names)
+        new_shape = tuple(self.horizon if n == "H" else s for s, n in zip_names)
+        return tensor.expand(new_shape)
 
 
 class LinearDynamics(StochasticModel, metaclass=ABCMeta):
@@ -195,7 +171,7 @@ class TVLinearDynamicsModule(LinearDynamics):
 
     def __init__(self, dynamics: lqr.LinSDynamics):
         self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
-        params = TVLinearNormalParams(dynamics, self.horizon)
+        params = TVLinearNormalParams(dynamics, horizon=self.horizon)
         dist = TVMultivariateNormal(self.horizon)
         super().__init__(params, dist)
         self.F = self.params.F
