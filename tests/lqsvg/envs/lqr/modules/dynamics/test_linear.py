@@ -12,7 +12,7 @@ from lqsvg.envs.lqr.modules import (
     LinearDynamicsModule,
     TVLinearDynamicsModule,
 )
-from lqsvg.envs.lqr.modules.dynamics.linear import CovCholeskyFactor
+from lqsvg.envs.lqr.modules.dynamics.linear import CovarianceCholesky
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import default_generator_seed, make_spd_matrix
@@ -156,7 +156,7 @@ def sigma(n_tau: int, horizon: int):
 
 
 def test_cov_cholesky_factor(sigma: Tensor, horizon: int):
-    module = CovCholeskyFactor(sigma, horizon)
+    module = CovarianceCholesky(sigma, horizon)
     untimed = module()
 
     scale_tril = nt.cholesky(sigma)
