@@ -49,8 +49,8 @@ class CovarianceCholesky(nn.Module):
 
 
 # noinspection PyPep8Naming
-class TVLinearNormalParams(nn.Module):
-    """Time-varying linear state-action conditional Gaussian parameters."""
+class LinearNormalParams(nn.Module):
+    """Linear state-action conditional Gaussian parameters."""
 
     # pylint:disable=invalid-name
     F: nn.Parameter
@@ -119,7 +119,7 @@ class LinearDynamics(StochasticModel, metaclass=abc.ABCMeta):
     horizon: int
     F: nn.Parameter
     f: nn.Parameter
-    params: TVLinearNormalParams
+    params: LinearNormalParams
 
     def standard_form(self) -> lqr.LinSDynamics:
         """Returns self as parameters defining a linear stochastic system."""
@@ -154,7 +154,7 @@ class LinearDynamicsModule(LinearDynamics):
             F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
             dynamics = lqr.LinSDynamics(F, f, W)
 
-        params = TVLinearNormalParams(
+        params = LinearNormalParams(
             dynamics, horizon=self.horizon, stationary=stationary
         )
         dist = TVMultivariateNormal(self.horizon)
