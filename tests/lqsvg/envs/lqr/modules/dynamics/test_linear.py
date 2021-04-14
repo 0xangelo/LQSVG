@@ -7,7 +7,11 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules import LinearDynamicsModule, TVLinearDynamicsModule
+from lqsvg.envs.lqr.modules import (
+    LinearDynamics,
+    LinearDynamicsModule,
+    TVLinearDynamicsModule,
+)
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import default_generator_seed
@@ -57,19 +61,9 @@ def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
     return nt.vector(torch.randn(batch_shape + (n_ctrl,))).requires_grad_()
 
 
-class TestLinearDynamicsModule:
-    @pytest.fixture
-    def dynamics(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int
-    ) -> LinSDynamics:
-        linear = make_lindynamics(n_state, n_ctrl, horizon, stationary=True, rng=seed)
-        return make_linsdynamics(linear, stationary=True, rng=seed)
-
-    @pytest.fixture
-    def module(self, dynamics: LinSDynamics) -> LinearDynamicsModule:
-        return LinearDynamicsModule(dynamics)
-
-    def test_rsample(self, module: LinearDynamicsModule, obs: Tensor, act: Tensor):
+# noinspection PyMethodMayBeStatic
+class LinearDynamicsTests:
+    def test_rsample(self, module: LinearDynamics, obs: Tensor, act: Tensor):
         params = module(obs, act)
         sample, logp = module.rsample(params)
 
@@ -93,9 +87,7 @@ class TestLinearDynamicsModule:
         assert obs.grad is not None
         assert act.grad is not None
 
-    def test_absorving_state(
-        self, module: LinearDynamicsModule, last_obs: Tensor, act: Tensor
-    ):
+    def test_absorving(self, module: LinearDynamics, last_obs: Tensor, act: Tensor):
         params = module(last_obs, act)
         sample, logp = module.rsample(params)
 
@@ -127,7 +119,20 @@ class TestLinearDynamicsModule:
         assert nt.allclose(act.grad, torch.zeros_like(act))
 
 
-class TestTVLinearDynamicsModule(TestLinearDynamicsModule):
+class TestLinearDynamicsModule(LinearDynamicsTests):
+    @pytest.fixture
+    def dynamics(
+        self, n_state: int, n_ctrl: int, horizon: int, seed: int
+    ) -> LinSDynamics:
+        linear = make_lindynamics(n_state, n_ctrl, horizon, stationary=True, rng=seed)
+        return make_linsdynamics(linear, stationary=True, rng=seed)
+
+    @pytest.fixture
+    def module(self, dynamics: LinSDynamics) -> LinearDynamicsModule:
+        return LinearDynamicsModule(dynamics)
+
+
+class TestTVLinearDynamicsModule(LinearDynamicsTests):
     @pytest.fixture
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int
