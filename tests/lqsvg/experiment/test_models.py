@@ -19,9 +19,9 @@ from lqsvg.policy.modules import (
     BatchNormModel,
     InitStateModel,
     LayerNormModel,
-    LinearTransModel,
     QuadRewardModel,
     ResidualModel,
+    StationaryLinearTransModel,
     StochasticModelWrapper,
     TVLinearPolicy,
     TVLinearTransModel,
@@ -66,7 +66,7 @@ def wrapper(request, n_state: int) -> callable[[StochasticModel], StochasticMode
     return cls
 
 
-@pytest.fixture(params=(TVLinearTransModel, LinearTransModel))
+@pytest.fixture(params=(TVLinearTransModel, StationaryLinearTransModel))
 def trans(
     request,
     n_state: int,

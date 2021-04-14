@@ -9,7 +9,7 @@ from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.modules import (
     LinearDynamics,
-    LinearDynamicsModule,
+    StationaryLinearDynamicsModule,
     TVLinearDynamicsModule,
 )
 from lqsvg.envs.lqr.modules.dynamics.linear import CovarianceCholesky
@@ -129,8 +129,8 @@ class TestLinearDynamicsModule(LinearDynamicsTests):
         return make_linsdynamics(linear, stationary=True, rng=seed)
 
     @pytest.fixture
-    def module(self, dynamics: LinSDynamics) -> LinearDynamicsModule:
-        return LinearDynamicsModule(dynamics)
+    def module(self, dynamics: LinSDynamics) -> StationaryLinearDynamicsModule:
+        return StationaryLinearDynamicsModule(dynamics)
 
 
 class TestTVLinearDynamicsModule(LinearDynamicsTests):

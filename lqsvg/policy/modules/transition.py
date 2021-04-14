@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules import LinearDynamicsModule, TVLinearDynamicsModule
+from lqsvg.envs.lqr.modules import (
+    StationaryLinearDynamicsModule,
+    TVLinearDynamicsModule,
+)
 
-__all__ = ["TVLinearTransModel", "LinearTransModel"]
+__all__ = ["TVLinearTransModel", "StationaryLinearTransModel"]
 
 
 class TVLinearTransModel(TVLinearDynamicsModule):
@@ -17,7 +20,7 @@ class TVLinearTransModel(TVLinearDynamicsModule):
         super().__init__(dynamics)
 
 
-class LinearTransModel(LinearDynamicsModule):
+class StationaryLinearTransModel(StationaryLinearDynamicsModule):
     """Stationary linear Gaussian transition model."""
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
