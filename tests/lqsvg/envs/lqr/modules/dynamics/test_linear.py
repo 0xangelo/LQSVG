@@ -135,6 +135,29 @@ class TestLinearDynamicsModule:
         assert nt.allclose(last_obs.grad, torch.zeros_like(last_obs))
         assert nt.allclose(act.grad, torch.zeros_like(act))
 
+    def test_log_prob(
+        self, module: LinearDynamics, obs: Tensor, act: Tensor, new_obs: Tensor
+    ):
+        params = module(obs, act)
+        log_prob = module.log_prob(new_obs, params)
+        _, time = unpack_obs(obs)
+        time = nt.vector_to_scalar(time)
+
+        assert torch.is_tensor(log_prob)
+        assert torch.isfinite(log_prob).all()
+        assert log_prob.shape == time.shape
+        assert log_prob.names == time.names
+
+        assert log_prob.grad_fn is not None
+        log_prob.sum().backward()
+        assert obs.grad is not None
+        assert act.grad is not None
+        assert not nt.allclose(obs.grad, torch.zeros_like(obs.grad))
+        assert not nt.allclose(act.grad, torch.zeros_like(act.grad))
+        grads = list(p.grad for p in module.parameters())
+        assert all(list(g is not None for g in grads))
+        assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
+
 
 @pytest.fixture
 def sigma(n_tau: int, horizon: int):
