@@ -7,7 +7,7 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamicsModule
+from lqsvg.envs.lqr.modules import LinearDynamicsModule, TVLinearDynamicsModule
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import default_generator_seed
@@ -58,7 +58,7 @@ def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
 
 
 class TestLinearDynamicsModule:
-    @pytest.fixture()
+    @pytest.fixture
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int
     ) -> LinSDynamics:
@@ -125,3 +125,16 @@ class TestLinearDynamicsModule:
         logp.sum().backward()
         assert nt.allclose(last_obs.grad, torch.zeros_like(last_obs))
         assert nt.allclose(act.grad, torch.zeros_like(act))
+
+
+class TestTVLinearDynamicsModule(TestLinearDynamicsModule):
+    @pytest.fixture
+    def dynamics(
+        self, n_state: int, n_ctrl: int, horizon: int, seed: int
+    ) -> LinSDynamics:
+        linear = make_lindynamics(n_state, n_ctrl, horizon, stationary=False, rng=seed)
+        return make_linsdynamics(linear, stationary=False, rng=seed)
+
+    @pytest.fixture
+    def module(self, dynamics: LinSDynamics) -> TVLinearDynamicsModule:
+        return TVLinearDynamicsModule(dynamics)
