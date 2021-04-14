@@ -7,13 +7,9 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules import (
-    LinearDynamics,
-    StationaryLinearDynamicsModule,
-    TVLinearDynamicsModule,
-)
 from lqsvg.envs.lqr.modules.dynamics.linear import (
     CovarianceCholesky,
+    LinearDynamics,
     LinearDynamicsModule,
 )
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
@@ -142,32 +138,6 @@ class TestLinearDynamicsModule(LinearDynamicsTests):
         return LinearDynamicsModule(dynamics, stationary=stationary)
 
 
-class TestStationaryLinearDynamicsModule(LinearDynamicsTests):
-    @pytest.fixture
-    def dynamics(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int
-    ) -> LinSDynamics:
-        linear = make_lindynamics(n_state, n_ctrl, horizon, stationary=True, rng=seed)
-        return make_linsdynamics(linear, stationary=True, rng=seed)
-
-    @pytest.fixture
-    def module(self, dynamics: LinSDynamics) -> StationaryLinearDynamicsModule:
-        return StationaryLinearDynamicsModule(dynamics)
-
-
-class TestTVLinearDynamicsModule(LinearDynamicsTests):
-    @pytest.fixture
-    def dynamics(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int
-    ) -> LinSDynamics:
-        linear = make_lindynamics(n_state, n_ctrl, horizon, stationary=False, rng=seed)
-        return make_linsdynamics(linear, stationary=False, rng=seed)
-
-    @pytest.fixture
-    def module(self, dynamics: LinSDynamics) -> TVLinearDynamicsModule:
-        return TVLinearDynamicsModule(dynamics)
-
-
 @pytest.fixture
 def sigma(n_tau: int, horizon: int):
     return nt.horizon(
@@ -177,8 +147,8 @@ def sigma(n_tau: int, horizon: int):
     )
 
 
-def test_cov_cholesky_factor(sigma: Tensor):
-    module = CovarianceCholesky(sigma, stationary=False)
+def test_cov_cholesky_factor(sigma: Tensor, horizon: int):
+    module = CovarianceCholesky(sigma, horizon=horizon, stationary=False)
     untimed = module()
 
     scale_tril = nt.cholesky(sigma)

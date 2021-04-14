@@ -14,12 +14,8 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 
 from .generators import LQGGenerator
-from .modules import (
-    InitStateDynamics,
-    LQGModule,
-    QuadraticReward,
-    TVLinearDynamicsModule,
-)
+from .modules import InitStateDynamics, LQGModule, QuadraticReward
+from .modules.dynamics.linear import LinearDynamicsModule
 from .solvers import NamedLQGControl
 from .types import GaussInit, Linear, LinSDynamics, QuadCost, Quadratic
 from .utils import dims_from_dynamics, spaces_from_dims
@@ -47,7 +43,7 @@ class TorchLQGMixin:
     ):
         self.module = LQGModule(
             dims=dims_from_dynamics(dynamics),
-            trans=TVLinearDynamicsModule(dynamics),
+            trans=LinearDynamicsModule(dynamics, stationary=False),
             reward=QuadraticReward(cost),
             init=InitStateDynamics(init),
         )
