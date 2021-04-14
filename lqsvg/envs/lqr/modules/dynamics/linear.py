@@ -30,8 +30,6 @@ class CovarianceCholesky(nn.Module):
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
         self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
         self.stationary = stationary
-        # noinspection PyArgumentList
-        self._max_idx = sigma.size("H") - 1
 
     def forward(self, index: Optional[IntTensor] = None) -> Tensor:
         # pylint:disable=missing-function-docstring
@@ -41,7 +39,7 @@ class CovarianceCholesky(nn.Module):
             if self.stationary:
                 index = torch.zeros_like(index)
             else:
-                index = torch.clamp(index, max=self._max_idx)
+                index = torch.clamp(index, max=self.horizon - 1)
             # noinspection PyTypeChecker
             ltril, pre_diag = (
                 nt.index_by(x, dim="H", index=index) for x in (ltril, pre_diag)
@@ -68,8 +66,6 @@ class TVLinearNormalParams(nn.Module):
         self.scale_tril = CovarianceCholesky(W, stationary=stationary)
         self.horizon = horizon
         self.stationary = stationary
-        # noinspection PyArgumentList
-        self._max_idx = F.size("H") - 1
 
     def _transition_factors(
         self, index: Optional[IntTensor] = None
@@ -80,7 +76,7 @@ class TVLinearNormalParams(nn.Module):
                 index = torch.zeros_like(index)
             else:
                 # Timesteps after termination use last parameters
-                index = torch.clamp(index, max=self._max_idx)
+                index = torch.clamp(index, max=self.horizon - 1)
             # noinspection PyTypeChecker
             F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
         return F, f
