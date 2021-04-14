@@ -61,8 +61,25 @@ def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
     return nt.vector(torch.randn(batch_shape + (n_ctrl,))).requires_grad_()
 
 
+stationary = standard_fixture((True, False), "Stationary")
+
+
 # noinspection PyMethodMayBeStatic
-class LinearDynamicsTests:
+class TestLinearDynamicsModule:
+    @pytest.fixture
+    def dynamics(
+        self, n_state: int, n_ctrl: int, horizon: int, seed: int, stationary: bool
+    ) -> LinSDynamics:
+        # pylint:disable=too-many-arguments
+        linear = make_lindynamics(
+            n_state, n_ctrl, horizon, stationary=stationary, rng=seed
+        )
+        return make_linsdynamics(linear, stationary=stationary, rng=seed)
+
+    @pytest.fixture
+    def module(self, dynamics: LinSDynamics, stationary: bool) -> LinearDynamicsModule:
+        return LinearDynamicsModule(dynamics, stationary=stationary)
+
     def test_rsample(self, module: LinearDynamics, obs: Tensor, act: Tensor):
         params = module(obs, act)
         sample, logp = module.rsample(params)
@@ -117,25 +134,6 @@ class LinearDynamicsTests:
         logp.sum().backward()
         assert nt.allclose(last_obs.grad, torch.zeros_like(last_obs))
         assert nt.allclose(act.grad, torch.zeros_like(act))
-
-
-stationary = standard_fixture((True, False), "Stationary")
-
-
-class TestLinearDynamicsModule(LinearDynamicsTests):
-    @pytest.fixture
-    def dynamics(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int, stationary: bool
-    ) -> LinSDynamics:
-        # pylint:disable=too-many-arguments
-        linear = make_lindynamics(
-            n_state, n_ctrl, horizon, stationary=stationary, rng=seed
-        )
-        return make_linsdynamics(linear, stationary=stationary, rng=seed)
-
-    @pytest.fixture
-    def module(self, dynamics: LinSDynamics, stationary: bool) -> LinearDynamicsModule:
-        return LinearDynamicsModule(dynamics, stationary=stationary)
 
 
 @pytest.fixture
