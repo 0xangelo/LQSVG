@@ -17,6 +17,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/lqsvg/envs/lqr/modules/dynamics/linear.py">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tests/lqsvg/envs/lqr/utils.py">
           <value>
             <Attribute>
