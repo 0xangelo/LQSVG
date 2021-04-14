@@ -44,3 +44,19 @@ def test_terminal_call(module: TVLinearPolicy, last_obs: Tensor, n_ctrl: int):
     grads = [p.grad for p in module.parameters()]
     assert all(list(g is not None for g in grads))
     assert all(list(torch.allclose(g, torch.zeros_like(g)) for g in grads))
+
+
+def test_mixed_call(module: TVLinearPolicy, mix_obs: Tensor, n_ctrl: int):
+    act = module(mix_obs)
+
+    assert torch.is_tensor(act)
+    assert torch.isfinite(act).all()
+    assert act.names == mix_obs.names
+    assert act.size("R") == n_ctrl
+
+    act.sum().backward()
+    assert mix_obs.grad is not None
+    assert torch.isfinite(mix_obs.grad).all()
+    grads = [p.grad for p in module.parameters()]
+    assert all(list(g is not None for g in grads))
+    assert all(list(torch.isfinite(g).all() for g in grads))
