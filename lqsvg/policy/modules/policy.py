@@ -27,15 +27,20 @@ __all__ = ["TVLinearFeedback", "TVLinearPolicy"]
 
 class TVLinearFeedback(nn.Module):
     # pylint:disable=missing-docstring,invalid-name
+    horizon: int
+
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         super().__init__()
         K = torch.randn(horizon, n_ctrl, n_state)
         k = torch.randn(horizon, n_ctrl)
         self.K, self.k = (nn.Parameter(x) for x in (K, k))
+        self.horizon = horizon
 
     def _gains_at(self, index: Union[IntTensor, LongTensor]) -> tuple[Tensor, Tensor]:
         K = nt.horizon(nt.matrix(self.K))
         k = nt.horizon(nt.vector(self.k))
+        index = torch.clamp(index, max=self.horizon - 1)
+        # noinspection PyTypeChecker
         K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
         return K, k
 
