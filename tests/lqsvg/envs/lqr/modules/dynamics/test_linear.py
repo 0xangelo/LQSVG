@@ -12,9 +12,10 @@ from lqsvg.envs.lqr.modules import (
     LinearDynamicsModule,
     TVLinearDynamicsModule,
 )
+from lqsvg.envs.lqr.modules.dynamics.linear import CovCholeskyFactor
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import default_generator_seed
+from lqsvg.torch.utils import default_generator_seed, make_spd_matrix
 
 batch_shape = standard_fixture([(), (1,), (4,), (2, 2)], "BatchShape")
 
@@ -143,3 +144,21 @@ class TestTVLinearDynamicsModule(LinearDynamicsTests):
     @pytest.fixture
     def module(self, dynamics: LinSDynamics) -> TVLinearDynamicsModule:
         return TVLinearDynamicsModule(dynamics)
+
+
+@pytest.fixture
+def sigma(n_tau: int, horizon: int):
+    return nt.horizon(
+        nt.matrix(
+            make_spd_matrix(n_dim=n_tau, sample_shape=(horizon,), dtype=torch.float32)
+        )
+    )
+
+
+def test_cov_cholesky_factor(sigma: Tensor, horizon: int):
+    module = CovCholeskyFactor(sigma, horizon)
+    untimed = module()
+
+    scale_tril = nt.cholesky(sigma)
+    assert nt.allclose(scale_tril, untimed)
+    assert scale_tril.names == untimed.names
