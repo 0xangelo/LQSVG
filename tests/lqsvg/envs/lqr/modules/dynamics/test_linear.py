@@ -120,7 +120,7 @@ class LinearDynamicsTests:
         assert nt.allclose(act.grad, torch.zeros_like(act))
 
 
-class TestLinearDynamicsModule(LinearDynamicsTests):
+class TestStationaryLinearDynamicsModule(LinearDynamicsTests):
     @pytest.fixture
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int
