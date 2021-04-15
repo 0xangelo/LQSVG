@@ -61,7 +61,7 @@ class LinearNormalParams(nn.Module):
     def __init__(self, dynamics: lqr.LinSDynamics, horizon: int, stationary: bool):
         super().__init__()
 
-        F, f, W = dynamics
+        F, f, W = (x.clone() for x in dynamics)
         self.F = nn.Parameter(nt.unnamed(F))
         self.f = nn.Parameter(nt.unnamed(f))
         self.scale_tril = CovarianceCholesky(W, horizon=horizon, stationary=stationary)
