@@ -31,6 +31,16 @@ class TestQuadVValue:
         c = random_normal_vector(size=1, horizon=horizon + 1, rng=seed).squeeze("R")
         return V, v, c
 
+    def test_detach_params(self, params: Quadratic, obs: Tensor):
+        for par in params:
+            par.requires_grad_(True)
+
+        module = QuadVValue(params)
+        val = module(obs)
+        val.sum().backward()
+        for par in params:
+            assert par.grad is None
+
     def check_val_backprop(self, vvalue: QuadVValue, obs: Tensor):
         assert obs.grad is None
 
@@ -89,6 +99,16 @@ class TestQuadQValue:
         q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
         c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
         return Q, q, c
+
+    def test_detach_params(self, params: Quadratic, obs: Tensor, act: Tensor):
+        for par in params:
+            par.requires_grad_(True)
+
+        module = QuadQValue(params)
+        val = module(obs, act)
+        val.sum().backward()
+        for par in params:
+            assert par.grad is None
 
     def test_call(
         self,
