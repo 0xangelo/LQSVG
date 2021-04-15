@@ -76,6 +76,16 @@ class TestLinearDynamicsModule:
         )
         return make_linsdynamics(linear, stationary=stationary, rng=seed)
 
+    def test_detach_dynamics(self, dynamics: LinSDynamics, stationary: bool):
+        before = tuple(x.clone() for x in dynamics)
+
+        module = LinearDynamicsModule(dynamics, stationary=stationary)
+        for par in module.parameters():
+            par.data.sub_(1.0)
+
+        for bef, aft in zip(before, dynamics):
+            assert nt.allclose(bef, aft)
+
     @pytest.fixture
     def module(self, dynamics: LinSDynamics, stationary: bool) -> LinearDynamicsModule:
         return LinearDynamicsModule(dynamics, stationary=stationary)
