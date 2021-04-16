@@ -24,6 +24,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/lqsvg/policy/modules/policy.py">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/tests/lqsvg/envs/lqr/utils.py">
           <value>
             <Attribute>
