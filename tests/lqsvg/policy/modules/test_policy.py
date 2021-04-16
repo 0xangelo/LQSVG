@@ -1,56 +1,13 @@
 # pylint:disable=invalid-name
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.utils import stationary_dynamics_factors
 from lqsvg.policy.modules import TVLinearFeedback, TVLinearPolicy
-from lqsvg.policy.modules.policy import stabilizing_gain
-
-
-class TestStabilizingGain:
-    @pytest.fixture(params=(2 ** i for i in range(1, 5)))
-    def n_state(self, request) -> int:
-        return request.param
-
-    @pytest.fixture(params=(2 ** i for i in range(1, 5)))
-    def n_ctrl(self, request) -> int:
-        return request.param
-
-    @pytest.fixture
-    def dynamics(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int
-    ) -> lqr.LinSDynamics:
-        dyn = make_lindynamics(
-            n_state,
-            n_ctrl,
-            horizon,
-            stationary=True,
-            passive_eigval_range=(0.5, 1.5),
-            controllable=True,
-            bias=False,
-            rng=seed,
-        )
-        return make_linsdynamics(dyn, stationary=True, rng=seed)
-
-    # noinspection PyArgumentList
-    def test(self, dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
-        gain = stabilizing_gain(dynamics)
-        assert torch.is_tensor(gain)
-        assert torch.isfinite(gain).all()
-        assert gain.size("R") == n_ctrl
-        assert gain.size("C") == n_state
-
-        A, B = (x.numpy() for x in stationary_dynamics_factors(dynamics))
-        K = gain.numpy()
-        eigval, _ = np.linalg.eig(A + B @ K)
-        assert np.all(np.abs(eigval) < 1.0)
 
 
 class TestTVLinearFeedBack:
@@ -72,7 +29,7 @@ class TestTVLinearFeedBack:
 
     def test_detach_linear(self, module: TVLinearFeedback, linear: lqr.Linear):
         before = tuple(x.clone() for x in linear)
-        module.copy(linear)
+        module.copy_(linear)
         for par in module.parameters():
             par.data.add_(1.0)
 

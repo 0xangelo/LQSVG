@@ -198,7 +198,7 @@ def main():
         ),
         "policy": {
             "module": {
-                "policy_initializer": {"min_abs_eigv": 0.0, "max_abs_eigv": 1.0},
+                "policy_initializer": "stabilize_sys",
                 "model_initializer": "xavier_uniform",
                 "stationary_model": True,
                 "residual_model": True,
