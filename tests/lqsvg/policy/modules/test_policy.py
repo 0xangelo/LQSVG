@@ -1,12 +1,46 @@
+# pylint:disable=invalid-name
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
+from lqsvg.envs.lqr.utils import stationary_dynamics_factors
 from lqsvg.policy.modules import TVLinearFeedback, TVLinearPolicy
+from lqsvg.policy.modules.policy import stabilizing_gain
+
+
+@pytest.fixture
+def dynamics(n_state: int, n_ctrl: int, horizon: int, seed: int) -> lqr.LinSDynamics:
+    dyn = make_lindynamics(
+        n_state,
+        n_ctrl,
+        horizon,
+        stationary=True,
+        passive_eigval_range=(0.5, 1.5),
+        controllable=True,
+        bias=False,
+        rng=seed,
+    )
+    return make_linsdynamics(dyn, stationary=True, rng=seed)
+
+
+# noinspection PyArgumentList
+def test_stabilizing_gain(dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
+    gain = stabilizing_gain(dynamics)
+    assert torch.is_tensor(gain)
+    assert torch.isfinite(gain).all()
+    assert gain.size("R") == n_ctrl
+    assert gain.size("C") == n_state
+
+    A, B = (x.numpy() for x in stationary_dynamics_factors(dynamics))
+    K = gain.numpy()
+    eigval, _ = np.linalg.eig(A + B @ K)
+    assert np.all(np.abs(eigval) < 1.0)
 
 
 class TestTVLinearPolicy:
@@ -64,7 +98,6 @@ class TestTVLinearPolicy:
 
 
 class TestTVLinearFeedBack:
-    # pylint:disable=invalid-name
     @pytest.fixture
     def module(self, n_state: int, n_ctrl: int, horizon: int) -> TVLinearFeedback:
         return TVLinearFeedback(n_state, n_ctrl, horizon)
