@@ -1,6 +1,7 @@
 """NN module policies."""
 from __future__ import annotations
 
+import math
 import warnings
 from typing import Union
 
@@ -26,25 +27,53 @@ __all__ = ["TVLinearFeedback", "TVLinearPolicy"]
 
 
 class TVLinearFeedback(nn.Module):
-    # pylint:disable=missing-docstring,invalid-name
+    """Non-stationary linear policy as a NN module.
+
+    This module uses the same initialization for its parameters as `nn.Linear`.
+
+    Args:
+        n_state: size of the state vector
+        n_ctrl: size of the control (action) vector
+        horizon: time horizon
+    """
+
+    # pylint:disable=invalid-name
+    n_state: int
+    n_ctrl: int
     horizon: int
+    K: nn.Parameter
+    k: nn.Parameter
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
         super().__init__()
-        K = torch.randn(horizon, n_ctrl, n_state)
-        k = torch.randn(horizon, n_ctrl)
-        self.K, self.k = (nn.Parameter(x) for x in (K, k))
+        self.n_state = n_state
+        self.n_ctrl = n_ctrl
         self.horizon = horizon
+        self.K = nn.Parameter(torch.Tensor(horizon, n_ctrl, n_state))
+        self.k = nn.Parameter(torch.Tensor(horizon, n_ctrl))
+        self.reset_parameters()
 
-    def _gains_at(self, index: Union[IntTensor, LongTensor]) -> tuple[Tensor, Tensor]:
+    def reset_parameters(self):
+        """Standard parameter initialization"""
+        nn.init.kaiming_uniform_(self.K, a=math.sqrt(5))
+        fan_in = self.n_ctrl
+        bound = 1 / math.sqrt(fan_in)
+        nn.init.uniform_(self.k, -bound, bound)
+
+    def _gains_at(
+        self, index: Union[IntTensor, LongTensor, None] = None
+    ) -> tuple[Tensor, Tensor]:
         K = nt.horizon(nt.matrix(self.K))
         k = nt.horizon(nt.vector(self.k))
-        index = torch.clamp(index, max=self.horizon - 1)
-        # noinspection PyTypeChecker
-        K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
+        if index is not None:
+            index = torch.clamp(index, max=self.horizon - 1)
+            # Assumes index is a named scalar tensor
+            # noinspection PyTypeChecker
+            K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
         return K, k
 
     def forward(self, obs: Tensor) -> Tensor:
+        """Compute the action vector for the observed state."""
         obs = nt.vector(obs)
         state, time = unpack_obs(obs)
 
@@ -59,21 +88,22 @@ class TVLinearFeedback(nn.Module):
 
     @classmethod
     def from_existing(cls, policy: lqr.Linear):
+        """Create linear feedback from linear parameters."""
         n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
         new = cls(n_state, n_ctrl, horizon)
         new.copy(policy)
         return new
 
     def copy(self, policy: lqr.Linear):
-        K, k = lqr.named.refine_linear_input(policy)
+        """Set current parameters to given linear parameters."""
+        K, k = policy
         self.K.data.copy_(K)
-        self.k.data.copy_(nt.matrix_to_vector(k))
+        self.k.data.copy_(k)
 
-    def gains(self, named: bool = True) -> lqr.Linear:
-        K, k = self.K, self.k
-        if named:
-            K = nt.horizon(nt.matrix(K))
-            k = nt.horizon(nt.vector(k))
+    def gains(self) -> lqr.Linear:
+        """Return current parameters as linear parameters."""
+        K = nt.horizon(nt.matrix(self.K))
+        k = nt.horizon(nt.vector(self.k))
         K.grad, k.grad = self.K.grad, self.k.grad
         return K, k
 
@@ -162,5 +192,5 @@ class TVLinearPolicy(DeterministicPolicy):
         self.action_linear.copy((K, k))
 
     def standard_form(self) -> lqr.Linear:
-        # pylint:disable=missing-function-docstring
+        """Return self as linear function parameters."""
         return self.action_linear.gains()
