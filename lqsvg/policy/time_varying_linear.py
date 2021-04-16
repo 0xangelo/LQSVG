@@ -125,8 +125,8 @@ class TimeVaryingLinear(nn.Module):
     help="""\
     How to initialize the policy's parameters. One of:
     - 'xavier_uniform'
-    - 'from_optimal'
-    - dictionary with 'min_abs_eigv' and 'max_abs_eigv' keys
+    - 'noisy_optimal'
+    - 'stabilize_sys'
     """,
 )
 @option(
@@ -170,15 +170,11 @@ class LQGPolicy(TorchPolicy):
 
     def setup(self, env: TorchLQGMixin):
         policy_init = self.config["module"]["policy_initializer"]
-        if policy_init == "from_optimal":
+        if policy_init == "noisy_optimal":
             optimal: lqr.Linear = env.solution[0]
-            self.module.actor.initialize_from_optimal(optimal)
-        elif isinstance(policy_init, dict):
-            self.module.actor.initialize_to_stabilize(
-                env.dynamics,
-                abs_low=policy_init["min_abs_eigv"],
-                abs_high=policy_init["max_abs_eigv"],
-            )
+            self.module.actor.noisy_(optimal)
+        elif policy_init == "stabilize_sys":
+            self.module.actor.stabilize_(env.dynamics)
 
         self.module.model.reward.copy(env.cost)
 

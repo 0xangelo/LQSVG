@@ -2,26 +2,17 @@
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Union
 
-import numpy as np
 import torch
 from raylab.policy.modules.actor import DeterministicPolicy
-from scipy.signal import place_poles
 from torch import IntTensor, LongTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.utils import (
-    dynamics_factors,
-    isstationary,
-    sample_eigvals,
-    stationary_dynamics_factors,
-    unpack_obs,
-)
+from lqsvg.envs.lqr.utils import unpack_obs
 
-from .utils import perturb_policy
+from .utils import perturb_policy, stabilizing_policy
 
 __all__ = ["TVLinearFeedback", "TVLinearPolicy"]
 
@@ -91,10 +82,10 @@ class TVLinearFeedback(nn.Module):
         """Create linear feedback from linear parameters."""
         n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
         new = cls(n_state, n_ctrl, horizon)
-        new.copy(policy)
+        new.copy_(policy)
         return new
 
-    def copy(self, policy: lqr.Linear):
+    def copy_(self, policy: lqr.Linear):
         """Set current parameters to given linear parameters."""
         K, k = policy
         self.K.data.copy_(K)
@@ -108,68 +99,37 @@ class TVLinearFeedback(nn.Module):
         return K, k
 
 
-def place_dynamics_poles(
-    A: np.ndarray, B: np.ndarray, abs_low: float = 0.0, abs_high: float = 1.0
-):
-    """Compute a solution that re-scales the eigenvalues of linear dynamics."""
-    # pylint:disable=invalid-name
-    poles = sample_eigvals(A.shape[-1], abs_low, abs_high, size=(), rng=None)
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            "Convergence was not reached after maxiter iterations.*",
-            UserWarning,
-            module="scipy.signal",
-        )
-        return place_poles(A, B, poles, maxiter=100)
-
-
-def stabilizing_gain(
-    dynamics: lqr.LinSDynamics, abs_low: float = 0.0, abs_high: float = 1.0
-) -> Tensor:
-    """Compute gain that stabilizes a linear dynamical system."""
-    # pylint:disable=invalid-name
-    F_s, F_a = stationary_dynamics_factors(dynamics)
-    A, B = F_s.numpy(), F_a.numpy()
-    result = place_dynamics_poles(A, B, abs_low=abs_low, abs_high=abs_high)
-    minus_K = result.gain_matrix
-    K = torch.as_tensor(-minus_K).to(F_a).refine_names(*F_a.names)
-    return K
-
-
 class TVLinearPolicy(DeterministicPolicy):
     """Time-varying affine feedback policy as a DeterministicPolicy module."""
 
     # pylint:disable=invalid-name
+    action_linear: TVLinearFeedback
     K: nn.Parameter
     k: nn.Parameter
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        action_linear = TVLinearFeedback(n_state, n_ctrl, horizon)
         super().__init__(
-            encoder=nn.Identity(), action_linear=action_linear, squashing=nn.Identity()
+            encoder=nn.Identity(),
+            action_linear=TVLinearFeedback(n_state, n_ctrl, horizon),
+            squashing=nn.Identity(),
         )
         self.K = self.action_linear.K
         self.k = self.action_linear.k
 
-    def initialize_from_optimal(self, optimal: lqr.Linear):
-        # pylint:disable=missing-function-docstring
-        policy = perturb_policy(optimal)
-        self.action_linear.copy(policy)
+    def noisy_(self, policy: lqr.Linear):
+        """Initialize self from given linear policy plus white noise."""
+        self.action_linear.copy_(perturb_policy(policy))
 
     @torch.no_grad()
-    def initialize_to_stabilize(
-        self, dynamics: lqr.LinSDynamics, abs_low: float, abs_high: float
-    ):
-        """Initilize gain matrix to make the closed-loop system stable.
+    def stabilize_(self, dynamics: lqr.LinSDynamics):
+        """Initialize self to make the closed-loop system stable.
 
-        Computes a gain matrix that places the eigenvalues of the system in
+        Computes a dynamic gain (matrix) that places the eigenvalues of the system in
         a stable range, i.e., with magnitude less that 1.
+        Initializes the static gain (vector) as zeros.
 
         Args:
             dynamics: the linear dynamical system
-            abs_low: minimum absolute eigenvalue of the resulting system
-            abs_high: maximum absolute eigenvalue of the resulting system
 
         Warning:
             This is only defined for stationary systems
@@ -177,19 +137,7 @@ class TVLinearPolicy(DeterministicPolicy):
         Raises:
             AssertionError: if the dynamics are non-stationary
         """
-        # pylint:disable=invalid-name
-        assert isstationary(dynamics)
-
-        K = stabilizing_gain(dynamics, abs_low=abs_low, abs_high=abs_high)
-
-        _, F_a = dynamics_factors(dynamics)
-        K = K.expand_as(nt.transpose(F_a)).refine_names(*F_a.names)
-        # k must be a column vector the size of control vectors, which are
-        # multiplied by the rows of B (F_a)
-        # noinspection PyTypeChecker
-        k = torch.zeros_like(F_a.select("R", 0)).rename(C="R")
-
-        self.action_linear.copy((K, k))
+        self.action_linear.copy_(stabilizing_policy(dynamics))
 
     def standard_form(self) -> lqr.Linear:
         """Return self as linear function parameters."""

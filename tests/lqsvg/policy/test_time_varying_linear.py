@@ -64,24 +64,12 @@ def env(env_config: dict) -> TorchLQGMixin:
 
 
 def test_inits_stabilizing_policy(mocker, env: TorchLQGMixin):
-    placer = mocker.spy(TVLinearPolicy, "initialize_to_stabilize")
+    placer = mocker.spy(TVLinearPolicy, "stabilize_")
 
-    abs_low, abs_high = 0.2, 0.5
     policy = LQGPolicy(
         env.observation_space,
         env.action_space,
-        config={
-            "policy": {
-                "module": {
-                    "policy_initializer": {
-                        "min_abs_eigv": abs_low,
-                        "max_abs_eigv": abs_high,
-                    }
-                }
-            }
-        },
+        config={"policy": {"module": {"policy_initializer": "stabilize_sys"}}},
     )
     policy.setup(env)
     assert placer.called
-    assert placer.call_args.kwargs["abs_low"] == abs_low
-    assert placer.call_args.kwargs["abs_high"] == abs_high
