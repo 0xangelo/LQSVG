@@ -28,10 +28,11 @@ def dims(n_state: int, n_ctrl: int, horizon: int) -> tuple[int, int, int]:
 
 
 @pytest.fixture
-def policy(n_state: int, n_ctrl: int, horizon: int) -> DeterministicPolicy:
+def policy(n_state: int, n_ctrl: int, horizon: int) -> TVLinearPolicy:
     return TVLinearPolicy(n_state, n_ctrl, horizon)
 
 
+# noinspection PyUnresolvedReferences
 @pytest.fixture(
     params=(ResidualModel, LayerNormModel, BatchNormModel, StochasticModelWrapper)
 )
@@ -44,6 +45,7 @@ def wrapper(request, n_state: int) -> callable[[StochasticModel], StochasticMode
     return cls
 
 
+# noinspection PyUnresolvedReferences
 @pytest.fixture
 def trans(
     n_state: int,
@@ -62,22 +64,42 @@ def reward(n_state: int, n_ctrl: int, horizon: int) -> QuadRewardModel:
     return QuadRewardModel(n_state, n_ctrl, horizon)
 
 
-@pytest.fixture
-def init(n_state: int) -> InitStateModel:
-    return InitStateModel(n_state)
+class TestMonteCarloSVG:
+    @pytest.fixture
+    def init(self, n_state: int) -> InitStateModel:
+        return InitStateModel(n_state)
 
+    @pytest.fixture
+    def model(
+        self,
+        dims: tuple[int, int, int],
+        trans: StochasticModel,
+        reward: QuadRewardModel,
+        init: InitStateModel,
+    ) -> EnvModule:
+        return EnvModule(dims, trans, reward, init)
 
-@pytest.fixture
-def model(
-    dims: tuple[int, int, int],
-    trans: StochasticModel,
-    reward: QuadRewardModel,
-    init: InitStateModel,
-) -> EnvModule:
-    return EnvModule(dims, trans, reward, init)
+    @pytest.fixture
+    def module(self, policy: DeterministicPolicy, model: EnvModule) -> MonteCarloSVG:
+        return MonteCarloSVG(policy, model)
 
+    @pytest.fixture(params=(1, 2, 4), ids=lambda x: f"Samples:{x}")
+    def samples(self, request) -> int:
+        return request.param
 
-def test_monte_carlo_svg(policy: DeterministicPolicy, model: EnvModule):
-    estimator = MonteCarloSVG(policy, model)
-    value = estimator.value(1)
-    assert torch.is_tensor(value)
+    def test_value(self, module: MonteCarloSVG, samples: int):
+        val = module.value(samples)
+        assert torch.is_tensor(val)
+        assert torch.isfinite(val).all()
+        assert val.shape == ()
+
+    def test_call(self, module: MonteCarloSVG, samples: int):
+        val, svg = module(samples=samples)
+
+        assert torch.is_tensor(val)
+        assert torch.isfinite(val).all()
+        assert val.shape == ()
+
+        K, k = svg
+        assert torch.is_tensor(K) and torch.is_tensor(k)
+        assert torch.isfinite(K).all() and torch.isfinite(k).all()
