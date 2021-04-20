@@ -10,7 +10,12 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 
-from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
+from .common import (
+    TVMultivariateNormal,
+    assemble_scale_tril,
+    disassemble_covariance,
+    softplusinv,
+)
 
 
 class InitStateDynamics(ptd.Distribution):
@@ -19,21 +24,55 @@ class InitStateDynamics(ptd.Distribution):
     All outputs are named Tensors.
 
     Args:
-        init: pair of named tensors containing the location of
-            the distribution and the (possibly non-diagonal)
-            covariance matrix of the distribution.
+        n_state: size of the state vector
     """
 
-    # pylint:disable=missing-class-docstring
-    def __init__(self, init: lqr.GaussInit):
+    n_state: int
+
+    def __init__(self, n_state: int):
         super().__init__()
-        loc, sigma = init
+        self.n_state = n_state
         self.dist = TVMultivariateNormal()
-        self.loc = nn.Parameter(nt.unnamed(loc))
+
+        self.loc = nn.Parameter(Tensor(n_state))
+        self.ltril = nn.Parameter(Tensor(n_state, n_state))
+        self.pre_diag = nn.Parameter(Tensor(n_state))
+        self.register_buffer("time", -nt.vector(torch.ones(1, dtype=torch.int)))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Default parameter initialization.
+
+        Initializes model as a standard Gaussian distribution.
+        """
+        nn.init.constant_(self.loc, 0)
+        nn.init.constant_(self.ltril, 0)
+        nn.init.constant_(self.pre_diag, softplusinv(torch.ones([])).item())
+
+    @classmethod
+    def from_existing(cls, init: lqr.GaussInit):
+        """Create init state dynamics from existing Gaussian distribution."""
+        loc, _ = init
+        n_state = loc.size("R")
+        return cls(n_state).copy_(init)
+
+    def copy_(self, init: lqr.GaussInit) -> "InitStateDynamics":
+        """Update parameters to existing Gaussian initial state distribution.
+
+        Args:
+            init: pair of named tensors containing the location of
+                the distribution and the (possibly non-diagonal)
+                covariance matrix of the distribution.
+
+        Returns:
+            self
+        """
+        loc, sigma = init
         ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma))
-        self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
-        unit_vector = next(iter(nt.split(loc, 1, "R")))
-        self.register_buffer("time", -torch.ones_like(unit_vector, dtype=torch.int))
+        self.loc.data.copy_(loc)
+        self.ltril.data.copy_(ltril)
+        self.pre_diag.data.copy_(pre_diag)
+        return self
 
     def scale_tril(self) -> Tensor:
         # pylint:disable=missing-function-docstring

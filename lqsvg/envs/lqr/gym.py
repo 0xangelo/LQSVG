@@ -45,7 +45,7 @@ class TorchLQGMixin:
             dims=dims_from_dynamics(dynamics),
             trans=LinearDynamicsModule(dynamics, stationary=False),
             reward=QuadraticReward(cost),
-            init=InitStateDynamics(init),
+            init=InitStateDynamics.from_existing(init),
         )
         # Ensure optimizers don't update the MDP
         self.module.requires_grad_(False)

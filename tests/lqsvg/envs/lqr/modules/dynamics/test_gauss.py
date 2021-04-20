@@ -22,14 +22,12 @@ def init(dim: int) -> lqr.GaussInit:
 
 
 @pytest.fixture
-def module_fn() -> callable[[lqr.GaussInit], InitStateDynamics]:
+def module_fn() -> callable[[int], InitStateDynamics]:
     return InitStateDynamics
 
 
-def test_init(
-    module_fn: callable[[lqr.GaussInit], InitStateDynamics], init: lqr.GaussInit
-):
-    module = module_fn(init)
+def test_init(module_fn: callable[[int], InitStateDynamics], dim: int):
+    module = module_fn(dim)
     params = list(module.parameters())
 
     assert len(params) == 3
@@ -43,9 +41,9 @@ def test_init(
 
 @pytest.fixture
 def module(
-    module_fn: callable[[lqr.GaussInit], InitStateDynamics], init: lqr.GaussInit
+    module_fn: callable[[int], InitStateDynamics], dim: int
 ) -> InitStateDynamics:
-    return module_fn(init)
+    return module_fn(dim)
 
 
 @pytest.fixture
@@ -91,3 +89,8 @@ def test_standard_form(module: InitStateDynamics):
     assert not torch.allclose(module.ltril.grad, torch.zeros([]))
     assert torch.isfinite(module.pre_diag.grad).all()
     assert not torch.allclose(module.pre_diag.grad, torch.zeros([]))
+
+
+def test_from_existing(init: lqr.GaussInit):
+    module = InitStateDynamics.from_existing(init)
+    assert all(nt.allclose(a, b) for a, b in zip(init, module.standard_form()))

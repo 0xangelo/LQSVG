@@ -14,5 +14,6 @@ class InitStateModel(InitStateDynamics):
     """Gaussian initial state distribution model."""
 
     def __init__(self, n_state: int, seed: Optional[int] = None):
+        super().__init__(n_state)
         init = make_gaussinit(n_state, sample_covariance=True, rng=seed)
-        super().__init__(init)
+        self.copy_(init)
