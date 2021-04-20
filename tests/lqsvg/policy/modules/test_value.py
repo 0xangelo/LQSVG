@@ -80,7 +80,7 @@ class TestQuadVValue:
         c = random_normal_vector(size=1, horizon=horizon + 1, rng=seed).squeeze("R")
         return V, v, c
 
-    def test_update(self, params: Quadratic, other_params: Quadratic):
+    def test_copy_(self, params: Quadratic, other_params: Quadratic):
         vvalue = QuadVValue(params)
         before = [p.clone() for p in vvalue.parameters()]
         vvalue.copy_(other_params)
@@ -169,7 +169,7 @@ class TestQuadQValue:
         c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
         return Q, q, c
 
-    def test_update(self, params: Quadratic, other_params: Quadratic):
+    def test_copy_(self, params: Quadratic, other_params: Quadratic):
         qvalue = QuadQValue(params)
         before = [p.clone() for p in qvalue.parameters()]
         qvalue.copy_(other_params)
