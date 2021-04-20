@@ -90,6 +90,14 @@ class TestQuadVValue:
         allclose_inputs = [nt.allclose(a, b) for a, b in zip(params, other_params)]
         assert all(allclose_parameters) == all(allclose_inputs)
 
+    def test_standard_form(self, params: Quadratic):
+        vvalue = QuadVValue(params)
+        V, v, c = vvalue.standard_form()
+
+        (V.sum() + v.sum() + c.sum()).backward()
+        for p in vvalue.parameters():
+            assert torch.allclose(torch.ones_like(p), p.grad)
+
 
 class TestQuadQValue:
     @pytest.fixture()
@@ -170,3 +178,11 @@ class TestQuadQValue:
         allclose_parameters = [torch.allclose(b, a) for b, a in zip(before, after)]
         allclose_inputs = [nt.allclose(a, b) for a, b in zip(params, other_params)]
         assert all(allclose_parameters) == all(allclose_inputs)
+
+    def test_standard_form(self, params: Quadratic):
+        qvalue = QuadQValue(params)
+        Q, q, c = qvalue.standard_form()
+
+        (Q.sum() + q.sum() + c.sum()).backward()
+        for p in qvalue.parameters():
+            assert torch.allclose(torch.ones_like(p), p.grad)

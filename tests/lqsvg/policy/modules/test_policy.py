@@ -118,3 +118,10 @@ class TestTVLinearPolicy:
         grads = [p.grad for p in module.parameters()]
         assert all(list(g is not None for g in grads))
         assert all(list(torch.isfinite(g).all() for g in grads))
+
+    def test_standard_form(self, module: TVLinearPolicy):
+        K, k = module.standard_form()
+
+        (K.sum() + k.sum()).backward()
+        assert torch.allclose(module.K.grad, torch.ones_like(module.K.grad))
+        assert torch.allclose(module.k.grad, torch.ones_like(module.k.grad))

@@ -168,6 +168,15 @@ class TestLinearDynamicsModule:
         assert all(list(g is not None for g in grads))
         assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
 
+    def test_standard_form(self, module: LinearDynamics):
+        F, f, Sigma = module.standard_form()
+        (F.sum() + f.sum() + Sigma.sum()).backward()
+
+        assert torch.allclose(module.F.grad, torch.ones([]))
+        assert torch.allclose(module.f.grad, torch.ones([]))
+        assert not torch.allclose(module.params.scale_tril.pre_diag, torch.zeros([]))
+        assert not torch.allclose(module.params.scale_tril.ltril, torch.zeros([]))
+
 
 @pytest.fixture
 def sigma(n_tau: int, horizon: int):

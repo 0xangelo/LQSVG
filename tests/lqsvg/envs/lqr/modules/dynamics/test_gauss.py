@@ -80,3 +80,14 @@ def test_log_prob(
     new = (module.loc, module.ltril, module.pre_diag)
     equals = [torch.allclose(x, y) for x, y in zip(old, new)]
     assert not any(equals)
+
+
+def test_standard_form(module: InitStateDynamics):
+    mu, sigma = module.standard_form()
+    (mu.sum() + sigma.sum()).backward()
+
+    assert torch.allclose(torch.ones_like(module.loc), module.loc.grad)
+    assert torch.isfinite(module.ltril.grad).all()
+    assert not torch.allclose(module.ltril.grad, torch.zeros([]))
+    assert torch.isfinite(module.pre_diag.grad).all()
+    assert not torch.allclose(module.pre_diag.grad, torch.zeros([]))
