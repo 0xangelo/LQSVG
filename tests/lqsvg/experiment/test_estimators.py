@@ -6,10 +6,15 @@ from functools import partial
 import pytest
 import torch
 from raylab.policy.modules.actor import DeterministicPolicy
+from raylab.policy.modules.critic import QValue
 from raylab.policy.modules.model import StochasticModel
+from torch import Tensor
 
+import lqsvg.torch.named as nt
+from lqsvg.envs.lqr import Quadratic
 from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.experiment.estimators import MonteCarloSVG
+from lqsvg.envs.lqr.utils import pack_obs, random_normal_vector, random_spd_matrix
+from lqsvg.experiment.estimators import BootstrappedSVG, MonteCarloSVG
 from lqsvg.policy.modules import (
     BatchNormModel,
     InitStateModel,
@@ -20,6 +25,7 @@ from lqsvg.policy.modules import (
     StochasticModelWrapper,
     TVLinearPolicy,
 )
+from lqsvg.policy.modules.value import QuadQValue
 
 
 @pytest.fixture
@@ -95,6 +101,58 @@ class TestMonteCarloSVG:
 
     def test_call(self, module: MonteCarloSVG, samples: int):
         val, svg = module(samples=samples)
+
+        assert torch.is_tensor(val)
+        assert torch.isfinite(val).all()
+        assert val.shape == ()
+
+        K, k = svg
+        assert torch.is_tensor(K) and torch.is_tensor(k)
+        assert torch.isfinite(K).all() and torch.isfinite(k).all()
+
+
+class TestBootstrappedSVG:
+    @pytest.fixture()
+    def quadratic(
+        self, n_state: int, n_ctrl: int, horizon: int, seed: int
+    ) -> Quadratic:
+        n_tau = n_state + n_ctrl
+        Q = random_spd_matrix(size=n_tau, horizon=horizon, rng=seed)
+        q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
+        c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
+        return Q, q, c
+
+    @pytest.fixture
+    def qvalue(self, quadratic: Quadratic) -> QValue:
+        return QuadQValue(quadratic)
+
+    @pytest.fixture
+    def module(
+        self,
+        policy: DeterministicPolicy,
+        trans: StochasticModel,
+        reward: QuadRewardModel,
+        qvalue: QValue,
+    ) -> BootstrappedSVG:
+        return BootstrappedSVG(policy, trans, reward, qvalue)
+
+    @pytest.fixture(params=(1, 4), ids=lambda x: f"NBatch{x}")
+    def n_batch(self, request) -> int:
+        return request.param
+
+    @pytest.fixture
+    def obs(self, n_state: int, horizon: int, n_batch: int) -> Tensor:
+        state = torch.randn(n_batch, n_state)
+        time = torch.randint(low=0, high=horizon, size=(n_batch, 1))
+        # noinspection PyTypeChecker
+        return pack_obs(nt.horizon(nt.vector(state)), nt.horizon(nt.vector(time)))
+
+    @pytest.fixture(params=(0, 1, 4), ids=lambda x: f"NStep:{x}")
+    def n_step(self, request) -> int:
+        return request.param
+
+    def test_call(self, module: BootstrappedSVG, obs: Tensor, n_step: int):
+        val, svg = module(obs, n_step)
 
         assert torch.is_tensor(val)
         assert torch.isfinite(val).all()

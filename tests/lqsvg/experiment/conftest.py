@@ -18,4 +18,9 @@ def horizon() -> int:
     return 20
 
 
+@pytest.fixture
+def seed() -> int:
+    return 123
+
+
 stationary = standard_fixture((True, False), "Stationary")
