@@ -137,6 +137,19 @@ class TestQuadQValue:
         assert act.grad is not None
         assert not nt.allclose(act.grad, torch.zeros_like(act))
 
+    def test_terminal_value(self, params: Quadratic, last_obs: Tensor, act: Tensor):
+        qvalue = QuadQValue(params)
+        val = qvalue(last_obs, act)
+        assert torch.is_tensor(val)
+        assert val.shape == last_obs.shape[:-1] == act.shape[:-1]
+        assert val.dtype == last_obs.dtype == act.dtype
+        assert nt.allclose(val, torch.zeros_like(val))
+
+        val.mean().backward()
+        assert last_obs.grad is not None and act.grad is not None
+        assert torch.allclose(last_obs.grad, torch.zeros_like(last_obs.grad))
+        assert torch.allclose(act.grad, torch.zeros_like(act.grad))
+
     @pytest.fixture()
     def other_params(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int

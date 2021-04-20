@@ -12,13 +12,18 @@ from lqsvg.envs.lqr.utils import unpack_obs
 
 
 def index_quadratic_parameters(
-    quad: nn.Parameter, linear: nn.Parameter, const: nn.Parameter, time: IntTensor
+    quad: nn.Parameter,
+    linear: nn.Parameter,
+    const: nn.Parameter,
+    index: IntTensor,
+    max_idx: int,
 ) -> tuple[Tensor, Tensor, Tensor]:
     # pylint:disable=missing-function-docstring
     quad = nt.horizon(nt.matrix(quad))
     linear = nt.horizon(nt.vector(linear))
     const = nt.horizon(nt.scalar(const))
-    index = nt.vector_to_scalar(time)
+
+    index = torch.clamp(index, max=max_idx)
     # noinspection PyTypeChecker
     quad, linear, const = map(
         lambda x: nt.index_by(x, dim="H", index=index), (quad, linear, const)
@@ -50,6 +55,7 @@ class QuadraticMixin:
 
     def update(self, quadratic: Quadratic):
         """Update parameters to existing quadratic."""
+        # TODO: rename with trailing underscore to indicate in-place op
         params = (self.quad, self.linear, self.const)
         for param, tensor in zip(params, quadratic):
             param.data.copy_(tensor.data)
@@ -78,16 +84,18 @@ class QuadVValue(VValue, QuadraticMixin):
 
     def forward(self, obs: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
+        time = nt.vector_to_scalar(time)
+        # noinspection PyTypeChecker
         quad, linear, const = index_quadratic_parameters(
-            self.quad, self.linear, self.const, time
+            self.quad, self.linear, self.const, time, max_idx=self.horizon
         )
         state = nt.vector_to_matrix(state)
-        val = (
+        val = nt.matrix_to_scalar(
             nt.transpose(state) @ quad @ state
             + nt.transpose(nt.vector_to_matrix(linear)) @ state
             + nt.scalar_to_matrix(const)
         )
-        return nt.matrix_to_scalar(val)
+        return val
 
 
 class QuadQValue(QValue, QuadraticMixin):
@@ -113,13 +121,15 @@ class QuadQValue(QValue, QuadraticMixin):
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
+        time = nt.vector_to_scalar(time)
+        # noinspection PyTypeChecker
         quad, linear, const = index_quadratic_parameters(
-            self.quad, self.linear, self.const, time
+            self.quad, self.linear, self.const, time, max_idx=self.horizon - 1
         )
         vec = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
-        val = (
+        val = nt.matrix_to_scalar(
             nt.transpose(vec) @ quad @ vec
             + nt.transpose(nt.vector_to_matrix(linear)) @ vec
             + nt.scalar_to_matrix(const)
         )
-        return nt.matrix_to_scalar(val)
+        return nt.where(time.eq(self.horizon), torch.zeros_like(val), val)
