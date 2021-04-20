@@ -8,7 +8,7 @@ from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Quadratic
-from lqsvg.envs.lqr.utils import unpack_obs
+from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix, unpack_obs
 
 
 def index_quadratic_parameters(
@@ -63,23 +63,41 @@ class QuadraticMixin:
 class QuadVValue(VValue, QuadraticMixin):
     """Quadratic time-varying state-value function.
 
-    Clones the tensors from a quadratic and sets them as parameters, avoiding
-    in-place modification of the original quadratic's tensors.
+    Can clone the tensors from a quadratic and set them as parameters,
+    avoiding in-place modification of the original quadratic's tensors.
     """
 
     n_state: int
     horizon: int
 
-    def __init__(self, quadratic: Quadratic):
+    def __init__(self, n_state: int, horizon: int):
         super().__init__()
+        self.n_state = n_state
+        self.horizon = horizon
+
+        self.quad = nn.Parameter(Tensor(horizon + 1, n_state, n_state))
+        self.linear = nn.Parameter(Tensor(horizon + 1, n_state))
+        self.const = nn.Parameter(Tensor(horizon + 1))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Standard parameter initialization."""
+        n_state, horizon = self.n_state, self.horizon
+        self.quad.data.copy_(random_spd_matrix(size=n_state, horizon=horizon + 1))
+        self.linear.data.copy_(random_normal_vector(size=n_state, horizon=horizon + 1))
+        nn.init.uniform_(self.const, -1, 1)
+
+    @classmethod
+    def from_existing(cls, quadratic: Quadratic) -> QuadVValue:
+        """Create a quadratic state-value function from existing parameters."""
         quad, _, _ = quadratic
         # noinspection PyArgumentList
-        self.n_state = quad.size("C")
+        n_state = quad.size("C")
         # noinspection PyArgumentList
-        self.horizon = quad.size("H") - 1
-        self.quad, self.linear, self.const = map(
-            lambda x: nn.Parameter(nt.unnamed(x.clone())), quadratic
-        )
+        horizon = quad.size("H") - 1
+        new = cls(n_state, horizon)
+        new.copy_(quadratic)
+        return new
 
     def forward(self, obs: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
@@ -107,16 +125,34 @@ class QuadQValue(QValue, QuadraticMixin):
     n_tau: int
     horizon: int
 
-    def __init__(self, quadratic: Quadratic):
+    def __init__(self, n_tau: int, horizon: int):
         super().__init__()
+        self.n_tau = n_tau
+        self.horizon = horizon
+
+        self.quad = nn.Parameter(Tensor(horizon, n_tau, n_tau))
+        self.linear = nn.Parameter(Tensor(horizon, n_tau))
+        self.const = nn.Parameter(Tensor(horizon))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Standard parameter initialization."""
+        n_tau, horizon = self.n_tau, self.horizon
+        self.quad.data.copy_(random_spd_matrix(size=n_tau, horizon=horizon))
+        self.linear.data.copy_(random_normal_vector(size=n_tau, horizon=horizon))
+        nn.init.uniform_(self.const, -1, 1)
+
+    @classmethod
+    def from_existing(cls, quadratic: Quadratic):
+        """Create a quadratic action-value function from existing parameters."""
         quad, _, _ = quadratic
         # noinspection PyArgumentList
-        self.n_tau = quad.size("C")
+        n_tau = quad.size("C")
         # noinspection PyArgumentList
-        self.horizon = quad.size("H")
-        self.quad, self.linear, self.const = map(
-            lambda x: nn.Parameter(nt.unnamed(x.clone())), quadratic
-        )
+        horizon = quad.size("H")
+        new = cls(n_tau, horizon)
+        new.copy_(quadratic)
+        return new
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
         state, time = unpack_obs(obs)

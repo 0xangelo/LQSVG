@@ -11,9 +11,8 @@ from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr import Quadratic
 from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.envs.lqr.utils import pack_obs, random_normal_vector, random_spd_matrix
+from lqsvg.envs.lqr.utils import pack_obs
 from lqsvg.experiment.estimators import BootstrappedSVG, MonteCarloSVG
 from lqsvg.policy.modules import (
     BatchNormModel,
@@ -112,24 +111,14 @@ class TestMonteCarloSVG:
 
 
 class TestBootstrappedSVG:
-    @pytest.fixture()
-    def quadratic(
-        self, n_state: int, n_ctrl: int, horizon: int, seed: int
-    ) -> Quadratic:
-        n_tau = n_state + n_ctrl
-        Q = random_spd_matrix(size=n_tau, horizon=horizon, rng=seed)
-        q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
-        c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
-        return Q, q, c
-
     @pytest.fixture
-    def qvalue(self, quadratic: Quadratic) -> QValue:
-        return QuadQValue(quadratic)
+    def qvalue(self, n_state: int, n_ctrl: int, horizon: int) -> QValue:
+        return QuadQValue(n_state + n_ctrl, horizon)
 
     @pytest.fixture
     def module(
         self,
-        policy: DeterministicPolicy,
+        policy: TVLinearPolicy,
         trans: StochasticModel,
         reward: QuadRewardModel,
         qvalue: QValue,
