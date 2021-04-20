@@ -168,9 +168,16 @@ class TestLinearDynamicsModule:
         assert all(list(g is not None for g in grads))
         assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
 
-    def test_standard_form(self, module: LinearDynamics):
+    def test_standard_form(
+        self, module: LinearDynamics, stationary: bool, horizon: int
+    ):
         F, f, Sigma = module.standard_form()
-        (F.sum() + f.sum() + Sigma.sum()).backward()
+        dummy = F.sum() + f.sum() + Sigma.sum()
+        if stationary:
+            # If stationary, parameters are repeated for each step within the
+            # horizon and thus gradients are multiplied by horizon
+            dummy = dummy / horizon
+        dummy.backward()
 
         assert torch.allclose(module.F.grad, torch.ones([]))
         assert torch.allclose(module.f.grad, torch.ones([]))
