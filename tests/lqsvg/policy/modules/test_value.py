@@ -83,7 +83,7 @@ class TestQuadVValue:
     def test_update(self, params: Quadratic, other_params: Quadratic):
         vvalue = QuadVValue(params)
         before = [p.clone() for p in vvalue.parameters()]
-        vvalue.update(other_params)
+        vvalue.copy_(other_params)
         after = [p.clone() for p in vvalue.parameters()]
 
         allclose_parameters = [torch.allclose(b, a) for b, a in zip(before, after)]
@@ -164,7 +164,7 @@ class TestQuadQValue:
     def test_update(self, params: Quadratic, other_params: Quadratic):
         qvalue = QuadQValue(params)
         before = [p.clone() for p in qvalue.parameters()]
-        qvalue.update(other_params)
+        qvalue.copy_(other_params)
         after = [p.clone() for p in qvalue.parameters()]
 
         allclose_parameters = [torch.allclose(b, a) for b, a in zip(before, after)]

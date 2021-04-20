@@ -53,9 +53,8 @@ class QuadraticMixin:
         # noinspection PyTypeChecker
         return quadratic
 
-    def update(self, quadratic: Quadratic):
+    def copy_(self, quadratic: Quadratic):
         """Update parameters to existing quadratic."""
-        # TODO: rename with trailing underscore to indicate in-place op
         params = (self.quad, self.linear, self.const)
         for param, tensor in zip(params, quadratic):
             param.data.copy_(tensor.data)
