@@ -202,7 +202,7 @@ class BootstrappedSVG(nn.Module):
 
     def __init__(
         self,
-        policy: DeterministicPolicy,
+        policy: TVLinearPolicy,
         trans_model: StochasticModel,
         rew_model: QuadraticReward,
         qvalue_model: QValue,
@@ -232,7 +232,7 @@ class BootstrappedSVG(nn.Module):
             act = self.policy(obs).detach()
 
         nstep_return = partial_return + self.qvalue(obs, act)
-        return nstep_return
+        return nstep_return.mean()
 
     def forward(self, obs: Tensor, n_steps: int = 0) -> tuple[Tensor, lqr.Linear]:
         """Monte Carlo estimate of the bootstrapped Stochastic Value Gradient.
