@@ -176,7 +176,7 @@ class LQGPolicy(TorchPolicy):
         elif policy_init == "stabilize_sys":
             self.module.actor.stabilize_(env.dynamics)
 
-        self.module.model.reward.copy(env.cost)
+        self.module.model.reward.copy_(env.cost)
 
     @property
     def n_state(self):
