@@ -7,8 +7,14 @@ from raylab.policy.modules.critic import QValue, VValue
 from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr import Quadratic
-from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix, unpack_obs
+from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic
+from lqsvg.envs.lqr.solvers import NamedLQGPrediction
+from lqsvg.envs.lqr.utils import (
+    dims_from_policy,
+    random_normal_vector,
+    random_spd_matrix,
+    unpack_obs,
+)
 
 __all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue"]
 
@@ -60,6 +66,25 @@ class QuadraticMixin:
         for param, tensor in zip(params, quadratic):
             param.data.copy_(tensor.data)
 
+    @staticmethod
+    def predict_value(
+        policy: Linear, dynamics: LinSDynamics, cost: QuadCost
+    ) -> tuple[Quadratic, Quadratic]:
+        """Compute the true value functions' parameters for a policy.
+
+        Args:
+            policy: the affine feedback policy's parameters
+            dynamics: linear stochastic dynamics parameters
+            cost: quadratic cost function parameters
+
+        Returns:
+            A tuple with parameters for the state and action-value functions
+            respectively.
+        """
+        n_state, n_ctrl, horizon = dims_from_policy(policy)
+        prediction = NamedLQGPrediction(n_state, n_ctrl, horizon)
+        return prediction(policy, dynamics, cost)
+
 
 class QuadVValue(VValue, QuadraticMixin):
     """Quadratic time-varying state-value function.
@@ -99,6 +124,21 @@ class QuadVValue(VValue, QuadraticMixin):
         new = cls(n_state, horizon)
         new.copy_(quadratic)
         return new
+
+    @classmethod
+    def from_policy(
+        cls, policy: Linear, dynamics: LinSDynamics, cost: QuadCost
+    ) -> QuadVValue:
+        """Create a policy's true quadratic state-value function.
+
+        Note:
+            The resulting module will predict the same values as the true
+            value function, however its gradient w.r.t. the policy's parameters
+            is zero, unlike the real value function. Gradients of the predicted
+            value w.r.t. to state and action inputs are still defined.
+        """
+        _, vvalue = cls.predict_value(policy, dynamics, cost)
+        return cls.from_existing(vvalue)
 
     def forward(self, obs: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
@@ -153,6 +193,21 @@ class QuadQValue(QValue, QuadraticMixin):
         new = cls(n_tau, horizon)
         new.copy_(quadratic)
         return new
+
+    @classmethod
+    def from_policy(
+        cls, policy: Linear, dynamics: LinSDynamics, cost: QuadCost
+    ) -> QuadQValue:
+        """Create a policy's true quadratic action-value function.
+
+        Note:
+            The resulting module will predict the same values as the true
+            value function, however its gradient w.r.t. the policy's parameters
+            is zero, unlike the real value function. Gradients of the predicted
+            value w.r.t. to state and action inputs are still defined.
+        """
+        qvalue, _ = cls.predict_value(policy, dynamics, cost)
+        return cls.from_existing(qvalue)
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
