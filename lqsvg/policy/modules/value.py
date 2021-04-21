@@ -10,6 +10,8 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Quadratic
 from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix, unpack_obs
 
+__all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue"]
+
 
 def index_quadratic_parameters(
     quad: nn.Parameter,
