@@ -53,6 +53,24 @@ class TestQuadraticReward:
         assert not nt.allclose(act.grad, torch.zeros_like(act))
         assert torch.isfinite(act.grad).all()
 
+    @pytest.fixture
+    def last_obs(
+        self, state: Tensor, horizon: int, batch_shape: tuple[int, ...]
+    ) -> Tensor:
+        time = torch.full(batch_shape + (1,), fill_value=horizon, dtype=torch.int)
+        return pack_obs(state, nt.vector(time)).requires_grad_(True)
+
+    def test_terminal(self, module, last_obs: Tensor, act: Tensor):
+        val = module(last_obs, act)
+        assert torch.is_tensor(val)
+        assert nt.allclose(val, torch.zeros([]))
+
+        val.sum().backward()
+        assert last_obs.grad is not None and act.grad is not None
+
+        assert nt.allclose(last_obs.grad, torch.zeros([]))
+        assert nt.allclose(act.grad, torch.zeros([]))
+
     def test_standard_form(
         self, module: QuadraticReward, n_state: int, n_ctrl: int, horizon: int
     ):

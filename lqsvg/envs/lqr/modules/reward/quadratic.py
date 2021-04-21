@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
@@ -50,18 +50,25 @@ class QuadraticReward(nn.Module):
         c = nt.horizon(nt.vector(self.c))
         return C, c
 
+    def _index_parameters(self, index: IntTensor) -> tuple[Tensor, Tensor]:
+        refined = self._refined_parameters()
+        index = torch.clamp(index, max=self.horizon - 1)
+        # noinspection PyTypeChecker
+        C, c = (nt.index_by(x, dim="H", index=index) for x in refined)
+        return C, c
+
     def forward(self, obs: Tensor, act: Tensor) -> Tensor:
         obs, act = (nt.vector(x) for x in (obs, act))
         state, time = unpack_obs(obs)
         tau = nt.vector_to_matrix(torch.cat([state, act], dim="R"))
-
         time = nt.vector_to_scalar(time)
-        C, c = (nt.index_by(x, dim="H", index=time) for x in self._refined_parameters())
+
+        C, c = self._index_parameters(time)
         c = nt.vector_to_matrix(c)
 
         cost = nt.transpose(tau) @ C @ tau / 2 + nt.transpose(c) @ tau
-        reward = -cost
-        return nt.matrix_to_scalar(reward)
+        reward = nt.matrix_to_scalar(cost.neg())
+        return nt.where(time.eq(self.horizon), torch.zeros_like(reward), reward)
 
     def standard_form(self) -> lqr.QuadCost:
         C, c = self._refined_parameters()
