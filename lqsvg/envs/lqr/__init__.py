@@ -18,9 +18,4 @@ from .solvers import (
     NamedLQRPrediction,
 )
 from .types import *
-from .utils import (
-    dims_from_dynamics,
-    dims_from_policy,
-    dims_from_spaces,
-    spaces_from_dims,
-)
+from .utils import *

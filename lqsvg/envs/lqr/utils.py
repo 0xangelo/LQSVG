@@ -13,7 +13,38 @@ import lqsvg.torch.named as nt
 from lqsvg.np_util import RNG, make_spd_matrix, np_expand
 from lqsvg.torch.utils import as_float_tensor
 
-from .types import AnyDynamics, LinDynamics, Linear, LinSDynamics
+from .types import AnyDynamics, LinDynamics, Linear, LinSDynamics, QuadCost
+
+__all__ = [
+    "ctrb",
+    "dims_from_cost",
+    "dims_from_dynamics",
+    "dims_from_spaces",
+    "dims_from_policy",
+    "dynamics_factors",
+    "expand_and_refine",
+    "isstationary",
+    "isstable",
+    "iscontrollable",
+    "isstabilizable",
+    "is_pbh_ctrb",
+    "make_controllable",
+    "minimal_sample_shape",
+    "np_expand_horizon",
+    "pack_obs",
+    "random_normal_vector",
+    "random_matrix_from_eigs",
+    "random_spd_matrix",
+    "random_uniform_matrix",
+    "random_normal_matrix",
+    "random_mat_with_eigval_range",
+    "sample_eigvals",
+    "spaces_from_dims",
+    "stationary_dynamics",
+    "stationary_eigvals",
+    "stationary_dynamics_factors",
+    "unpack_obs",
+]
 
 ###############################################################################
 # Diagnostics
@@ -162,14 +193,6 @@ def isstabilizable(dynamics: AnyDynamics) -> np.ndarray:
 ###############################################################################
 # System manipulation
 ###############################################################################
-
-
-def dims_from_dynamics(dynamics: AnyDynamics) -> tuple[int, int, int]:
-    """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
-    n_state = dynamics.F.size("R")
-    n_ctrl = dynamics.F.size("C") - n_state
-    horizon = dynamics.F.size("H")
-    return n_state, n_ctrl, horizon
 
 
 def stationary_dynamics(dynamics: AnyDynamics) -> AnyDynamics:
@@ -510,6 +533,14 @@ def random_mat_with_eigval_range(
 ###############################################################################
 
 
+def dims_from_dynamics(dynamics: AnyDynamics) -> tuple[int, int, int]:
+    """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
+    n_state = dynamics.F.size("R")
+    n_ctrl = dynamics.F.size("C") - n_state
+    horizon = dynamics.F.size("H")
+    return n_state, n_ctrl, horizon
+
+
 # noinspection PyArgumentList
 def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
     """Retrieve LQG dimensions from linear feedback policy.
@@ -525,6 +556,29 @@ def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
     n_state = K.size("C")
     n_ctrl = K.size("R")
     horizon = K.size("H")
+    return n_state, n_ctrl, horizon
+
+
+def dims_from_cost(cost: QuadCost) -> tuple[int, int]:
+    """Retrieve dimensions from quadratic cost function.
+
+    Args:
+        cost: quadratic cost function parameters as tensors
+
+    Returns:
+        A tuple with row/col size and horizon length respectively
+    """
+    # pylint:disable=invalid-name
+    n_tau = cost.C.size("C")
+    horizon = cost.C.size("H")
+    return n_tau, horizon
+
+
+def dims_from_spaces(obs_space: Box, action_space: Box) -> tuple[int, int, int]:
+    """Extracts LQR dimensions from Gym spaces."""
+    n_state = obs_space.shape[0] - 1
+    n_ctrl = action_space.shape[0]
+    horizon = int(obs_space.high[-1])
     return n_state, n_ctrl, horizon
 
 
@@ -545,14 +599,6 @@ def spaces_from_dims(n_state: int, n_ctrl: int, horizon: int) -> tuple[Box, Box]
     action_low = np.full(n_ctrl, fill_value=-np.inf, dtype=np.single)
     action_space = Box(low=action_low, high=-action_low)
     return observation_space, action_space
-
-
-def dims_from_spaces(obs_space: Box, action_space: Box) -> tuple[int, int, int]:
-    """Extracts LQR dimensions from Gym spaces."""
-    n_state = obs_space.shape[0] - 1
-    n_ctrl = action_space.shape[0]
-    horizon = int(obs_space.high[-1])
-    return n_state, n_ctrl, horizon
 
 
 def unpack_obs(obs: Tensor) -> tuple[Tensor, IntTensor]:
