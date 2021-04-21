@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import warnings
 from contextlib import contextmanager
-from typing import Optional, Union
+from typing import Optional, TypeVar, Union
 
 import torch
 import torch.nn.functional as F
-from torch import BoolTensor, IntTensor, LongTensor, Tensor
+from torch import BoolTensor, IntTensor, LongTensor
+from torch import Tensor as _Tensor
+
+Tensor = TypeVar("Tensor", bound=_Tensor)
 
 MATRIX_NAMES = (..., "R", "C")
 VECTOR_NAMES = MATRIX_NAMES[:-1]
@@ -165,14 +168,11 @@ def isclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> BoolTensor:
     return torch.isclose(inpt, other, *args, **kwargs).refine_names(*names)
 
 
-def where(
-    condition: Tensor, branch_a: Tensor, branch_b: Tensor, *args, **kwargs
-) -> Tensor:
+def where(condition: Tensor, branch_a: Tensor, branch_b: Tensor) -> Tensor:
     names = branch_a.names
     condition, branch_a, branch_b = unnamed(condition, branch_a, branch_b)
-    return torch.where(condition, branch_a, branch_b, *args, **kwargs).refine_names(
-        *names
-    )
+    filtered = torch.where(condition, branch_a, branch_b)
+    return filtered.refine_names(*names)
 
 
 def split(

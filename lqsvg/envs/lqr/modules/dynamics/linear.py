@@ -51,8 +51,7 @@ class CovarianceCholesky(nn.Module):
             if self.stationary:
                 index = torch.zeros_like(index)
             else:
-                index = torch.clamp(index, max=self.horizon - 1)
-            # noinspection PyTypeChecker
+                index = torch.clamp(index, max=self.horizon - 1).int()
             ltril, pre_diag = (
                 nt.index_by(x, dim="H", index=index) for x in (ltril, pre_diag)
             )
@@ -111,8 +110,7 @@ class LinearNormalParams(nn.Module):
                 index = torch.zeros_like(index)
             else:
                 # Timesteps after termination use last parameters
-                index = torch.clamp(index, max=self.horizon - 1)
-            # noinspection PyTypeChecker
+                index = torch.clamp(index, max=self.horizon - 1).int()
             F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
         return F, f
 
@@ -123,7 +121,6 @@ class LinearNormalParams(nn.Module):
 
         # Get parameters for each timestep
         index = nt.vector_to_scalar(time)
-        # noinspection PyTypeChecker
         F, f = self._transition_factors(index)
         scale_tril = self.scale_tril(index)
 
