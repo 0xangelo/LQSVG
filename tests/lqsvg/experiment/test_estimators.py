@@ -143,11 +143,14 @@ class TestBootstrappedSVG:
         return request.param
 
     @pytest.fixture
-    def obs(self, n_state: int, horizon: int, n_batch: int) -> Tensor:
-        state = torch.randn(n_batch, n_state)
+    def state(self, n_state: int, n_batch: int) -> Tensor:
+        return nt.vector(torch.randn(n_batch, n_state)).refine_names("B", ...)
+
+    @pytest.fixture
+    def obs(self, state: Tensor, horizon: int, n_batch: int) -> Tensor:
         time = torch.randint(low=0, high=horizon, size=(n_batch, 1))
         # noinspection PyTypeChecker
-        return pack_obs(nt.horizon(nt.vector(state)), nt.horizon(nt.vector(time)))
+        return pack_obs(state, nt.vector(time).refine_names("B", ...))
 
     @pytest.fixture(params=(0, 1, 4), ids=lambda x: f"NStep:{x}")
     def n_step(self, request) -> int:
