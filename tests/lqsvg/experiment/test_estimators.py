@@ -38,19 +38,6 @@ def policy(n_state: int, n_ctrl: int, horizon: int) -> TVLinearPolicy:
 
 
 # noinspection PyUnresolvedReferences
-@pytest.fixture(
-    params=(ResidualModel, LayerNormModel, BatchNormModel, StochasticModelWrapper)
-)
-def wrapper(request, n_state: int) -> callable[[StochasticModel], StochasticModel]:
-    cls = request.param
-
-    if issubclass(cls, (LayerNormModel, BatchNormModel)):
-        return partial(cls, n_state=n_state)
-
-    return cls
-
-
-# noinspection PyUnresolvedReferences
 @pytest.fixture
 def trans(
     n_state: int,
@@ -70,6 +57,20 @@ def reward(n_state: int, n_ctrl: int, horizon: int) -> QuadRewardModel:
 
 
 class TestMonteCarloSVG:
+    # noinspection PyUnresolvedReferences
+    @pytest.fixture(
+        params=(ResidualModel, LayerNormModel, BatchNormModel, StochasticModelWrapper)
+    )
+    def wrapper(
+        self, request, n_state: int
+    ) -> callable[[StochasticModel], StochasticModel]:
+        cls = request.param
+
+        if issubclass(cls, (LayerNormModel, BatchNormModel)):
+            return partial(cls, n_state=n_state)
+
+        return cls
+
     @pytest.fixture
     def init(self, n_state: int) -> InitStateModel:
         return InitStateModel(n_state)
@@ -111,6 +112,18 @@ class TestMonteCarloSVG:
 
 
 class TestBootstrappedSVG:
+    # noinspection PyUnresolvedReferences
+    @pytest.fixture(params=(ResidualModel, LayerNormModel, StochasticModelWrapper))
+    def wrapper(
+        self, request, n_state: int
+    ) -> callable[[StochasticModel], StochasticModel]:
+        cls = request.param
+
+        if issubclass(cls, (LayerNormModel, BatchNormModel)):
+            return partial(cls, n_state=n_state)
+
+        return cls
+
     @pytest.fixture
     def qvalue(self, n_state: int, n_ctrl: int, horizon: int) -> QValue:
         return QuadQValue(n_state + n_ctrl, horizon)
@@ -150,3 +163,5 @@ class TestBootstrappedSVG:
         K, k = svg
         assert torch.is_tensor(K) and torch.is_tensor(k)
         assert torch.isfinite(K).all() and torch.isfinite(k).all()
+        assert not torch.allclose(K, torch.zeros([]))
+        assert not torch.allclose(k, torch.zeros([]))
