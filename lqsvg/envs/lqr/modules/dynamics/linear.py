@@ -11,7 +11,8 @@ from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.utils import isstationary, unpack_obs
+from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
+from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 
 from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
 
@@ -20,17 +21,27 @@ class CovarianceCholesky(nn.Module):
     """Covariance Cholesky factor."""
 
     beta: float = 0.2
-    ltril: nn.Parameter
-    pre_diag: nn.Parameter
+    size: int
     horizon: int
     stationary: bool
+    ltril: nn.Parameter
+    pre_diag: nn.Parameter
 
-    def __init__(self, sigma: Tensor, horizon: int, stationary: bool):
+    def __init__(self, size: int, horizon: int, stationary: bool):
         super().__init__()
-        ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma, beta=self.beta))
-        self.ltril, self.pre_diag = (nn.Parameter(x) for x in (ltril, pre_diag))
         self.horizon = horizon
         self.stationary = stationary
+
+        h_size = 1 if stationary else horizon
+        self.ltril = nn.Parameter(Tensor(h_size, size, size))
+        self.pre_diag = nn.Parameter(Tensor(h_size, size))
+
+    def factorize_(self, matrix: Tensor) -> CovarianceCholesky:
+        """Set parameters to reproduce a symmetric positive definite matrix."""
+        ltril, pre_diag = nt.unnamed(*disassemble_covariance(matrix, beta=self.beta))
+        self.ltril.data.copy_(ltril)
+        self.pre_diag.data.copy_(pre_diag)
+        return self
 
     def forward(self, index: Optional[IntTensor] = None) -> Tensor:
         # pylint:disable=missing-function-docstring
@@ -53,20 +64,43 @@ class LinearNormalParams(nn.Module):
     """Linear state-action conditional Gaussian parameters."""
 
     # pylint:disable=invalid-name
-    F: nn.Parameter
-    f: nn.Parameter
+    n_state: int
+    n_ctrl: int
     horizon: int
     stationary: bool
+    F: nn.Parameter
+    f: nn.Parameter
 
-    def __init__(self, dynamics: lqr.LinSDynamics, horizon: int, stationary: bool):
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
         super().__init__()
-
-        F, f, W = (x.clone() for x in dynamics)
-        self.F = nn.Parameter(nt.unnamed(F))
-        self.f = nn.Parameter(nt.unnamed(f))
-        self.scale_tril = CovarianceCholesky(W, horizon=horizon, stationary=stationary)
+        self.n_state = n_state
+        self.n_ctrl = n_ctrl
         self.horizon = horizon
         self.stationary = stationary
+
+        h_size = 1 if stationary else horizon
+        self.F = nn.Parameter(Tensor(h_size, n_state, n_state + n_ctrl))
+        self.f = nn.Parameter(Tensor(h_size, n_state))
+        self.scale_tril = CovarianceCholesky(n_state, horizon, stationary)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Default parameter initialization."""
+        linear = make_lindynamics(
+            self.n_state, self.n_ctrl, self.horizon, stationary=self.stationary
+        )
+        dynamics = make_linsdynamics(linear, stationary=self.stationary)
+        self.copy_(dynamics)
+
+    def copy_(self, dynamics: lqr.LinSDynamics) -> LinearNormalParams:
+        """Set parameters to mirror a given linear stochastic dynamics."""
+        if self.stationary:
+            dynamics = stationary_dynamics(dynamics)
+        F, f, Sigma = dynamics
+        self.F.data.copy_(F)
+        self.f.data.copy_(f)
+        self.scale_tril.factorize_(Sigma)
+        return self
 
     def _transition_factors(
         self, index: Optional[IntTensor] = None
@@ -133,7 +167,9 @@ class LinearDynamicsModule(LinearDynamics):
     """Linear stochastic model from dynamics.
 
     Args:
-        dynamics: the linear dynamics to initialize the model with
+        n_state: dimensionality of the state vectors
+        n_ctrl: dimensionality of the control (action) vectors
+        horizon: task horizon
         stationary: whether to model stationary dynamics
 
     Raises:
@@ -143,23 +179,46 @@ class LinearDynamicsModule(LinearDynamics):
 
     stationary: bool
 
-    def __init__(self, dynamics: lqr.LinSDynamics, stationary: bool):
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
         # pylint:disable=invalid-name
-        self.n_state, self.n_ctrl, self.horizon = lqr.dims_from_dynamics(dynamics)
+        self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
         self.stationary = stationary
 
-        if stationary:
-            assert isstationary(dynamics)
-            F, f, W = (t.select("H", 0).align_to("H", ...) for t in dynamics)
-            dynamics = lqr.LinSDynamics(F, f, W)
-
-        params = LinearNormalParams(
-            dynamics, horizon=self.horizon, stationary=stationary
-        )
-        dist = TVMultivariateNormal(self.horizon)
+        params = LinearNormalParams(n_state, n_ctrl, horizon, stationary)
+        dist = TVMultivariateNormal(horizon)
         super().__init__(params, dist)
         self.F = self.params.F
         self.f = self.params.f
+
+    @classmethod
+    def from_existing(
+        cls, dynamics: lqr.LinSDynamics, stationary: bool
+    ) -> LinearDynamicsModule:
+        """Create linear dynamics module from existing linear dynamics.
+
+        Args:
+            dynamics: the linear dynamics to initialize the model with
+            stationary: whether to model stationary dynamics
+
+        Raises:
+            AssertionError: if `stationary` is True but the dynamics is not
+                stationary
+        """
+        n_state, n_ctrl, horizon = lqr.dims_from_dynamics(dynamics)
+        return cls(n_state, n_ctrl, horizon, stationary).copy_(dynamics)
+
+    def copy_(self, dynamics: lqr.LinSDynamics) -> LinearDynamicsModule:
+        """Update parameters to existing linear dynamics.
+
+        Args:
+            dynamics: the linear dynamics to initialize the model with
+
+        Raises:
+            AssertionError: if `self.stationary` is True but the dynamics is
+                not stationary
+        """
+        self.params.copy_(dynamics)
+        return self
 
     def standard_form(self) -> lqr.LinSDynamics:
         # pylint:disable=invalid-name

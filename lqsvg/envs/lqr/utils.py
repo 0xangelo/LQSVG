@@ -172,6 +172,25 @@ def dims_from_dynamics(dynamics: AnyDynamics) -> tuple[int, int, int]:
     return n_state, n_ctrl, horizon
 
 
+def stationary_dynamics(dynamics: AnyDynamics) -> AnyDynamics:
+    """Retrieve stationary dynamics parameters with no horizon dimension.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
+    # pylint:disable=invalid-name
+    assert isstationary(
+        dynamics
+    ), "Can't retrieve stationary parameters from non-stationary dynamics"
+    F = dynamics.F.select("H", 0)
+    f = dynamics.f.select("H", 0)
+    if isinstance(dynamics, LinDynamics):
+        return LinDynamics(F=F, f=f)
+
+    W = dynamics.W.select("H", 0)
+    return LinSDynamics(F=F, f=f, W=W)
+
+
 def dynamics_factors(dynamics: AnyDynamics) -> tuple[Tensor, Tensor]:
     """Returns the unactuated and actuaded parts of the transition matrix."""
     # pylint:disable=invalid-name
@@ -181,8 +200,13 @@ def dynamics_factors(dynamics: AnyDynamics) -> tuple[Tensor, Tensor]:
 
 
 def stationary_dynamics_factors(dynamics: AnyDynamics) -> tuple[Tensor, Tensor]:
-    """Returns the decomposed transition matrix of a stationary system."""
+    """Returns the decomposed transition matrix of a stationary system.
+
+    Raises:
+         AssertionError: if the (batch of) dynamics is not stationary
+    """
     # pylint:disable=invalid-name
+    assert isstationary(dynamics)
     # noinspection PyTypeChecker
     F_s, F_a = (x.select("H", 0) for x in dynamics_factors(dynamics))
     return F_s, F_a
@@ -195,7 +219,6 @@ def stationary_eigvals(dynamics: AnyDynamics) -> np.ndarray:
          AssertionError: if the (batch of) dynamics is not stationary
     """
     # pylint:disable=invalid-name
-    assert isstationary(dynamics), "Can't pass non-stationary dynamics"
     F_s, _ = stationary_dynamics_factors(dynamics)
     # Assume last two dimensions correspond to rows and cols respectively
     eigvals, _ = np.linalg.eig(F_s.numpy())
@@ -217,7 +240,7 @@ def ctrb(dynamics: AnyDynamics) -> np.ndarray:
     return C
 
 
-def make_controllable(dynamics: AnyDynamics) -> LinSDynamics:
+def make_controllable(dynamics: AnyDynamics) -> AnyDynamics:
     """Compute controllable dynamics from reference one."""
     # pylint:disable=invalid-name
     n_state, _, _ = dims_from_dynamics(dynamics)

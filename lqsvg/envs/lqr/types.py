@@ -1,6 +1,6 @@
 """Common type annotations."""
 from collections import namedtuple
-from typing import Tuple, Union
+from typing import Tuple, TypeVar
 
 from torch import Tensor
 
@@ -26,5 +26,5 @@ Box = Tuple[Tensor, Tensor]
 QuadCost = namedtuple("QuadCost", "C c")
 LinDynamics = namedtuple("LinDynamics", "F f")
 LinSDynamics = namedtuple("LinSDynamics", "F f W")
-AnyDynamics = Union[LinDynamics, LinSDynamics]
+AnyDynamics = TypeVar("Dynamics", LinDynamics, LinSDynamics)
 GaussInit = namedtuple("GaussInit", "mu sig")

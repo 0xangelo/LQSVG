@@ -76,10 +76,10 @@ class TestLinearDynamicsModule:
         )
         return make_linsdynamics(linear, stationary=stationary, rng=seed)
 
-    def test_detach_dynamics(self, dynamics: LinSDynamics, stationary: bool):
+    def test_from_existing(self, dynamics: LinSDynamics, stationary: bool):
         before = tuple(x.clone() for x in dynamics)
 
-        module = LinearDynamicsModule(dynamics, stationary=stationary)
+        module = LinearDynamicsModule.from_existing(dynamics, stationary=stationary)
         for par in module.parameters():
             par.data.sub_(1.0)
 
@@ -87,8 +87,10 @@ class TestLinearDynamicsModule:
             assert nt.allclose(bef, aft)
 
     @pytest.fixture
-    def module(self, dynamics: LinSDynamics, stationary: bool) -> LinearDynamicsModule:
-        return LinearDynamicsModule(dynamics, stationary=stationary)
+    def module(
+        self, n_state: int, n_ctrl: int, horizon: int, stationary: bool
+    ) -> LinearDynamicsModule:
+        return LinearDynamicsModule(n_state, n_ctrl, horizon, stationary)
 
     def test_rsample(self, module: LinearDynamics, obs: Tensor, act: Tensor):
         params = module(obs, act)
@@ -194,8 +196,9 @@ def sigma(n_tau: int, horizon: int):
     )
 
 
-def test_cov_cholesky_factor(sigma: Tensor, horizon: int):
-    module = CovarianceCholesky(sigma, horizon=horizon, stationary=False)
+def test_cov_cholesky_factor(n_tau: int, horizon: int, sigma: Tensor):
+    module = CovarianceCholesky(n_tau, horizon=horizon, stationary=False)
+    module.factorize_(sigma)
     untimed = module()
 
     scale_tril = nt.cholesky(sigma)
