@@ -11,6 +11,7 @@ from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
 
 import lqsvg.torch.named as nt
+from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.utils import pack_obs
 from lqsvg.experiment.estimators import BootstrappedSVG, MonteCarloSVG
@@ -156,9 +157,8 @@ class TestBootstrappedSVG:
     def n_step(self, request) -> int:
         return request.param
 
-    def test_call(self, module: BootstrappedSVG, obs: Tensor, n_step: int):
-        val, svg = module(obs, n_step)
-
+    @staticmethod
+    def check_val_svg(val: Tensor, svg: lqr.Linear):
         assert torch.is_tensor(val)
         assert torch.isfinite(val).all()
         assert val.shape == ()
@@ -168,3 +168,16 @@ class TestBootstrappedSVG:
         assert torch.isfinite(K).all() and torch.isfinite(k).all()
         assert not torch.allclose(K, torch.zeros([]))
         assert not torch.allclose(k, torch.zeros([]))
+
+    def test_call(self, module: BootstrappedSVG, obs: Tensor, n_step: int):
+        val, svg = module(obs, n_step)
+        self.check_val_svg(val, svg)
+
+    @pytest.fixture
+    def pre_terminal(self, state: Tensor, horizon: int, n_batch: int) -> Tensor:
+        time = torch.full((n_batch, 1), fill_value=horizon - 1, dtype=torch.int)
+        return pack_obs(state, nt.vector(time).refine_names("B", ...))
+
+    def test_absorving(self, module: BootstrappedSVG, pre_terminal: Tensor):
+        val, svg = module(pre_terminal, n_steps=4)  # Exceed the horizon
+        self.check_val_svg(val, svg)
