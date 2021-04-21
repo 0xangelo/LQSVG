@@ -43,7 +43,7 @@ class TorchLQGMixin:
     ):
         self.module = LQGModule(
             dims=dims_from_dynamics(dynamics),
-            trans=LinearDynamicsModule(dynamics, stationary=False),
+            trans=LinearDynamicsModule.from_existing(dynamics, stationary=False),
             reward=QuadraticReward(cost),
             init=InitStateDynamics.from_existing(init),
         )
