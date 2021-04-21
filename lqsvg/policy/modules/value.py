@@ -19,12 +19,11 @@ def index_quadratic_parameters(
     max_idx: int,
 ) -> tuple[Tensor, Tensor, Tensor]:
     # pylint:disable=missing-function-docstring
-    quad = nt.horizon(nt.matrix(quad))
-    linear = nt.horizon(nt.vector(linear))
-    const = nt.horizon(nt.scalar(const))
+    quad, linear, const = nt.horizon(
+        nt.matrix(quad), nt.vector(linear), nt.scalar(const)
+    )
 
     index = torch.clamp(index, max=max_idx)
-    # noinspection PyTypeChecker
     quad, linear, const = map(
         lambda x: nt.index_by(x, dim="H", index=index), (quad, linear, const)
     )
@@ -47,7 +46,7 @@ class QuadraticMixin:
         """
         params = (self.quad, self.linear, self.const)
         refines = (nt.matrix, nt.vector, nt.scalar)
-        quadratic = tuple(nt.horizon(r(p)) for r, p in zip(refines, params))
+        quadratic = nt.horizon(*(r(p) for r, p in zip(refines, params)))
         for tensor, param in zip(quadratic, params):
             tensor.grad = None if param.grad is None else param.grad.clone()
         # noinspection PyTypeChecker
@@ -102,7 +101,6 @@ class QuadVValue(VValue, QuadraticMixin):
     def forward(self, obs: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
         time = nt.vector_to_scalar(time)
-        # noinspection PyTypeChecker
         quad, linear, const = index_quadratic_parameters(
             self.quad, self.linear, self.const, time, max_idx=self.horizon
         )

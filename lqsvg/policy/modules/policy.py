@@ -54,8 +54,7 @@ class TVLinearFeedback(nn.Module):
     def _gains_at(
         self, index: Union[IntTensor, LongTensor, None] = None
     ) -> tuple[Tensor, Tensor]:
-        K = nt.horizon(nt.matrix(self.K))
-        k = nt.horizon(nt.vector(self.k))
+        K, k = nt.horizon(nt.matrix(self.K), nt.vector(self.k))
         if index is not None:
             index = torch.clamp(index, max=self.horizon - 1)
             # Assumes index is a named scalar tensor
@@ -93,8 +92,7 @@ class TVLinearFeedback(nn.Module):
 
     def gains(self) -> lqr.Linear:
         """Return current parameters as linear parameters."""
-        K = nt.horizon(nt.matrix(self.K))
-        k = nt.horizon(nt.vector(self.k))
+        K, k = nt.horizon(nt.matrix(self.K), nt.vector(self.k))
         K.grad, k.grad = self.K.grad, self.k.grad
         return K, k
 

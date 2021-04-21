@@ -18,8 +18,7 @@ class TestTVLinearFeedBack:
     @pytest.fixture
     def linear(self, n_state: int, n_ctrl: int, horizon: int) -> lqr.Linear:
         K, k = torch.randn(horizon, n_ctrl, n_state), torch.randn(horizon, n_ctrl)
-        K = nt.horizon(nt.matrix(K))
-        k = nt.horizon(nt.vector(k))
+        K, k = nt.horizon(nt.matrix(K), nt.vector(k))
         return K, k
 
     def test_from_existing(self, linear: lqr.Linear):

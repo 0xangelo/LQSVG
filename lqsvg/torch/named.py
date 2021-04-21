@@ -2,9 +2,10 @@
 # pylint:disable=invalid-name,missing-function-docstring
 from __future__ import annotations
 
+import functools
 import warnings
 from contextlib import contextmanager
-from typing import Optional, TypeVar, Union
+from typing import Callable, Optional, TypeVar, Union
 
 import torch
 import torch.nn.functional as F
@@ -30,73 +31,68 @@ def suppress_named_tensor_warning():
         yield
 
 
-def unnamed(*tensors: Tensor) -> Union[Tensor, tuple[Tensor, ...]]:
-    result = tuple(t.rename(None) for t in tensors)
-    return result[0] if len(result) == 1 else result
+def variadic(func: Callable[[Tensor], Tensor]):
+    @functools.wraps(func)
+    def wrapped(*tensors: Tensor) -> Union[Tensor, tuple[Tensor, ...]]:
+        result = tuple(func(t) for t in tensors)
+        return result[0] if len(result) == 1 else result
+
+    return wrapped
 
 
+@variadic
+def unnamed(tensor: Tensor) -> Tensor:
+    return tensor.rename(None)
+
+
+@variadic
 def horizon(tensor: Tensor) -> Tensor:
     return tensor.refine_names("H", ...)
 
 
+@variadic
 def matrix(tensor: Tensor) -> Tensor:
     return tensor.refine_names(*MATRIX_NAMES)
 
 
+@variadic
 def vector(tensor: Tensor) -> Tensor:
     return tensor.refine_names(*VECTOR_NAMES)
 
 
+@variadic
 def scalar(tensor: Tensor) -> Tensor:
     return tensor.refine_names(*SCALAR_NAMES)
 
 
+@variadic
 def matrix_to_vector(tensor: Tensor) -> Tensor:
     return matrix(tensor).squeeze("C")
 
 
+@variadic
 def matrix_to_scalar(tensor: Tensor) -> Tensor:
     return matrix(tensor).squeeze("R").squeeze("C")
 
 
+@variadic
 def vector_to_matrix(tensor: Tensor) -> Tensor:
     return vector(tensor).align_to(..., "R", "C")
 
 
+@variadic
 def vector_to_scalar(tensor: Tensor) -> Tensor:
     return vector(tensor).squeeze("R")
 
 
+@variadic
 def scalar_to_matrix(tensor: Tensor) -> Tensor:
     return scalar(tensor).align_to(..., "R", "C")
 
 
+@variadic
 def scalar_to_vector(tensor: Tensor) -> Tensor:
     return scalar(tensor).align_to(..., "R")
-
-
-def refine_matrix_input(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(..., "R", "C")
-
-
-def refine_vector_input(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(..., "R").align_to(..., "R", "C")
-
-
-def refine_scalar_input(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(...).align_to(..., "R", "C")
-
-
-def refine_matrix_output(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(..., "R", "C")
-
-
-def refine_vector_output(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(..., "R", "C").squeeze("C")
-
-
-def refine_scalar_output(tensor: Tensor) -> Tensor:
-    return tensor.refine_names(..., "R", "C").squeeze("R").squeeze("C")
 
 
 def trace(tensor: Tensor) -> Tensor:

@@ -46,8 +46,7 @@ class QuadraticReward(nn.Module):
         return self
 
     def _refined_parameters(self) -> tuple[Tensor, Tensor]:
-        C = nt.horizon(nt.matrix(self.C))
-        c = nt.horizon(nt.vector(self.c))
+        C, c = nt.horizon(nt.matrix(self.C), nt.vector(self.c))
         return C, c
 
     def _index_parameters(self, index: IntTensor) -> tuple[Tensor, Tensor]:

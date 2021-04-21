@@ -94,8 +94,7 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
         time, time_ = torch.broadcast_tensors(time, time_)
 
         # Consider normal state transition
-        time = nt.vector_to_scalar(time)
-        time_ = nt.vector_to_scalar(time_)
+        time, time_ = nt.vector_to_scalar(time, time_)
         trans_logp = self._trans_logp(loc, scale_tril, time, state, time_)
         if not self.horizon:
             return trans_logp

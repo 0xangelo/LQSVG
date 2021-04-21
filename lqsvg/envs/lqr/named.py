@@ -20,15 +20,13 @@ def unnamed(
 
 def refine_linear_input(linear: Linear):
     K, k = linear
-    K = nt.horizon(nt.matrix(K))
-    k = nt.horizon(nt.vector_to_matrix(k))
+    K, k = nt.horizon(nt.matrix(K), nt.vector_to_matrix(k))
     return K, k
 
 
 def refine_dynamics_input(dynamics: LinDynamics):
     F, f = dynamics
-    F = nt.horizon(nt.matrix(F))
-    f = nt.horizon(nt.vector_to_matrix(f))
+    F, f = nt.horizon(nt.matrix(F), nt.vector_to_matrix(f))
     return LinDynamics(F, f)
 
 
@@ -41,30 +39,25 @@ def refine_sdynamics_input(dynamics: LinSDynamics):
 
 def refine_cost_input(cost: QuadCost):
     C, c = cost
-    C = nt.horizon(nt.matrix(C))
-    c = nt.horizon(nt.vector_to_matrix(c))
+    C, c = nt.horizon(nt.matrix(C), nt.vector_to_matrix(c))
     return QuadCost(C, c)
 
 
 def refine_linear_output(linear: Linear):
     K, k = linear
-    K = nt.horizon(nt.matrix(K))
-    k = nt.horizon(nt.matrix_to_vector(k))
+    K, k = nt.horizon(nt.matrix(K), nt.matrix_to_vector(k))
     return K, k
 
 
 def refine_quadratic_output(quadratic: Quadratic):
     A, b, c = quadratic
-    A = nt.horizon(nt.matrix(A))
-    b = nt.horizon(nt.matrix_to_vector(b))
-    c = nt.horizon(nt.matrix_to_scalar(c))
+    A, b, c = nt.horizon(nt.matrix(A), nt.matrix_to_vector(b), nt.matrix_to_scalar(c))
     return A, b, c
 
 
 def refine_cost_ouput(cost: QuadCost) -> QuadCost:
     C, c = cost
-    C = nt.horizon(nt.matrix(C))
-    c = nt.horizon(nt.matrix_to_vector(c))
+    C, c = nt.horizon(nt.matrix(C), nt.matrix_to_vector(c))
     return QuadCost(C, c)
 
 
@@ -80,8 +73,7 @@ def refine_lqr(dynamics: LinDynamics, cost: QuadCost) -> Tuple[LinDynamics, Quad
     """
     F, f = dynamics
     C, c = cost
-    F = nt.horizon(nt.matrix(F))
-    f = nt.horizon(nt.vector(f))
-    C = nt.horizon(nt.matrix(C))
-    c = nt.horizon(nt.vector(c))
+    F, C = nt.matrix(F, C)
+    f, c = nt.vector(f, c)
+    F, f, C, c = nt.horizon(F, f, C, c)
     return LinDynamics(F, f), QuadCost(C, c)

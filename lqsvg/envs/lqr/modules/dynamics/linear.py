@@ -45,8 +45,7 @@ class CovarianceCholesky(nn.Module):
 
     def forward(self, index: Optional[IntTensor] = None) -> Tensor:
         # pylint:disable=missing-function-docstring
-        ltril, pre_diag = nt.matrix(self.ltril), nt.vector(self.pre_diag)
-        ltril, pre_diag = nt.horizon(ltril), nt.horizon(pre_diag)
+        ltril, pre_diag = nt.horizon(nt.matrix(self.ltril), nt.vector(self.pre_diag))
         if index is not None:
             if self.stationary:
                 index = torch.zeros_like(index)
@@ -104,7 +103,7 @@ class LinearNormalParams(nn.Module):
     def _transition_factors(
         self, index: Optional[IntTensor] = None
     ) -> Tuple[Tensor, Tensor]:
-        F, f = nt.horizon(nt.matrix(self.F)), nt.horizon(nt.vector(self.f))
+        F, f = nt.horizon(nt.matrix(self.F), nt.vector(self.f))
         if index is not None:
             if self.stationary:
                 index = torch.zeros_like(index)
