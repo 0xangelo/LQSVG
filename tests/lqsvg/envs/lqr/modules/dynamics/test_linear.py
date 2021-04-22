@@ -183,8 +183,10 @@ class TestLinearDynamicsModule:
 
         assert torch.allclose(module.F.grad, torch.ones([]))
         assert torch.allclose(module.f.grad, torch.ones([]))
-        assert not torch.allclose(module.params.scale_tril.pre_diag, torch.zeros([]))
-        assert not torch.allclose(module.params.scale_tril.ltril, torch.zeros([]))
+        assert not torch.allclose(
+            module.params.scale_tril.pre_diag.grad, torch.zeros([])
+        )
+        assert not torch.allclose(module.params.scale_tril.ltril.grad, torch.zeros([]))
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
+from lqsvg.torch.modules import CholeskyFactor
 from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky
 
 from .common import TVMultivariateNormal
@@ -69,6 +70,7 @@ class LinearNormalParams(nn.Module):
     stationary: bool
     F: nn.Parameter
     f: nn.Parameter
+    scale_tril: CholeskyFactor
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
         super().__init__()
@@ -80,7 +82,7 @@ class LinearNormalParams(nn.Module):
         h_size = 1 if stationary else horizon
         self.F = nn.Parameter(Tensor(h_size, n_state, n_state + n_ctrl))
         self.f = nn.Parameter(Tensor(h_size, n_state))
-        self.scale_tril = CovarianceCholesky(n_state, horizon, stationary)
+        self.scale_tril = CholeskyFactor((h_size, n_state, n_state))
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -90,6 +92,7 @@ class LinearNormalParams(nn.Module):
         )
         dynamics = make_linsdynamics(linear, stationary=self.stationary)
         self.copy_(dynamics)
+        self.scale_tril.reset_parameters()
 
     def copy_(self, dynamics: lqr.LinSDynamics) -> LinearNormalParams:
         """Set parameters to mirror a given linear stochastic dynamics."""
@@ -103,16 +106,16 @@ class LinearNormalParams(nn.Module):
 
     def _transition_factors(
         self, index: Optional[IntTensor] = None
-    ) -> Tuple[Tensor, Tensor]:
-        F, f = nt.horizon(nt.matrix(self.F), nt.vector(self.f))
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        F, f, L = nt.horizon(nt.matrix(self.F), nt.vector(self.f), self.scale_tril())
         if index is not None:
             if self.stationary:
-                index = torch.zeros_like(index)
+                idx = torch.zeros_like(index)
             else:
                 # Timesteps after termination use last parameters
-                index = torch.clamp(index, max=self.horizon - 1).int()
-            F, f = (nt.index_by(x, dim="H", index=index) for x in (F, f))
-        return F, f
+                idx = torch.clamp(index, max=self.horizon - 1).int()
+            F, f, L = (nt.index_by(x, dim="H", index=idx) for x in (F, f, L))
+        return F, f, L
 
     def forward(self, obs: Tensor, action: Tensor):
         # pylint:disable=missing-function-docstring
@@ -121,8 +124,7 @@ class LinearNormalParams(nn.Module):
 
         # Get parameters for each timestep
         index = nt.vector_to_scalar(time)
-        F, f = self._transition_factors(index)
-        scale_tril = self.scale_tril(index)
+        F, f, scale_tril = self._transition_factors(index)
 
         # Compute the loc for normal transitions
         tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
@@ -135,10 +137,9 @@ class LinearNormalParams(nn.Module):
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring
-        F, f = self._transition_factors()
-        scale_tril = self.scale_tril()
-        covariance_matrix = scale_tril @ nt.transpose(scale_tril)
-        return lqr.LinSDynamics(F, f, covariance_matrix)
+        F, f, scale_tril = self._transition_factors()
+        Sigma = scale_tril @ nt.transpose(scale_tril)
+        return lqr.LinSDynamics(F, f, Sigma)
 
 
 class LinearDynamics(StochasticModel, metaclass=abc.ABCMeta):
