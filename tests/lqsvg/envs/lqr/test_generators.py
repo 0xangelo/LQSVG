@@ -1,4 +1,4 @@
-# pylint:disable=too-many-arguments,invalid-name,unsubscriptable-object
+# pylint:disable=too-many-arguments,unsubscriptable-object
 from __future__ import annotations
 
 from functools import partial
