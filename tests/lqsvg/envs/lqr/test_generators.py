@@ -29,12 +29,26 @@ GeneratorFn = Callable[..., LQGGenerator]
 passive_eigval_range = standard_fixture(
     [None, (0.0, 1.0), (0.5, 1.5)], "PassiveEigvals"
 )
-controllable = standard_fixture((True, False), "Controllable")
+stat_ctrb = standard_fixture(
+    [(True, False), (True, True), (False, False)], "Stationary/Controllable"
+)
 transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
 cost_linear = standard_fixture((True, False), "CostLinear")
 cost_cross = standard_fixture((True, False), "CostCross")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
+
+
+@pytest.fixture
+def stationary(stat_ctrb: tuple[bool, bool]) -> bool:
+    stat, _ = stat_ctrb
+    return stat
+
+
+@pytest.fixture
+def controllable(stat_ctrb: tuple[bool, bool]) -> bool:
+    _, ctrb = stat_ctrb
+    return ctrb
 
 
 @pytest.fixture
@@ -236,6 +250,7 @@ def check_cost(
         assert not linear or stationary == nt.allclose(c, c.select("H", 0))
 
 
+@pytest.mark.parametrize("stationary", (True, False))
 def test_stationary(generator_fn: GeneratorFn, stationary: bool):
     generator = generator_fn(stationary=stationary)
     dynamics, cost, _ = generator()
@@ -244,10 +259,16 @@ def test_stationary(generator_fn: GeneratorFn, stationary: bool):
     check_generated_cost(cost, generator)
 
 
+@pytest.mark.parametrize("controllable", (True, False))
 def test_controllable(generator_fn: GeneratorFn, controllable: bool):
-    generator = generator_fn(controllable=controllable)
+    generator = generator_fn(stationary=True, controllable=controllable)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
+
+
+def test_controllable_implies_stationary(generator_fn: GeneratorFn):
+    with pytest.raises(ValueError):
+        generator_fn(stationary=False, controllable=True)
 
 
 def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
