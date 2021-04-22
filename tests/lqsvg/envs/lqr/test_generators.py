@@ -24,7 +24,7 @@ from lqsvg.envs.lqr.types import LinDynamics, LinSDynamics, QuadCost
 from lqsvg.envs.lqr.utils import stationary_dynamics_factors
 from lqsvg.testing.fixture import standard_fixture
 
-GeneratorFn = Callable[[], LQGGenerator]
+GeneratorFn = Callable[..., LQGGenerator]
 
 passive_eigval_range = standard_fixture(
     [None, (0.0, 1.0), (0.5, 1.5)], "PassiveEigvals"
@@ -34,6 +34,7 @@ transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
 cost_linear = standard_fixture((True, False), "CostLinear")
 cost_cross = standard_fixture((True, False), "CostCross")
+n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
 @pytest.fixture
@@ -66,9 +67,6 @@ def test_generator_init(
     assert generator.n_ctrl == n_ctrl
     assert generator.horizon == horizon
     assert generator.seed == seed
-
-
-n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 
 def check_generated_dynamics(
@@ -239,7 +237,6 @@ def check_cost(
 
 
 def test_stationary(generator_fn: GeneratorFn, stationary: bool):
-    # noinspection PyArgumentList
     generator = generator_fn(stationary=stationary)
     dynamics, cost, _ = generator()
 
@@ -248,14 +245,12 @@ def test_stationary(generator_fn: GeneratorFn, stationary: bool):
 
 
 def test_controllable(generator_fn: GeneratorFn, controllable: bool):
-    # noinspection PyArgumentList
     generator = generator_fn(controllable=controllable)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
 
 
 def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
-    # noinspection PyArgumentList
     generator = generator_fn(rand_trans_cov=sample_covariance)
     dynamics, _, _ = generator()
 
@@ -265,7 +260,6 @@ def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
 def test_passive_eigval_range(
     generator_fn: GeneratorFn, passive_eigval_range: tuple[float, float]
 ):
-    # noinspection PyArgumentList
     generator = generator_fn(passive_eigval_range=passive_eigval_range)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
@@ -275,7 +269,6 @@ def test_transition_bias(
     generator_fn: GeneratorFn,
     transition_bias: bool,
 ):
-    # noinspection PyArgumentList
     generator = generator_fn(transition_bias=transition_bias)
     dynamics, _, _ = generator()
     check_generated_dynamics(dynamics, generator)
@@ -285,7 +278,6 @@ def test_cost_linear(
     generator_fn: GeneratorFn,
     cost_linear: bool,
 ):
-    # noinspection PyArgumentList
     generator = generator_fn(cost_linear=cost_linear)
     _, cost, _ = generator()
     check_generated_cost(cost, generator)
@@ -362,8 +354,8 @@ def test_make_quadcost(
         n_ctrl,
         horizon,
         stationary=stationary,
-        rng=seed,
         linear=cost_linear,
+        rng=seed,
     )
     check_cost(
         cost, n_state, n_ctrl, horizon, stationary=stationary, linear=cost_linear
