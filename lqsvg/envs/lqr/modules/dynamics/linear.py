@@ -13,8 +13,9 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
+from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky
 
-from .common import TVMultivariateNormal, assemble_scale_tril, disassemble_covariance
+from .common import TVMultivariateNormal
 
 
 class CovarianceCholesky(nn.Module):
@@ -38,7 +39,7 @@ class CovarianceCholesky(nn.Module):
 
     def factorize_(self, matrix: Tensor) -> CovarianceCholesky:
         """Set parameters to reproduce a symmetric positive definite matrix."""
-        ltril, pre_diag = nt.unnamed(*disassemble_covariance(matrix, beta=self.beta))
+        ltril, pre_diag = nt.unnamed(*disassemble_cholesky(matrix, beta=self.beta))
         self.ltril.data.copy_(ltril)
         self.pre_diag.data.copy_(pre_diag)
         return self
@@ -54,7 +55,7 @@ class CovarianceCholesky(nn.Module):
             ltril, pre_diag = (
                 nt.index_by(x, dim="H", index=index) for x in (ltril, pre_diag)
             )
-        return assemble_scale_tril(ltril, pre_diag, beta=self.beta)
+        return assemble_cholesky(ltril, pre_diag, beta=self.beta)
 
 
 # noinspection PyPep8Naming

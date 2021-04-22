@@ -5,12 +5,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from lqsvg.envs.lqr.modules.dynamics.common import (
-    assemble_scale_tril,
-    disassemble_covariance,
-    softplusinv,
-)
 from lqsvg.torch import named as nt
+from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv
 
 
 class SPDMatrix(nn.Module):
@@ -45,7 +41,7 @@ class SPDMatrix(nn.Module):
 
     def factorize_(self, matrix: Tensor) -> SPDMatrix:
         """Set parameters to reproduce a symmetric positive definite matrix."""
-        ltril, pre_diag = nt.unnamed(*disassemble_covariance(matrix, beta=self.beta))
+        ltril, pre_diag = nt.unnamed(*disassemble_cholesky(matrix, beta=self.beta))
         self.ltril.data.copy_(ltril)
         self.pre_diag.data.copy_(pre_diag)
         return self
@@ -54,5 +50,5 @@ class SPDMatrix(nn.Module):
         """Compute the symmetric positive definite matrix from parameters."""
         ltril = nt.matrix(nt.tril(self.ltril, diagonal=-1))
         pre_diag = nt.vector(self.pre_diag)
-        cholesky = assemble_scale_tril(ltril, pre_diag, beta=self.beta)
+        cholesky = assemble_cholesky(ltril, pre_diag, beta=self.beta)
         return cholesky @ nt.transpose(cholesky)

@@ -9,13 +9,9 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv
 
-from .common import (
-    TVMultivariateNormal,
-    assemble_scale_tril,
-    disassemble_covariance,
-    softplusinv,
-)
+from .common import TVMultivariateNormal
 
 
 class InitStateDynamics(ptd.Distribution):
@@ -68,7 +64,7 @@ class InitStateDynamics(ptd.Distribution):
             self
         """
         loc, sigma = init
-        ltril, pre_diag = nt.unnamed(*disassemble_covariance(sigma))
+        ltril, pre_diag = nt.unnamed(*disassemble_cholesky(sigma))
         self.loc.data.copy_(loc)
         self.ltril.data.copy_(ltril)
         self.pre_diag.data.copy_(pre_diag)
@@ -76,7 +72,7 @@ class InitStateDynamics(ptd.Distribution):
 
     def scale_tril(self) -> Tensor:
         # pylint:disable=missing-function-docstring
-        return nt.matrix(assemble_scale_tril(self.ltril, self.pre_diag))
+        return nt.matrix(assemble_cholesky(self.ltril, self.pre_diag))
 
     def forward(self) -> DistParams:
         # pylint:disable=missing-function-docstring

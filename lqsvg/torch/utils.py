@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch import Generator, Tensor
 
 import lqsvg.np_util as np_util
+from lqsvg.torch import named as nt
 
 
 @contextlib.contextmanager
@@ -64,3 +65,21 @@ def make_spd_matrix(
         dtype=dtype,
         device=device,
     )
+
+
+def softplusinv(tensor: Tensor, *, beta: float = 1.0) -> Tensor:
+    """Returns the inverse softplus transformation."""
+    return torch.log(torch.exp(beta * tensor) - 1) / beta
+
+
+def disassemble_cholesky(tensor: Tensor, *, beta: float = 1.0) -> Tuple[Tensor, Tensor]:
+    """Compute cholesky factor and break it into unconstrained parameters."""
+    tril = nt.cholesky(tensor, upper=False)
+    ltril = nt.tril(tril, diagonal=-1)
+    pre_diag = softplusinv(nt.diagonal(tril, dim1="R", dim2="C"), beta=beta)
+    return ltril, pre_diag
+
+
+def assemble_cholesky(ltril: Tensor, pre_diag: Tensor, *, beta: float = 1.0) -> Tensor:
+    """Transform uncostrained parameters into cholesky factor."""
+    return ltril + torch.diag_embed(nt.softplus(pre_diag, beta=beta))
