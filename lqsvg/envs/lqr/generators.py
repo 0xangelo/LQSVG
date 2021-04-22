@@ -214,8 +214,13 @@ def make_lindynamics(
             the (A,B) pair) make the system controllable
         bias: whether to use a non-zero bias vector for transition dynamics
         rng: random number generator, seed, or None
+
+    Raises:
+        ValueError: if `controllable` is True but not `stationary`
     """
     # pylint:disable=too-many-arguments
+    if controllable and not stationary:
+        raise ValueError("Controllable non-stationary dynamics are unsupported.")
     rng = np.random.default_rng(rng)
 
     Fs, _, eigvec = generate_passive(

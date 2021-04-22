@@ -268,7 +268,7 @@ def test_controllable(generator_fn: GeneratorFn, controllable: bool):
 
 def test_controllable_implies_stationary(generator_fn: GeneratorFn):
     with pytest.raises(ValueError):
-        generator_fn(stationary=False, controllable=True)
+        generator_fn(stationary=False, controllable=True)()
 
 
 def test_rand_trans_cov(generator_fn: GeneratorFn, sample_covariance: bool):
