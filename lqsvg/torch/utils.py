@@ -82,4 +82,5 @@ def disassemble_cholesky(tensor: Tensor, *, beta: float = 1.0) -> Tuple[Tensor, 
 
 def assemble_cholesky(ltril: Tensor, pre_diag: Tensor, *, beta: float = 1.0) -> Tensor:
     """Transform uncostrained parameters into cholesky factor."""
-    return ltril + torch.diag_embed(nt.softplus(pre_diag, beta=beta))
+    ltril, diag = nt.tril(ltril, diagonal=-1), nt.softplus(pre_diag, beta=beta)
+    return ltril + torch.diag_embed(diag)
