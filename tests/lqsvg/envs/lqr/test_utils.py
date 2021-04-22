@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -20,15 +21,17 @@ from lqsvg.envs.lqr.utils import (
 from lqsvg.np_util import RNG
 from lqsvg.testing.fixture import standard_fixture
 
+vec_dim = standard_fixture((2, 3, 4), "VecDim")
+batch_shape = standard_fixture([(), (1,), (2,), (2, 1)], "BatchShape")
+
 
 @pytest.fixture(params=(0, 2))
 def dim(request) -> int:
     return request.param
 
 
-# noinspection PyUnresolvedReferences
 @pytest.fixture
-def sampler(dim: int) -> callable[[int], np.ndarray]:
+def sampler(dim: int) -> Callable[[int], np.ndarray]:
     call = normal.rvs if dim == 0 else partial(ortho_group.rvs, dim=3)
 
     def _sample(size: int) -> np.ndarray:
@@ -37,8 +40,7 @@ def sampler(dim: int) -> callable[[int], np.ndarray]:
     return _sample
 
 
-# noinspection PyUnresolvedReferences
-def test_wrap_sample_shape_to_size(sampler: callable[[int], np.ndarray], dim: int):
+def test_wrap_sample_shape_to_size(sampler: Callable[[int], np.ndarray], dim: int):
     wrapped = wrap_sample_shape_to_size(sampler, dim)
 
     def prefix(arr: np.ndarray) -> tuple[int, ...]:
@@ -59,10 +61,6 @@ def test_wrap_sample_shape_to_size(sampler: callable[[int], np.ndarray], dim: in
     sample_shape = (2, 1)
     sample = wrapped(sample_shape)
     assert prefix(sample) == sample_shape
-
-
-vec_dim = standard_fixture((2, 3, 4), "VecDim")
-batch_shape = standard_fixture([(), (1,), (2,), (2, 1)], "BatchShape")
 
 
 @pytest.fixture
