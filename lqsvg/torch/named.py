@@ -154,7 +154,7 @@ def softplus(tensor: Tensor, *, beta: float = 1) -> Tensor:
     return F.softplus(unnamed(tensor), beta=beta).refine_names(*tensor.names)
 
 
-def allclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> bool:
+def allclose(inpt: _Tensor, other: _Tensor, *args: object, **kwargs: object) -> bool:
     return torch.allclose(unnamed(inpt), unnamed(other), *args, **kwargs)
 
 
