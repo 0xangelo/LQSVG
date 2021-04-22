@@ -5,11 +5,8 @@ import torch
 import torch.nn as nn
 
 import lqsvg.torch.named as nt
-from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.modules import SPDMatrix
 from lqsvg.torch.utils import make_spd_matrix
-
-seed = standard_fixture((1, 2, 3), "Seed")
 
 
 class TestSPDMatrix:

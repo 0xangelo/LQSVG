@@ -1,8 +1,11 @@
+from typing import Union
+
 import pytest
 import torch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
+from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import (
     assemble_cholesky,
     default_generator_seed,
@@ -12,15 +15,8 @@ from lqsvg.torch.utils import (
     softplusinv,
 )
 
-
-@pytest.fixture(params=(1, 2, 4), ids=lambda x: f"NDim:{x}")
-def n_dim(request):
-    return request.param
-
-
-@pytest.fixture(params=(1.0, 0.2, 0.5), ids=lambda x: f"Beta:{x}")
-def beta(request) -> float:
-    return request.param
+n_dim = standard_fixture((1, 2, 4), "NDim")
+beta = standard_fixture((1.0, 0.2, 0.5), "Beta")
 
 
 def test_softplusinv(n_dim: int, beta: float):
@@ -32,56 +28,59 @@ def test_softplusinv(n_dim: int, beta: float):
 
 
 @pytest.fixture
-def covariance(n_dim: int) -> Tensor:
+def spdm(n_dim: int) -> Tensor:
     return nt.matrix(make_spd_matrix(n_dim, sample_shape=()))
 
 
-def test_disassemble_cholesky(covariance: Tensor):
-    ltril, pre_diag = disassemble_cholesky(covariance)
+def test_disassemble_cholesky(spdm: Tensor):
+    ltril, pre_diag = disassemble_cholesky(spdm)
 
-    assert ltril.shape == covariance.shape
-    assert ltril.dtype == covariance.dtype
-    assert ltril.names == covariance.names
+    assert torch.is_tensor(ltril) and torch.is_tensor(pre_diag)
+    assert torch.isfinite(ltril).all() and torch.isfinite(pre_diag).all()
+    assert ltril.shape == spdm.shape
+    assert ltril.dtype == spdm.dtype
+    assert ltril.names == spdm.names
 
     assert pre_diag.shape == ltril.shape[:-1]
-    assert pre_diag.dtype == covariance.dtype
+    assert pre_diag.dtype == spdm.dtype
 
 
-def test_assemble_cholesky(covariance: Tensor):
-    scale_tril = nt.cholesky(covariance)
-
-    assert scale_tril.shape == covariance.shape
-    assert scale_tril.names == covariance.names
-    assert scale_tril.dtype == covariance.dtype
-    assert (nt.diagonal(scale_tril) >= 0).all()
-    assert nt.allclose(scale_tril @ nt.transpose(scale_tril), covariance)
-
-    ltril, pre_diag = disassemble_cholesky(covariance)
+def test_assemble_cholesky(spdm: Tensor, n_dim: int):
+    ltril, pre_diag = disassemble_cholesky(spdm)
+    ltril.requires_grad_(True)
+    pre_diag.requires_grad_(True)
     restored = assemble_cholesky(ltril, pre_diag)
 
-    assert restored.shape == scale_tril.shape
-    assert restored.names == scale_tril.names
-    assert restored.dtype == scale_tril.dtype
+    assert restored.shape == spdm.shape
+    assert restored.names == spdm.names
+    assert restored.dtype == spdm.dtype
     assert (nt.diagonal(restored) >= 0).all()
-    assert nt.allclose(restored, scale_tril)
+    assert nt.allclose(restored, nt.cholesky(spdm))
+
+    restored.sum().backward()
+    assert torch.allclose(torch.triu(ltril.grad, diagonal=0), torch.zeros([]))
+    tril_idxs = torch.tril_indices(n_dim, n_dim, offset=-1)
+    assert not torch.isclose(
+        ltril.grad[..., tril_idxs[0], tril_idxs[1]], torch.zeros([])
+    ).any()
+    assert not torch.isclose(pre_diag.grad, torch.zeros([])).any()
 
 
-@pytest.fixture(params=(None, 123, torch.Generator()))
-def seed(request):
-    return request.param
+class TestTorchRNG:
+    @pytest.fixture(params=(None, 123, torch.Generator()))
+    def rng(self, request):
+        return request.param
 
+    def test_default_rng(self, rng: Union[None, int, torch.Generator]):
+        rng = default_rng(rng)
+        assert isinstance(rng, torch.Generator)
 
-def test_default_rng(seed):
-    rng = default_rng(seed)
-    assert isinstance(rng, torch.Generator)
+    def test_default_generator_seed(self):
+        random = torch.randn(10)
+        with default_generator_seed(42):
+            first = torch.randn(10)
+        with default_generator_seed(42):
+            second = torch.randn(10)
 
-
-def test_default_generator_seed():
-    random = torch.randn(10)
-    with default_generator_seed(42):
-        first = torch.randn(10)
-    with default_generator_seed(42):
-        second = torch.randn(10)
-
-    assert not any(torch.allclose(t, random) for t in (first, second))
-    assert torch.allclose(first, second)
+        assert not any(torch.allclose(t, random) for t in (first, second))
+        assert torch.allclose(first, second)
