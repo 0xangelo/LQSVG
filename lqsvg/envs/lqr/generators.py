@@ -239,13 +239,15 @@ def make_lindynamics(
     F = torch.cat((Fs, Fa), dim="C")
 
     if bias:
-        f = utils.random_normal_vector(
-            state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
+        f = utils.random_unit_vector(
+            state_size,
+            sample_shape=utils.minimal_sample_shape(horizon, stationary, n_batch),
+            rng=rng,
         )
     else:
-        f = utils.expand_and_refine(
-            nt.vector(torch.zeros(state_size)), 1, horizon=horizon, n_batch=n_batch
-        )
+        f = np.zeros(state_size)
+    f = nt.vector(as_float_tensor(f))
+    f = utils.expand_and_refine(f, 1, horizon=horizon, n_batch=n_batch)
     return LinDynamics(F, f)
 
 
