@@ -56,10 +56,11 @@ def make_spd_matrix(
     sample_shape: tuple[int, ...],
     dtype: Optional[torch.dtype] = torch.float32,
     device: Optional[torch.device] = None,
+    rng: np_util.RNG = None,
 ) -> Tensor:
     """PyTorch version of random symmetric positive-definite matrix generation."""
     return torch.as_tensor(
-        np_util.make_spd_matrix(n_dim, sample_shape=sample_shape),
+        np_util.make_spd_matrix(n_dim, sample_shape=sample_shape, rng=rng),
         dtype=dtype,
         device=device,
     )

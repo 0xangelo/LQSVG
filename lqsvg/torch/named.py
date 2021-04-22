@@ -134,12 +134,11 @@ def index_by(tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]) -> T
     return refined
 
 
-def diagonal(tensor: Tensor, *args, dim1: str = "R", dim2: str = "C", **kwargs):
-    permuted = tensor.align_to(..., dim1, dim2)
-    diag = torch.diagonal(
-        unnamed(permuted), *args, dim1=-2, dim2=-1, **kwargs
-    ).unsqueeze(-1)
-    return diag.refine_names(*permuted.names).align_to(*tensor.names).squeeze(dim2)
+def diagonal(tensor: Tensor, offset: int = 0, dim1: str = "R", dim2: str = "C"):
+    names = tensor.names
+    idx1, idx2 = names.index(dim1), names.index(dim2)
+    diag = torch.diagonal(unnamed(tensor), offset=offset, dim1=idx1, dim2=idx2)
+    return diag.unsqueeze(idx2).refine_names(*names).squeeze(dim2)
 
 
 def tril(tensor: Tensor, *args, **kwargs) -> Tensor:
