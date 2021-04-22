@@ -9,10 +9,10 @@ from lqsvg.torch import named as nt
 from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv
 
 
-class SPDMatrix(nn.Module):
-    """Symmetric positive-definite matrix stored as unconstrained parameters.
+class CholeskyFactor(nn.Module):
+    """Matrix Cholesky factor stored as unconstrained parameters.
 
-    Stores the Cholesky factor of the matrix as two parameters:
+    Stores the Cholesky factor as two parameters:
     - lower triangular portion, excluding the diagonal
     - inverse softplus of the positive diagonal elements, as a vector
     """
@@ -39,16 +39,31 @@ class SPDMatrix(nn.Module):
         softplusinv_one = softplusinv(torch.ones([]), beta=self.beta).item()
         nn.init.constant_(self.pre_diag, softplusinv_one)
 
-    def factorize_(self, matrix: Tensor) -> SPDMatrix:
-        """Set parameters to reproduce a symmetric positive definite matrix."""
+    def factorize_(self, matrix: Tensor) -> CholeskyFactor:
+        """Set parameters to factorize a symmetric positive definite matrix."""
         ltril, pre_diag = nt.unnamed(*disassemble_cholesky(matrix, beta=self.beta))
         self.ltril.data.copy_(ltril)
         self.pre_diag.data.copy_(pre_diag)
         return self
 
     def forward(self) -> Tensor:
+        """Compute the Cholesky factor from parameters."""
+        ltril = nt.matrix(self.ltril)
+        pre_diag = nt.vector(self.pre_diag)
+        return assemble_cholesky(ltril, pre_diag, beta=self.beta)
+
+
+class SPDMatrix(CholeskyFactor):
+    """Symmetric positive-definite matrix stored as unconstrained parameters.
+
+    Stores the Cholesky factor of the matrix as two parameters:
+    - lower triangular portion, excluding the diagonal
+    - inverse softplus of the positive diagonal elements, as a vector
+    """
+
+    def forward(self) -> Tensor:
         """Compute the symmetric positive definite matrix from parameters."""
-        ltril = nt.matrix(nt.tril(self.ltril, diagonal=-1))
+        ltril = nt.matrix(self.ltril)
         pre_diag = nt.vector(self.pre_diag)
         cholesky = assemble_cholesky(ltril, pre_diag, beta=self.beta)
         return cholesky @ nt.transpose(cholesky)
