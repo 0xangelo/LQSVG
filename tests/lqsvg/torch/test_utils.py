@@ -36,7 +36,7 @@ def covariance(n_dim: int) -> Tensor:
     return nt.matrix(make_spd_matrix(n_dim, sample_shape=()))
 
 
-def test_disassemble_covariance(covariance: Tensor):
+def test_disassemble_cholesky(covariance: Tensor):
     ltril, pre_diag = disassemble_cholesky(covariance)
 
     assert ltril.shape == covariance.shape
@@ -47,7 +47,7 @@ def test_disassemble_covariance(covariance: Tensor):
     assert pre_diag.dtype == covariance.dtype
 
 
-def test_restore_scale_tril(covariance: Tensor):
+def test_assemble_cholesky(covariance: Tensor):
     scale_tril = nt.cholesky(covariance)
 
     assert scale_tril.shape == covariance.shape
