@@ -1,5 +1,7 @@
 """Gaussian initial state dynamics as a PyTorch module."""
-from typing import List
+from __future__ import annotations
+
+from typing import List, Tuple, Union
 
 import raylab.torch.nn.distributions as ptd
 import torch
@@ -12,6 +14,8 @@ from lqsvg.envs import lqr
 from lqsvg.torch.modules import CholeskyFactor
 
 from .common import TVMultivariateNormal
+
+SampleShape = Union[List[int], Tuple[int, ...], torch.Size]
 
 
 class InitStateDynamics(ptd.Distribution):
@@ -55,7 +59,7 @@ class InitStateDynamics(ptd.Distribution):
         n_state = loc.size("R")
         return cls(n_state).copy_(init)
 
-    def copy_(self, init: lqr.GaussInit) -> "InitStateDynamics":
+    def copy_(self, init: lqr.GaussInit) -> InitStateDynamics:
         """Update parameters to existing Gaussian initial state distribution.
 
         Args:
@@ -76,11 +80,11 @@ class InitStateDynamics(ptd.Distribution):
         loc = nt.vector(self.loc)
         return {"loc": loc, "scale_tril": self.scale_tril(), "time": self.time}
 
-    def sample(self, sample_shape: List[int] = ()) -> SampleLogp:
+    def sample(self, sample_shape: SampleShape = ()) -> SampleLogp:
         params = self()
         return self.dist.sample(params, sample_shape)
 
-    def rsample(self, sample_shape: List[int] = ()) -> SampleLogp:
+    def rsample(self, sample_shape: SampleShape = ()) -> SampleLogp:
         params = self()
         return self.dist.rsample(params, sample_shape)
 

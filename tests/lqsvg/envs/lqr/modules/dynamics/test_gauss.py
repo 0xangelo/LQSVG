@@ -1,4 +1,3 @@
-# pylint:disable=unsubscriptable-object
 from __future__ import annotations
 
 from typing import Type
@@ -60,6 +59,18 @@ class TestInitStateDynamics:
         assert hasattr(module, "scale_tril")
         assert isinstance(module.loc, nn.Parameter)
         assert isinstance(module.scale_tril, CholeskyFactor)
+
+    @pytest.mark.parametrize("sample_shape", [(), (1,), (2,), (2, 2)])
+    def test_rsample(self, module: InitStateDynamics, sample_shape: tuple[int, ...]):
+        obs, _ = module.rsample(sample_shape)
+
+        assert obs.shape == sample_shape + (module.n_state + 1,)
+        assert obs.dtype == torch.float32
+
+        obs.sum().backward()
+        params = (module.loc, module.scale_tril.ltril, module.scale_tril.pre_diag)
+        assert all(list(p.grad is not None for p in params))
+        assert not any(list(torch.allclose(p.grad, torch.zeros([])) for p in params))
 
     def test_log_prob(
         self, module: InitStateDynamics, optim: torch.optim.Optimizer, obs: Tensor
