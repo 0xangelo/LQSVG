@@ -1,13 +1,11 @@
-# pylint:disable=missing-docstring,unsubscriptable-object
+# pylint:disable=missing-docstring
 from __future__ import annotations
 
 import itertools
-from typing import Optional
 
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from raylab.policy.modules.actor import DeterministicPolicy
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -15,7 +13,9 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.modules.general import EnvModule
+from lqsvg.experiment.analysis import empirical_variance, gradient_accuracy
 from lqsvg.experiment.estimators import AnalyticSVG, MonteCarloSVG
+from lqsvg.policy.modules import TVLinearPolicy
 from lqsvg.policy.time_varying_linear import LQGPolicy
 
 from .utils import linear_feedback_cossim, linear_feedback_norm
@@ -23,7 +23,7 @@ from .utils import linear_feedback_cossim, linear_feedback_norm
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
-    actor: DeterministicPolicy
+    actor: TVLinearPolicy
     model: EnvModule
     mdp: LQGModule
     gold_standard: tuple[Tensor, lqr.Linear]
@@ -37,9 +37,6 @@ class LightningModel(pl.LightningModule):
         self.monte_carlo_svg = MonteCarloSVG(self.actor, self.model)
 
         self.analytic_svg = None
-        if isinstance(self.model, LQGModule):
-            self.analytic_svg = AnalyticSVG(self.actor, self.model)
-
         self.gold_standard = AnalyticSVG(self.actor, self.mdp)()
 
     # noinspection PyArgumentList
@@ -100,39 +97,26 @@ class LightningModel(pl.LightningModule):
 
     def log_monte_carlo(self, prefix: str = ""):
         with torch.enable_grad():
-            mc_val, mc_svg = self.monte_carlo_svg(samples=self.hparams.mc_samples)
-        self.zero_grad(set_to_none=True)
+            mc_outputs = [
+                self.monte_carlo_svg(samples=self.hparams.mc_samples)
+                for _ in range(self.hparams.empvar_samples)
+            ]
+            vals, svgs = zip(*mc_outputs)
+
+        mc_val = torch.stack(vals).mean()
+        svg_norm = torch.stack([linear_feedback_norm(g) for g in svgs]).mean()
+        self.log(prefix + "monte_carlo_value", mc_val)
+        self.log(prefix + "monte_carlo_svg_norm", svg_norm)
 
         true_val, true_svg = self.gold_standard
-        self.log(prefix + "monte_carlo_value", mc_val)
-        self.log(prefix + "monte_carlo_svg_norm", linear_feedback_norm(mc_svg))
         self.log(prefix + "monte_carlo_abs_diff", torch.abs(mc_val - true_val))
-        self.log(
-            prefix + "monte_carlo_cossim", linear_feedback_cossim(mc_svg, true_svg)
-        )
-        self.log(prefix + "empirical_grad_var", self.empirical_variance([mc_svg]))
-
-    def empirical_variance(self, existing: Optional[list[lqr.Linear]] = None) -> float:
-        samples = existing or []
-
-        n_grads = self.hparams.empvar_samples - len(samples)
-        with torch.enable_grad():
-            samples += [
-                self.monte_carlo_svg(samples=self.hparams.mc_samples)[1]
-                for _ in range(n_grads)
-            ]
+        self.log(prefix + "monte_carlo_cossim", gradient_accuracy(svgs, true_svg))
+        self.log(prefix + "empirical_grad_var", empirical_variance(svgs))
         self.zero_grad(set_to_none=True)
-
-        cossims = [
-            linear_feedback_cossim(gi, gj)
-            for i, gi in enumerate(samples)
-            for gj in samples[i + 1 :]
-        ]
-
-        return torch.stack(cossims).mean().item()
 
     def log_analytic(self, prefix: str = ""):
         with torch.enable_grad():
+            # pylint:disable=not-callable
             analytic_val, analytic_svg = self.analytic_svg()
         self.zero_grad(set_to_none=True)
 
@@ -164,7 +148,7 @@ class RecurrentModel(LightningModel):
         trans_logp = []
         obs_, _ = init_model.rsample(init_logp.shape)
         obs_ = obs_.rename(*init_logp.names, ...)
-        for t in range(self.model.horizon):  # pylint:disable=invalid-name
+        for t in range(self.model.horizon):
             params = trans_model(obs_, act.select(dim="H", index=t))
             trans_logp += [
                 trans_model.log_prob(new_obs.select(dim="H", index=t), params)
