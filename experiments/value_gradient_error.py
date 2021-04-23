@@ -121,6 +121,7 @@ class Experiment(tune.Trainable):
             max_epochs=self.hparams.max_epochs,
             progress_bar_refresh_rate=0,  # don't show progress bar for model training
             weights_summary=None,  # don't print summary before training
+            checkpoint_callback=False,  # don't save last model checkpoint
         )
 
     def _checkpoint_callback(self) -> pl.callbacks.ModelCheckpoint:
@@ -181,13 +182,13 @@ def main():
 
     config = {
         "wandb_dir": os.getcwd(),
-        "wandb_tags": "easy stable controllable".split(),
+        "wandb_tags": "easy unstable controllable".split(),
         "env_config": dict(
             n_state=tune.randint(2, 11),
             n_ctrl=tune.randint(2, 11),
             horizon=tune.randint(1, 200),
             stationary=True,
-            passive_eigval_range=(0.0, 1.0),
+            passive_eigval_range=(0.5, 1.5),
             controllable=True,
             transition_bias=False,
             rand_trans_cov=False,
