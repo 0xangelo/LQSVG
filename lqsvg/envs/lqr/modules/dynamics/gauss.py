@@ -5,11 +5,11 @@ import raylab.torch.nn.distributions as ptd
 import torch
 import torch.nn as nn
 from raylab.torch.nn.distributions.types import DistParams, SampleLogp
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv
+from lqsvg.torch.modules import CholeskyFactor
 
 from .common import TVMultivariateNormal
 
@@ -24,17 +24,21 @@ class InitStateDynamics(ptd.Distribution):
     """
 
     n_state: int
+    loc: nn.Parameter
+    scale_tril: CholeskyFactor
+    time: IntTensor
+    dist: TVMultivariateNormal
 
     def __init__(self, n_state: int):
         super().__init__()
         self.n_state = n_state
-        self.dist = TVMultivariateNormal()
 
         self.loc = nn.Parameter(Tensor(n_state))
-        self.ltril = nn.Parameter(Tensor(n_state, n_state))
-        self.pre_diag = nn.Parameter(Tensor(n_state))
+        self.scale_tril = CholeskyFactor((n_state, n_state))
         self.register_buffer("time", -nt.vector(torch.ones(1, dtype=torch.int)))
         self.reset_parameters()
+
+        self.dist = TVMultivariateNormal()
 
     def reset_parameters(self):
         """Default parameter initialization.
@@ -42,8 +46,7 @@ class InitStateDynamics(ptd.Distribution):
         Initializes model as a standard Gaussian distribution.
         """
         nn.init.constant_(self.loc, 0)
-        nn.init.constant_(self.ltril, 0)
-        nn.init.constant_(self.pre_diag, softplusinv(torch.ones([])).item())
+        self.scale_tril.reset_parameters()
 
     @classmethod
     def from_existing(cls, init: lqr.GaussInit):
@@ -64,15 +67,9 @@ class InitStateDynamics(ptd.Distribution):
             self
         """
         loc, sigma = init
-        ltril, pre_diag = nt.unnamed(*disassemble_cholesky(sigma))
         self.loc.data.copy_(loc)
-        self.ltril.data.copy_(ltril)
-        self.pre_diag.data.copy_(pre_diag)
+        self.scale_tril.factorize_(sigma)
         return self
-
-    def scale_tril(self) -> Tensor:
-        # pylint:disable=missing-function-docstring
-        return nt.matrix(assemble_cholesky(self.ltril, self.pre_diag))
 
     def forward(self) -> DistParams:
         # pylint:disable=missing-function-docstring
@@ -96,5 +93,5 @@ class InitStateDynamics(ptd.Distribution):
         # pylint:disable=missing-function-docstring
         loc = nt.vector(self.loc)
         scale_tril = self.scale_tril()
-        covariance_matrix = scale_tril @ nt.transpose(scale_tril)
-        return lqr.GaussInit(loc, covariance_matrix)
+        sigma = scale_tril @ nt.transpose(scale_tril)
+        return lqr.GaussInit(loc, sigma)
