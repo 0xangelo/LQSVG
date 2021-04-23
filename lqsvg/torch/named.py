@@ -163,7 +163,7 @@ def isclose(inpt: Tensor, other: Tensor, *args, **kwargs) -> BoolTensor:
     return torch.isclose(inpt, other, *args, **kwargs).refine_names(*names)
 
 
-def where(condition: Tensor, branch_a: Tensor, branch_b: Tensor) -> Tensor:
+def where(condition: _Tensor, branch_a: _Tensor, branch_b: _Tensor) -> _Tensor:
     names = branch_a.names
     condition, branch_a, branch_b = unnamed(condition, branch_a, branch_b)
     filtered = torch.where(condition, branch_a, branch_b)

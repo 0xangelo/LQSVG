@@ -9,12 +9,11 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr import pack_obs
+from lqsvg.envs.lqr import pack_obs, unpack_obs
 from lqsvg.envs.lqr.modules.dynamics.gauss import InitStateDynamics
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.modules import CholeskyFactor
 
-batch_shape = standard_fixture([(), (1,), (2,), (2, 2)], "BatchShape")
 dim = standard_fixture((2, 4, 8), "Dim")
 
 
@@ -34,14 +33,11 @@ def state(dim: int, batch_shape: tuple[int, ...]) -> Tensor:
 
 
 @pytest.fixture
-def obs(state: Tensor, batch_shape: tuple[int, ...]) -> Tensor:
+def obs(
+    state: Tensor, batch_shape: tuple[int, ...], batch_names: tuple[str, ...]
+) -> Tensor:
     time = nt.vector(torch.zeros(batch_shape + (1,)).int())
-    return pack_obs(state, time).requires_grad_(True)
-
-
-@pytest.fixture
-def optim(module: nn.Module) -> torch.optim.Optimizer:
-    return torch.optim.SGD(module.parameters(), lr=1e-3)
+    return pack_obs(state, time).refine_names(*batch_names, ...).requires_grad_(True)
 
 
 @pytest.fixture
@@ -66,33 +62,28 @@ class TestInitStateDynamics:
 
         assert obs.shape == sample_shape + (module.n_state + 1,)
         assert obs.dtype == torch.float32
+        assert obs.names[-1] == "R"
 
         obs.sum().backward()
         params = (module.loc, module.scale_tril.ltril, module.scale_tril.pre_diag)
         assert all(list(p.grad is not None for p in params))
         assert not any(list(torch.allclose(p.grad, torch.zeros([])) for p in params))
 
-    def test_log_prob(
-        self, module: InitStateDynamics, optim: torch.optim.Optimizer, obs: Tensor
-    ):
-        optim.zero_grad()
-        with torch.enable_grad():
-            logp = module.log_prob(obs)
-            loss = -logp.mean()
+    def test_log_prob(self, module: InitStateDynamics, obs: Tensor):
+        log_prob = module.log_prob(obs)
 
-        assert logp.shape == obs.shape[:-1]
-        assert logp.dtype == torch.float32
-        assert loss.shape == ()
+        assert log_prob.shape == obs.shape[:-1]
+        assert log_prob.dtype == torch.float32
+        _, time = unpack_obs(obs)
+        assert log_prob.names == nt.vector_to_scalar(time).names
 
-        loss.backward()
-        params = (module.loc, module.scale_tril.ltril, module.scale_tril.pre_diag)
-        assert all(list(p.grad is not None for p in params))
-
-        old = [p.clone() for p in params]
-        optim.step()
-        new = params
-        equals = [torch.allclose(x, y) for x, y in zip(old, new)]
-        assert not any(equals)
+        assert log_prob.grad_fn is not None
+        log_prob.sum().backward()
+        assert obs.grad is not None
+        assert not nt.allclose(obs.grad, torch.zeros_like(obs.grad))
+        grads = list(p.grad for p in module.parameters())
+        assert all(list(g is not None for g in grads))
+        assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
 
     def test_standard_form(self, module: InitStateDynamics):
         mu, sigma = module.standard_form()

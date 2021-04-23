@@ -55,17 +55,20 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
     ###########################################################################
 
     def _gen_sample(self, loc: Tensor, scale_tril: Tensor, time: IntTensor) -> Tensor:
-        dist = torch.distributions.MultivariateNormal(
-            loc=nt.unnamed(loc), scale_tril=nt.unnamed(scale_tril)
-        )
-        state = dist.rsample().refine_names(*loc.names)
-        next_obs = pack_obs(state, time + 1)
+        next_obs = self._transition(loc, scale_tril, time)
         if not self.horizon:
             return next_obs
 
         # Filter results
         # We're in an absorving state if the current timestep is the horizon
         return nt.where(time.eq(self.horizon), pack_obs(loc, time), next_obs)
+
+    @staticmethod
+    def _transition(loc: Tensor, scale_tril: Tensor, time: IntTensor) -> Tensor:
+        loc, scale_tril = nt.unnamed(loc, scale_tril)
+        dist = torch.distributions.MultivariateNormal(loc=loc, scale_tril=scale_tril)
+        state = dist.rsample().refine_names(*time.names)
+        return pack_obs(state, time + 1)
 
     def _logp(
         self, loc: Tensor, scale_tril: Tensor, time: Tensor, value: Tensor
@@ -90,7 +93,11 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
 
     @staticmethod
     def _trans_logp(
-        loc: Tensor, scale_tril: Tensor, cur_time: Tensor, state: Tensor, time: Tensor
+        loc: Tensor,
+        scale_tril: Tensor,
+        cur_time: IntTensor,
+        state: Tensor,
+        time: IntTensor,
     ) -> Tensor:
         loc, scale_tril = nt.unnamed(loc, scale_tril)
         dist = torch.distributions.MultivariateNormal(loc=loc, scale_tril=scale_tril)
@@ -106,18 +113,16 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
 
     @staticmethod
     def _absorving_logp(
-        cur_state: Tensor, cur_time: Tensor, state: Tensor, time: Tensor
+        cur_state: Tensor, cur_time: IntTensor, state: Tensor, time: IntTensor
     ) -> Tensor:
         # We assume time is a named scalar tensor
-        # noinspection PyTypeChecker
         cur_obs = pack_obs(cur_state, nt.scalar_to_vector(cur_time))
-        # noinspection PyTypeChecker
         obs = pack_obs(state, nt.scalar_to_vector(time))
         return nt.where(
             # Point mass only at the same state
             nt.reduce_all(nt.isclose(cur_obs, obs), dim="R"),
-            torch.zeros(time.shape),
-            torch.full(time.shape, fill_value=float("nan")),
+            torch.zeros_like(time, dtype=torch.float),
+            torch.full_like(time, fill_value=float("nan"), dtype=torch.float),
         )
 
 

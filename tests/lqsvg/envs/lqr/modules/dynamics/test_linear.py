@@ -14,20 +14,19 @@ from lqsvg.envs.lqr.modules.dynamics.linear import (
 )
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import default_generator_seed, make_spd_matrix
-
-batch_shape = standard_fixture([(), (1,), (4,), (2, 2)], "BatchShape")
-
-
-@pytest.fixture(autouse=True)
-def torch_random(seed: int):
-    with default_generator_seed(seed):
-        yield
+from lqsvg.torch.utils import make_spd_matrix
 
 
 @pytest.fixture
-def obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
-    state = nt.vector(torch.randn(batch_shape + (n_state,)))
+def obs(
+    n_state: int,
+    horizon: int,
+    batch_shape: tuple[int, ...],
+    batch_names: tuple[str, ...],
+) -> Tensor:
+    state = nt.vector(torch.randn(batch_shape + (n_state,))).refine_names(
+        *batch_names, ...
+    )
     dummy, _ = nt.split(state, [1, n_state - 1], dim="R")
     time = torch.randint_like(nt.unnamed(dummy), low=0, high=horizon)
     time = time.refine_names(*dummy.names).int()
@@ -35,8 +34,15 @@ def obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
 
 
 @pytest.fixture
-def last_obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
-    state = nt.vector(torch.randn(batch_shape + (n_state,)))
+def last_obs(
+    n_state: int,
+    horizon: int,
+    batch_shape: tuple[int, ...],
+    batch_names: tuple[str, ...],
+) -> Tensor:
+    state = nt.vector(torch.randn(batch_shape + (n_state,))).refine_names(
+        *batch_names, ...
+    )
     dummy, _ = nt.split(state, [1, n_state - 1], dim="R")
     time = torch.full_like(dummy, fill_value=horizon).int()
     return pack_obs(state, time).requires_grad_()
@@ -57,8 +63,14 @@ def mix_obs(obs: Tensor, last_obs: Tensor) -> Tensor:
 
 
 @pytest.fixture
-def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
-    return nt.vector(torch.randn(batch_shape + (n_ctrl,))).requires_grad_()
+def act(
+    n_ctrl: int, batch_shape: tuple[int, ...], batch_names: tuple[str, ...]
+) -> Tensor:
+    return (
+        nt.vector(torch.randn(batch_shape + (n_ctrl,)))
+        .refine_names(*batch_names, ...)
+        .requires_grad_()
+    )
 
 
 stationary = standard_fixture((True, False), "Stationary")
@@ -91,6 +103,16 @@ class TestLinearDynamicsModule:
         self, n_state: int, n_ctrl: int, horizon: int, stationary: bool
     ) -> LinearDynamicsModule:
         return LinearDynamicsModule(n_state, n_ctrl, horizon, stationary)
+
+    def test_forward(self, module: LinearDynamics, obs: Tensor, act: Tensor):
+        params = module(obs, act)
+        keys = "loc scale_tril time".split()
+        assert all(list(k in params for k in keys))
+        loc, scale_tril, time = (params[k] for k in keys)
+
+        assert loc.names == obs.names
+        assert scale_tril.names == obs.names + ("C",)
+        assert time.names == obs.names
 
     def test_rsample(self, module: LinearDynamics, obs: Tensor, act: Tensor):
         params = module(obs, act)
@@ -153,12 +175,13 @@ class TestLinearDynamicsModule:
         params = module(obs, act)
         log_prob = module.log_prob(new_obs, params)
         _, time = unpack_obs(obs)
-        time = nt.vector_to_scalar(time)
+        _, time_ = unpack_obs(new_obs)
+        time, time_ = nt.vector_to_scalar(time, time_)
 
         assert torch.is_tensor(log_prob)
         assert torch.isfinite(log_prob).all()
-        assert log_prob.shape == time.shape
-        assert log_prob.names == time.names
+        assert log_prob.shape == time.shape == time_.shape
+        assert log_prob.names == time.names == time_.names
 
         assert log_prob.grad_fn is not None
         log_prob.sum().backward()
