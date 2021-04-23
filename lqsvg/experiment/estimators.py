@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from raylab.policy.modules.actor import DeterministicPolicy
 from raylab.policy.modules.critic import QValue
 from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
@@ -83,9 +82,15 @@ class AnalyticSVG(nn.Module):
         Solves the prediction problem for the current policy and uses the
         resulting state-value function to compute the expected return.
 
+        Note:
+            Ensures the LQG model is put in evaluation mode and the policy in
+            training mode.
+
         Returns:
             A tensor representing the policy's expected return
         """
+        self.policy.train()
+        self.model.eval()
         policy = self.policy.standard_form()
         dynamics, cost, init = self.model.standard_form()
         value = -self.policy_loss(policy, dynamics, cost, init)
@@ -110,7 +115,7 @@ class AnalyticSVG(nn.Module):
 class MonteCarloSVG(nn.Module):
     """Computes the Monte Carlo aproximation for SVGs."""
 
-    def __init__(self, policy: DeterministicPolicy, model: EnvModule):
+    def __init__(self, policy: TVLinearPolicy, model: EnvModule):
         super().__init__()
         self.policy = policy
         self.model = model
@@ -123,6 +128,10 @@ class MonteCarloSVG(nn.Module):
         Sample trajectory using model with reparameterization trick and
         deterministic actor.
 
+        Note:
+            Ensures the environment model is put in evaluation mode and the
+            policy in training mode.
+
         Args:
             sample_shape: shape for batched trajectory samples
 
@@ -131,6 +140,7 @@ class MonteCarloSVG(nn.Module):
             log-likelihood under the model
         """
         sample_shape = torch.Size(sample_shape)
+        self.policy.train()
         self.model.eval()
 
         batch = []
@@ -216,6 +226,10 @@ class BootstrappedSVG(nn.Module):
     def surrogate(self, obs: Tensor, n_steps: int = 0) -> Tensor:
         """Monte Carlo estimate of the surrogate objective function.
 
+        Note:
+            Ensures the transition, reward, and value function models are put
+            in evaluation mode and the policy in training mode.
+
         Args:
             obs: starting state samples
             n_steps: number of steps to rollout the model before bootstrapping
@@ -223,6 +237,10 @@ class BootstrappedSVG(nn.Module):
         Returns:
             The average surrogate objective as a tensor.
         """
+        self.policy.train()
+        self.transition.eval()
+        self.reward.eval()
+        self.qvalue.eval()
         # This is the only action through which gradients can propagate
         act = self.policy(obs)
         partial_return = torch.zeros(())

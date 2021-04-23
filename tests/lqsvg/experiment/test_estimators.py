@@ -1,11 +1,10 @@
-# pylint:disable=unsubscriptable-object
 from __future__ import annotations
 
 from functools import partial
+from typing import Callable
 
 import pytest
 import torch
-from raylab.policy.modules.actor import DeterministicPolicy
 from raylab.policy.modules.critic import QValue
 from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
@@ -38,14 +37,25 @@ def policy(n_state: int, n_ctrl: int, horizon: int) -> TVLinearPolicy:
     return TVLinearPolicy(n_state, n_ctrl, horizon)
 
 
-# noinspection PyUnresolvedReferences
+@pytest.fixture(
+    params=(ResidualModel, LayerNormModel, BatchNormModel, StochasticModelWrapper)
+)
+def wrapper(request, n_state: int) -> Callable[[StochasticModel], StochasticModel]:
+    cls = request.param
+
+    if issubclass(cls, (LayerNormModel, BatchNormModel)):
+        return partial(cls, n_state=n_state)
+
+    return cls
+
+
 @pytest.fixture
 def trans(
     n_state: int,
     n_ctrl: int,
     horizon: int,
     stationary: bool,
-    wrapper: callable[[StochasticModel], StochasticModel],
+    wrapper: Callable[[StochasticModel], StochasticModel],
 ) -> StochasticModel:
     return wrapper(
         LinearTransitionModel(n_state, n_ctrl, horizon, stationary=stationary)
@@ -58,20 +68,6 @@ def reward(n_state: int, n_ctrl: int, horizon: int) -> QuadRewardModel:
 
 
 class TestMonteCarloSVG:
-    # noinspection PyUnresolvedReferences
-    @pytest.fixture(
-        params=(ResidualModel, LayerNormModel, BatchNormModel, StochasticModelWrapper)
-    )
-    def wrapper(
-        self, request, n_state: int
-    ) -> callable[[StochasticModel], StochasticModel]:
-        cls = request.param
-
-        if issubclass(cls, (LayerNormModel, BatchNormModel)):
-            return partial(cls, n_state=n_state)
-
-        return cls
-
     @pytest.fixture
     def init(self, n_state: int) -> InitStateModel:
         return InitStateModel(n_state)
@@ -87,7 +83,7 @@ class TestMonteCarloSVG:
         return EnvModule(dims, trans, reward, init)
 
     @pytest.fixture
-    def module(self, policy: DeterministicPolicy, model: EnvModule) -> MonteCarloSVG:
+    def module(self, policy: TVLinearPolicy, model: EnvModule) -> MonteCarloSVG:
         return MonteCarloSVG(policy, model)
 
     @pytest.fixture(params=(1, 2, 4), ids=lambda x: f"Samples:{x}")
@@ -113,18 +109,6 @@ class TestMonteCarloSVG:
 
 
 class TestBootstrappedSVG:
-    # noinspection PyUnresolvedReferences
-    @pytest.fixture(params=(ResidualModel, LayerNormModel, StochasticModelWrapper))
-    def wrapper(
-        self, request, n_state: int
-    ) -> callable[[StochasticModel], StochasticModel]:
-        cls = request.param
-
-        if issubclass(cls, (LayerNormModel, BatchNormModel)):
-            return partial(cls, n_state=n_state)
-
-        return cls
-
     @pytest.fixture
     def qvalue(self, n_state: int, n_ctrl: int, horizon: int) -> QValue:
         return QuadQValue(n_state + n_ctrl, horizon)
@@ -150,7 +134,6 @@ class TestBootstrappedSVG:
     @pytest.fixture
     def obs(self, state: Tensor, horizon: int, n_batch: int) -> Tensor:
         time = torch.randint(low=0, high=horizon, size=(n_batch, 1))
-        # noinspection PyTypeChecker
         return pack_obs(state, nt.vector(time).refine_names("B", ...))
 
     @pytest.fixture(params=(0, 1, 4), ids=lambda x: f"NStep:{x}")
