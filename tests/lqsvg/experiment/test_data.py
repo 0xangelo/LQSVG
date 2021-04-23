@@ -16,7 +16,10 @@ horizon = standard_fixture((1, 7, 10), "Horizon")
 def worker(n_state: int, n_ctrl: int, horizon: int) -> RolloutWorker:
     with nt.suppress_named_tensor_warning():
         worker = make_worker(
-            env_config=dict(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, num_envs=2)
+            env_config=dict(
+                n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, num_envs=2
+            ),
+            log_level="WARNING",
         )
     return worker
 
