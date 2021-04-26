@@ -8,6 +8,7 @@ from torch import Tensor
 
 from lqsvg.envs import lqr
 
+from . import LinearDynamicsModule
 from .dynamics import InitStateDynamics, LinearDynamics
 from .reward import QuadraticReward
 
@@ -60,6 +61,17 @@ class LQGModule(EnvModule):
         init: InitStateDynamics,
     ):
         super().__init__(dims, trans, reward, init)
+
+    @classmethod
+    def from_existing(
+        cls, dynamics: lqr.LinSDynamics, cost: lqr.QuadCost, init: lqr.GaussInit
+    ) -> LQGModule:
+        """Create LQG from existing components' parameters."""
+        dims = lqr.dims_from_dynamics(dynamics)
+        trans = LinearDynamicsModule.from_existing(dynamics, stationary=False)
+        reward = QuadraticReward.from_existing(cost)
+        init = InitStateDynamics.from_existing(init)
+        return cls(dims, trans, reward, init)
 
     def standard_form(self) -> tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
         """Submodules as a collection of matrices."""
