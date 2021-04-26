@@ -36,8 +36,6 @@ __all__ = [
     "random_matrix_from_eigs",
     "random_spd_matrix",
     "random_uniform_matrix",
-    "random_unit_vector",
-    "random_unit_col_matrix",
     "random_normal_matrix",
     "random_mat_with_eigval_range",
     "sample_eigvals",
@@ -393,57 +391,6 @@ def random_normal_matrix(
     """Matrix with standard Normal i.i.d. entries."""
     rng = np.random.default_rng(rng)
     return rng.normal(size=sample_shape + (row_size, col_size))
-
-
-def random_unit_vector(
-    size: int, sample_shape: tuple[int, ...] = (), eps: float = 1e-4, rng: RNG = None
-) -> np.ndarray:
-    """Vector uniformly distributed on the unit sphere.
-
-    Args:
-        size: size of the vector
-        sample_shape: shape of the sample, prepended to the vector shape.
-            Useful for sampling batches of vectors.
-        eps: minimum norm of the random normal vector to avoid dividing by
-            very small numbers. The function will resample random normal
-            vectors until all have a norm larger than this value
-        rng: random number generator parameter
-
-    Returns:
-        Vector uniformly distributed on the unit sphere.
-    """
-    rng = np.random.default_rng(rng)
-    vec = rng.normal(size=sample_shape + (size,))
-    norm = np.linalg.norm(vec, axis=-1, keepdims=True)
-    while np.any(norm < eps):
-        vec = rng.normal(size=sample_shape + (size,))
-        norm = np.linalg.norm(vec, axis=-1, keepdims=True)
-    return vec / norm
-
-
-def random_unit_col_matrix(
-    n_row: int,
-    n_col: int,
-    sample_shape: tuple[int, ...] = (),
-    eps: float = 1e-4,
-    rng: RNG = None,
-) -> np.ndarray:
-    """Matrix with column vectors uniformly distributed on the unit sphere.
-
-    Args:
-        n_row: number of rows
-        n_col: number of columns
-        sample_shape: shape of the sample, prepended to the vector shape.
-            Useful for sampling batches of vectors.
-        eps: tolerance parameters for `func:random_unit_vector`
-        rng: random number generator parameter
-
-    Returns:
-        Matrix with column vectors uniformly distributed on the unit sphere.
-    """
-    sample_shape = sample_shape + (n_col,)
-    tranposed = random_unit_vector(n_row, sample_shape=sample_shape, eps=eps, rng=rng)
-    return np.swapaxes(tranposed, -2, -1)
 
 
 def random_uniform_matrix(

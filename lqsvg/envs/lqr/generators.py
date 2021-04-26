@@ -12,7 +12,12 @@ from dataclasses_json import DataClassJsonMixin
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.np_util import RNG, make_spd_matrix
+from lqsvg.np_util import (
+    RNG,
+    make_spd_matrix,
+    random_unit_col_matrix,
+    random_unit_vector,
+)
 from lqsvg.torch.utils import as_float_tensor
 
 from . import utils
@@ -244,7 +249,7 @@ def make_lindynamics(
     F = torch.cat((Fs, Fa), dim="C")
 
     if bias:
-        f = utils.random_unit_vector(
+        f = random_unit_vector(
             state_size,
             sample_shape=utils.minimal_sample_shape(horizon, stationary, n_batch),
             rng=rng,
@@ -304,7 +309,7 @@ def generate_active(
     n_state = passive.shape[-1]
     sample_shape = passive.shape[:-2]
     # Generate initial actuator dynamics with unit norm columns
-    B = utils.random_unit_col_matrix(
+    B = random_unit_col_matrix(
         n_row=n_state, n_col=ctrl_size, sample_shape=sample_shape, rng=rng
     )
 
@@ -313,7 +318,7 @@ def generate_active(
         # Ensure final actuator dynamics have a non-zero component in each
         # passive eigenvector direction
         while np.any(np.abs(B) < 1e-8):
-            B = utils.random_unit_col_matrix(
+            B = random_unit_col_matrix(
                 n_row=n_state, n_col=ctrl_size, sample_shape=sample_shape, rng=rng
             )
         B = eigvec @ B

@@ -16,8 +16,6 @@ from lqsvg.envs.lqr.utils import (
     minimal_sample_shape,
     random_mat_with_eigval_range,
     random_matrix_from_eigs,
-    random_unit_col_matrix,
-    random_unit_vector,
     wrap_sample_shape_to_size,
 )
 from lqsvg.np_util import RNG
@@ -30,8 +28,6 @@ eigval_range = standard_fixture([(0, 1), (0.5, 1.5)], "EigvalRange")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 vec_dim = standard_fixture((2, 3, 4), "VecDim")
 batch_shape = standard_fixture([(), (1,), (2,), (2, 1)], "BatchShape")
-n_row = standard_fixture((2, 3, 4), "Rows")
-n_col = standard_fixture((2, 3, 4), "Columns")
 
 
 @pytest.fixture(params=(0, 2))
@@ -143,23 +139,3 @@ def test_ctrb(dynamics: lqr.LinSDynamics, n_state: int, n_ctrl: int):
     C = ctrb(dynamics)
     assert isinstance(C, np.ndarray)
     assert C.shape == (n_state, n_state * n_ctrl)
-
-
-def test_random_unit_vector(vec_dim: int, batch_shape: tuple[int, ...], seed: int):
-    vector = random_unit_vector(vec_dim, sample_shape=batch_shape, rng=seed)
-
-    assert isinstance(vector, np.ndarray)
-    assert vector.shape == batch_shape + (vec_dim,)
-    assert np.isfinite(vector).all()
-    assert np.all(np.isclose(np.linalg.norm(vector, axis=-1), 1.0))
-
-
-def test_random_unit_col_matrix(
-    n_row: int, n_col: int, batch_shape: tuple[int, ...], seed: int
-):
-    matrix = random_unit_col_matrix(n_row, n_col, sample_shape=batch_shape, rng=seed)
-
-    assert isinstance(matrix, np.ndarray)
-    assert matrix.shape == batch_shape + (n_row, n_col)
-    assert np.isfinite(matrix).all()
-    assert np.all(np.isclose(np.linalg.norm(matrix, axis=-2), 1.0))
