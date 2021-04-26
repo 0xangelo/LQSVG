@@ -147,12 +147,12 @@ class QuadVValue(VValue, QuadraticMixin):
             self.quad, self.linear, self.const, time, max_idx=self.horizon
         )
         state = nt.vector_to_matrix(state)
-        val = nt.matrix_to_scalar(
+        cost = nt.matrix_to_scalar(
             nt.transpose(state) @ quad @ state
             + nt.transpose(nt.vector_to_matrix(linear)) @ state
             + nt.scalar_to_matrix(const)
         )
-        return val
+        return cost.neg()
 
 
 class QuadQValue(QValue, QuadraticMixin):
@@ -217,9 +217,10 @@ class QuadQValue(QValue, QuadraticMixin):
             self.quad, self.linear, self.const, time, max_idx=self.horizon - 1
         )
         vec = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
-        val = nt.matrix_to_scalar(
+        cost = nt.matrix_to_scalar(
             nt.transpose(vec) @ quad @ vec
             + nt.transpose(nt.vector_to_matrix(linear)) @ vec
             + nt.scalar_to_matrix(const)
         )
+        val = cost.neg()
         return nt.where(time.eq(self.horizon), torch.zeros_like(val), val)

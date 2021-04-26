@@ -36,7 +36,7 @@ def dynamics(n_state: int, n_ctrl: int, horizon: int, seed: int) -> LinSDynamics
 
 @pytest.fixture
 def cost(n_state: int, n_ctrl: int, horizon: int, seed: int) -> QuadCost:
-    return make_quadcost(n_state, n_ctrl, horizon, rng=seed)
+    return make_quadcost(n_state, n_ctrl, horizon, linear=False, rng=seed)
 
 
 # noinspection PyMethodMayBeStatic
@@ -110,9 +110,13 @@ class TestQuadVValue:
         for par in params:
             assert par.grad is None
 
-    def test_from_policy(self, policy: Linear, dynamics: LinSDynamics, cost: QuadCost):
+    def test_from_policy(
+        self, policy: Linear, dynamics: LinSDynamics, cost: QuadCost, obs: Tensor
+    ):
         module = QuadVValue.from_policy(policy, dynamics, cost)
         assert isinstance(module, QuadVValue)
+        val = module(obs)
+        assert val.le(0).all()
 
 
 class TestQuadQValue:
@@ -194,6 +198,16 @@ class TestQuadQValue:
         for par in params:
             assert par.grad is None
 
-    def test_from_policy(self, policy: Linear, dynamics: LinSDynamics, cost: QuadCost):
+    def test_from_policy(
+        self,
+        policy: Linear,
+        dynamics: LinSDynamics,
+        cost: QuadCost,
+        obs: Tensor,
+        act: Tensor,
+    ):
+        # pylint:disable=too-many-arguments
         module = QuadQValue.from_policy(policy, dynamics, cost)
         assert isinstance(module, QuadQValue)
+        val = module(obs, act)
+        assert val.le(0).all()
