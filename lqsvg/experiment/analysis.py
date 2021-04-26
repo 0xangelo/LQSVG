@@ -1,9 +1,13 @@
 """Utilities for measuring gradient quality and optimization landscapes."""
 from __future__ import annotations
 
+from typing import Callable
+
+import numpy as np
 import torch
 
 from lqsvg.envs import lqr
+from lqsvg.np_util import RNG, random_unit_vector
 
 from . import utils
 
@@ -23,3 +27,51 @@ def empirical_variance(svg_samples: list[lqr.Linear]) -> float:
             cossims += [utils.linear_feedback_cossim(gi, gj)]
 
     return torch.stack(cossims).mean().item()
+
+
+def optimization_surface(
+    f_delta: Callable[[np.ndarray], np.ndarray],
+    direction: np.ndarray,
+    max_scaling: float,
+    steps: int,
+    rng: RNG = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """3D approximation of a function's surface in reference to a direction.
+
+    Evaluates a function from vectors to scalars with several linear
+    combinations of a given direction with with a random one as inputs.
+
+    Args:
+        f_delta: the vector-to-scalar function. Usually an approximation of
+            another function at a certain point plus the input vector. E.g.,
+            this could be the first-order Taylor series expansion of another
+            function around a certain point in R^d.
+        direction: a vector to be linearly combined with a random one using
+            varying positive weights for each. This vector is normalized to
+            have a magnitude of 1, the same as the random one's.
+        max_scaling: maximum weight for each vector used in the linear
+            combination as input to the function
+        steps: number of evenly spaced values between 0 and `max_scaling` used
+            as weights for the linear combination between the random and given
+            direction vectors.
+        rng: random number generator parameter for repeatable results
+
+    Returns:
+        A tuple of three meshgrids (X, Y, Z) representing the weight for the
+        random vector, weight for the given direction, and the function's value
+        for the resulting linear combination of the two vectors.
+    """
+    # pylint:disable=invalid-name
+    direction = direction / np.linalg.norm(direction)
+    rand_dir = random_unit_vector(direction.size, rng=rng)
+
+    scale_range = np.linspace(0, max_scaling, steps)
+    X, Y = np.meshgrid(scale_range, scale_range)
+
+    results = []
+    for i, j in zip(X.reshape((-1,)), Y.reshape((-1,))):
+        vector = i * rand_dir + j * direction
+        results += [f_delta(vector)]
+    Z = np.array(results).reshape(X.shape)
+
+    return X, Y, Z
