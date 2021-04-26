@@ -14,49 +14,8 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 from lqsvg.torch.modules import CholeskyFactor
-from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky
 
 from .common import TVMultivariateNormal
-
-
-class CovarianceCholesky(nn.Module):
-    """Covariance Cholesky factor."""
-
-    beta: float = 0.2
-    size: int
-    horizon: int
-    stationary: bool
-    ltril: nn.Parameter
-    pre_diag: nn.Parameter
-
-    def __init__(self, size: int, horizon: int, stationary: bool):
-        super().__init__()
-        self.horizon = horizon
-        self.stationary = stationary
-
-        h_size = 1 if stationary else horizon
-        self.ltril = nn.Parameter(Tensor(h_size, size, size))
-        self.pre_diag = nn.Parameter(Tensor(h_size, size))
-
-    def factorize_(self, matrix: Tensor) -> CovarianceCholesky:
-        """Set parameters to reproduce a symmetric positive definite matrix."""
-        ltril, pre_diag = nt.unnamed(*disassemble_cholesky(matrix, beta=self.beta))
-        self.ltril.data.copy_(ltril)
-        self.pre_diag.data.copy_(pre_diag)
-        return self
-
-    def forward(self, index: Optional[IntTensor] = None) -> Tensor:
-        # pylint:disable=missing-function-docstring
-        ltril, pre_diag = nt.horizon(nt.matrix(self.ltril), nt.vector(self.pre_diag))
-        if index is not None:
-            if self.stationary:
-                index = torch.zeros_like(index)
-            else:
-                index = torch.clamp(index, max=self.horizon - 1).int()
-            ltril, pre_diag = (
-                nt.index_by(x, dim="H", index=index) for x in (ltril, pre_diag)
-            )
-        return assemble_cholesky(ltril, pre_diag, beta=self.beta)
 
 
 # noinspection PyPep8Naming

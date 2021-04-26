@@ -7,14 +7,9 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules.dynamics.linear import (
-    CovarianceCholesky,
-    LinearDynamics,
-    LinearDynamicsModule,
-)
+from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics, LinearDynamicsModule
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import make_spd_matrix
 
 
 @pytest.fixture
@@ -210,22 +205,3 @@ class TestLinearDynamicsModule:
             module.params.scale_tril.pre_diag.grad, torch.zeros([])
         )
         assert not torch.allclose(module.params.scale_tril.ltril.grad, torch.zeros([]))
-
-
-@pytest.fixture
-def sigma(n_tau: int, horizon: int):
-    return nt.horizon(
-        nt.matrix(
-            make_spd_matrix(n_dim=n_tau, sample_shape=(horizon,), dtype=torch.float32)
-        )
-    )
-
-
-def test_cov_cholesky_factor(n_tau: int, horizon: int, sigma: Tensor):
-    module = CovarianceCholesky(n_tau, horizon=horizon, stationary=False)
-    module.factorize_(sigma)
-    untimed = module()
-
-    scale_tril = nt.cholesky(sigma)
-    assert nt.allclose(scale_tril, untimed)
-    assert scale_tril.names == untimed.names
