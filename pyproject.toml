@@ -24,7 +24,7 @@ flake8 = "^3.9.1"
 sklearn = "^0.0"
 matplotlib = "^3.4.1"
 seaborn = "^0.11.1"
-pytest-mock = "^3.5.1"
+pytest-mock = "^3.6.0"
 jupyterlab-code-formatter = "^1.4.10"
 isort = "^5.8.0"
 
