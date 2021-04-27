@@ -44,6 +44,13 @@ class TestStabilizingPolicy:
             np.sort(np.abs(eigval)), np.sort(np.abs(result.computed_poles))
         )
 
+        # Assert repeatability
+        repeat = place_dynamics_poles(A, B, rng=seed)
+        for attr in "gain_matrix computed_poles requested_poles X rtol nb_iter".split():
+            assert np.allclose(
+                getattr(result, attr), getattr(repeat, attr), equal_nan=True
+            )
+
     # noinspection PyArgumentList
     def test_stabilizing_policy(
         self,
