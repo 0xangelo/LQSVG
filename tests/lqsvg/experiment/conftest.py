@@ -1,5 +1,6 @@
 import pytest
 
+from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import default_generator_seed
 
@@ -31,3 +32,10 @@ def horizon() -> int:
 
 
 stationary = standard_fixture((True, False), "Stationary")
+
+
+@pytest.fixture
+def lqg_generator(
+    n_state: int, n_ctrl: int, horizon: int, stationary: bool, seed: int
+) -> LQGGenerator:
+    return LQGGenerator(n_state, n_ctrl, horizon, stationary=stationary, seed=seed)

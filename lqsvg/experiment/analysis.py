@@ -6,10 +6,13 @@ from typing import Callable
 import numpy as np
 import torch
 
+import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.np_util import RNG, random_unit_vector
+from lqsvg.torch.utils import as_float_tensor, vector_to_tensors
 
 from . import utils
+from .estimators import PolicyLoss
 
 
 def gradient_accuracy(svg_samples: list[lqr.Linear], target: lqr.Linear) -> float:
@@ -75,3 +78,38 @@ def optimization_surface(
     Z = np.array(results).reshape(X.shape)
 
     return X, Y, Z
+
+
+def delta_to_return(
+    policy: lqr.Linear,
+    dynamics: lqr.LinSDynamics,
+    cost: lqr.QuadCost,
+    init: lqr.GaussInit,
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Create function mapping policy parameter deltas to true LQG returns.
+
+    Args:
+        policy: the reference linear policy
+        dynamics: linear stochastic dynamics
+        cost: quadratic cost
+        init: Gaussian initial state distribution
+
+    Returns:
+        Function mapping policy parameter deltas to the true return of the
+        policy resulting from applying the deltas to the reference policy.
+    """
+    # pylint:disable=invalid-name
+    n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
+    K_0, k_0 = policy
+
+    @torch.no_grad()
+    def f_delta(delta: np.ndarray) -> np.ndarray:
+        vector = nt.vector(as_float_tensor(delta))
+        delta_K, delta_k = vector_to_tensors(vector, policy)
+        K, k = K_0 + delta_K, k_0 + delta_k
+        loss = PolicyLoss(n_state, n_ctrl, horizon)
+
+        ret = loss((K, k), dynamics, cost, init).neg()
+        return ret.numpy()
+
+    return f_delta

@@ -4,10 +4,16 @@ from typing import Callable
 
 import numpy as np
 import pytest
+import torch
+import torch.nn as nn
 from numpy.random import Generator
 
-from lqsvg.experiment.analysis import optimization_surface
+import lqsvg.torch.named as nt
+from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import LQGGenerator
+from lqsvg.experiment.analysis import delta_to_return, optimization_surface
 from lqsvg.testing.fixture import standard_fixture
+from lqsvg.torch.utils import tensors_to_vector
 
 
 def squared(x: np.ndarray) -> np.ndarray:
@@ -56,3 +62,48 @@ def test_optimization_surface(
     assert all(list(isinstance(x, np.ndarray) for x in arrs))
     assert all(list(np.all(np.isfinite(x)) for x in arrs))
     assert X.shape == Y.shape == Z.shape == (steps, steps)
+
+
+@pytest.fixture
+def policy(n_state: int, n_ctrl: int, horizon: int) -> lqr.Linear:
+    K = torch.Tensor(horizon, n_ctrl, n_state)
+    k = torch.Tensor(horizon, n_ctrl)
+    nn.init.xavier_uniform_(K)
+    nn.init.constant_(k, 0)
+    K, k = nt.horizon(nt.matrix(K), nt.vector(k))
+    return K, k
+
+
+@pytest.fixture
+def dynamics(lqg_generator: LQGGenerator) -> lqr.LinSDynamics:
+    with lqg_generator.config(passive_eigval_range=(0, 1)):
+        return lqg_generator.make_dynamics()
+
+
+@pytest.fixture
+def cost(lqg_generator: LQGGenerator) -> lqr.QuadCost:
+    return lqg_generator.make_cost()
+
+
+@pytest.fixture
+def init(lqg_generator: LQGGenerator) -> lqr.GaussInit:
+    return lqg_generator.make_init()
+
+
+def test_delta_to_return(
+    policy: lqr.Linear,
+    dynamics: lqr.LinSDynamics,
+    cost: lqr.QuadCost,
+    init: lqr.GaussInit,
+):
+    func = delta_to_return(policy, dynamics, cost, init)
+    delta = tensors_to_vector(policy)
+    delta = (delta + torch.rand_like(delta)).numpy()
+
+    out = func(delta)
+    assert np.ndim(out) == 0
+    assert out.size == 1
+    assert np.isfinite(out)
+
+    # Should be repeatable
+    assert np.allclose(out, func(delta))
