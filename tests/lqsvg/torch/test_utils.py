@@ -1,5 +1,8 @@
-from typing import Union
+from __future__ import annotations
 
+from typing import Iterable, Union
+
+import numpy as np
 import pytest
 import torch
 from torch import Tensor
@@ -13,6 +16,8 @@ from lqsvg.torch.utils import (
     disassemble_cholesky,
     make_spd_matrix,
     softplusinv,
+    tensors_to_vector,
+    vector_to_tensors,
 )
 
 n_dim = standard_fixture((1, 2, 4), "NDim")
@@ -84,3 +89,44 @@ class TestTorchRNG:
 
         assert not any(torch.allclose(t, random) for t in (first, second))
         assert torch.allclose(first, second)
+
+
+tensor_shapes = standard_fixture(
+    [[(1,), (2,)], [(), (1,), (1, 1)], [(2, 4), (2,)]], "TensorShapes"
+)
+
+
+@pytest.fixture
+def tensors(tensor_shapes: list[tuple[int, ...]]) -> list[Tensor]:
+    unnamed = [torch.rand(s) for s in tensor_shapes]
+    return [
+        nt.scalar(t) if t.dim() == 0 else nt.vector(t) if t.dim() == 1 else nt.matrix(t)
+        for t in unnamed
+    ]
+
+
+@pytest.fixture
+def vector(tensor_shapes: list[tuple[int, ...]]) -> Tensor:
+    return nt.vector(torch.rand(sum(int(np.prod(s)) for s in tensor_shapes)))
+
+
+def test_tensors_to_vector(tensors: Iterable[Tensor]):
+    vector = tensors_to_vector(tensors)
+    assert torch.is_tensor(vector)
+    assert vector.names == ("R",)
+    assert vector.numel() == sum(t.numel() for t in tensors)
+    offset = 0
+    for tensor in tensors:
+        assert torch.allclose(
+            nt.unnamed(vector[offset : offset + tensor.numel()]).view_as(tensor),
+            nt.unnamed(tensor),
+        )
+        offset += tensor.numel()
+
+
+def test_vector_to_tensors(vector: Tensor, tensors: Iterable[Tensor]):
+    tensors_ = vector_to_tensors(vector, tensors)
+    assert all(list(torch.is_tensor(t) for t in tensors_))
+    zipped = list(zip(tensors_, tensors))
+    assert all(list(t_.names == t.names for t_, t in zipped))
+    assert all(list(t_.shape == t.shape for t_, t in zipped))

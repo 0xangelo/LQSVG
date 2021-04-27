@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -84,3 +84,22 @@ def assemble_cholesky(ltril: Tensor, pre_diag: Tensor, *, beta: float = 1.0) -> 
     """Transform uncostrained parameters into cholesky factor."""
     ltril, diag = nt.tril(ltril, diagonal=-1), nt.softplus(pre_diag, beta=beta)
     return ltril + torch.diag_embed(diag)
+
+
+def tensors_to_vector(tensors: Iterable[Tensor]) -> Tensor:
+    """Reshape and combine tensors into a vector representation."""
+    vector = []
+    for t in tensors:
+        vector += [nt.unnamed(t).reshape(-1)]
+    return nt.vector(torch.cat(vector))
+
+
+def vector_to_tensors(vector: Tensor, tensors: Iterable[Tensor]) -> Iterable[Tensor]:
+    """Split and reshape vector into tensors matching others' shapes."""
+    split = []
+    offset = 0
+    vector = nt.unnamed(vector)
+    for t in tensors:
+        split += [vector[offset : offset + t.numel()].view_as(t).refine_names(*t.names)]
+        offset += t.numel()
+    return split
