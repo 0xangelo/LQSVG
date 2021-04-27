@@ -16,6 +16,8 @@ from .utils import perturb_policy, stabilizing_policy
 
 __all__ = ["TVLinearFeedback", "TVLinearPolicy"]
 
+from ...np_util import RNG
+
 
 class TVLinearFeedback(nn.Module):
     """Non-stationary linear policy as a NN module.
@@ -119,7 +121,7 @@ class TVLinearPolicy(DeterministicPolicy):
         self.action_linear.copy_(perturb_policy(policy))
 
     @torch.no_grad()
-    def stabilize_(self, dynamics: lqr.LinSDynamics):
+    def stabilize_(self, dynamics: lqr.LinSDynamics, rng: RNG = None):
         """Initialize self to make the closed-loop system stable.
 
         Computes a dynamic gain (matrix) that places the eigenvalues of the system in
@@ -128,6 +130,7 @@ class TVLinearPolicy(DeterministicPolicy):
 
         Args:
             dynamics: the linear dynamical system
+            rng: random number generator state
 
         Warning:
             This is only defined for stationary systems
@@ -135,7 +138,7 @@ class TVLinearPolicy(DeterministicPolicy):
         Raises:
             AssertionError: if the dynamics are non-stationary
         """
-        self.action_linear.copy_(stabilizing_policy(dynamics))
+        self.action_linear.copy_(stabilizing_policy(dynamics, rng=rng))
 
     def standard_form(self) -> lqr.Linear:
         """Return self as linear function parameters."""

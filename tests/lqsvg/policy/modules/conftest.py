@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
+from numpy.random import Generator
 from torch import Tensor
 
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
@@ -14,6 +16,11 @@ n_ctrl = standard_fixture((2, 3), "NCtrl")
 horizon = standard_fixture((1, 3, 10), "Horizon")
 seed = standard_fixture((1, 2, 3), "Seed")
 batch_shape = standard_fixture([(), (1,), (4,)], "BatchShape")
+
+
+@pytest.fixture
+def rng(seed: int) -> Generator:
+    return np.random.default_rng(seed)
 
 
 @pytest.fixture(autouse=True)

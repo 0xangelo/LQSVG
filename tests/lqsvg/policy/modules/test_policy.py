@@ -7,7 +7,25 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
+from lqsvg.np_util import RNG
 from lqsvg.policy.modules import TVLinearFeedback, TVLinearPolicy
+
+
+@pytest.fixture
+def dynamics(n_state: int, n_ctrl: int, horizon: int, rng: RNG) -> lqr.LinSDynamics:
+    return make_linsdynamics(
+        make_lindynamics(
+            n_state,
+            n_ctrl,
+            horizon,
+            stationary=True,
+            passive_eigval_range=(0.5, 1.5),
+            rng=rng,
+        ),
+        stationary=True,
+        rng=rng,
+    )
 
 
 class TestTVLinearFeedBack:
@@ -124,3 +142,13 @@ class TestTVLinearPolicy:
         (K.sum() + k.sum()).backward()
         assert torch.allclose(module.K.grad, torch.ones_like(module.K.grad))
         assert torch.allclose(module.k.grad, torch.ones_like(module.k.grad))
+
+    def test_stabilize_(
+        self, module: TVLinearPolicy, dynamics: lqr.LinSDynamics, seed: int
+    ):
+        module.stabilize_(dynamics, rng=seed)
+        K, k = module.K.clone(), module.k.clone()
+
+        module.stabilize_(dynamics, rng=seed)
+        assert torch.allclose(module.K, K)
+        assert torch.allclose(module.k, k)
