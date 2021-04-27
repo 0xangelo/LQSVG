@@ -73,6 +73,7 @@ class TestStabilizingPolicy:
         assert K.size("H") == k.size("H") == horizon
 
         A, B = (x.numpy() for x in stationary_dynamics_factors(dynamics))
+        # noinspection PyTypeChecker
         K = K.select("H", 0).numpy()
         eigval, _ = np.linalg.eig(A + B @ K)
         assert np.all(np.abs(eigval) < 1.0)
