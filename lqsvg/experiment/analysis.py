@@ -35,8 +35,8 @@ def empirical_variance(svg_samples: list[lqr.Linear]) -> float:
 def optimization_surface(
     f_delta: Callable[[np.ndarray], np.ndarray],
     direction: np.ndarray,
-    max_scaling: float,
-    steps: int,
+    max_scaling: float = 3.0,
+    steps: int = 20,
     rng: RNG = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """3D approximation of a function's surface in reference to a direction.
