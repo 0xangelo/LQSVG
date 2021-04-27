@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 def default_figsize(rows: int = 1, cols: int = 1) -> tuple[float, float]:
     """Default figure size for a given number of rows and columns."""
     default_width, default_height = mpl.rcParams["figure.figsize"]
-    return rows * default_height, cols * default_width
+    return cols * default_width, rows * default_height
 
 
 def plot_surface(
