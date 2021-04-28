@@ -241,13 +241,14 @@ class BootstrappedSVG(nn.Module):
         self.transition.eval()
         self.reward.eval()
         self.qvalue.eval()
-        # This is the only action through which gradients can propagate
+        # This is the only action whose gradients w.r.t. policy parameters will
+        # be computed
         act = self.policy(obs)
         partial_return = torch.zeros(())
         for _ in range(n_steps):
             partial_return = partial_return + self.reward(obs, act)
             obs, _ = self.transition.rsample(self.transition(obs, act))
-            act = self.policy(obs).detach()
+            act = self.policy.frozen(obs)
 
         nstep_return = partial_return + self.qvalue(obs, act)
         return nstep_return.mean()
