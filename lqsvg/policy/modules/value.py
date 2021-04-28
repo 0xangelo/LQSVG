@@ -148,7 +148,7 @@ class QuadVValue(VValue, QuadraticMixin):
         )
         state = nt.vector_to_matrix(state)
         cost = nt.matrix_to_scalar(
-            nt.transpose(state) @ quad @ state
+            nt.transpose(state) @ quad @ state / 2
             + nt.transpose(nt.vector_to_matrix(linear)) @ state
             + nt.scalar_to_matrix(const)
         )
@@ -218,7 +218,7 @@ class QuadQValue(QValue, QuadraticMixin):
         )
         vec = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
         cost = nt.matrix_to_scalar(
-            nt.transpose(vec) @ quad @ vec
+            nt.transpose(vec) @ quad @ vec / 2
             + nt.transpose(nt.vector_to_matrix(linear)) @ vec
             + nt.scalar_to_matrix(const)
         )

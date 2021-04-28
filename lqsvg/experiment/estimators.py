@@ -31,7 +31,7 @@ class ExpectedValue(nn.Module):
 
         value = (
             nt.trace(cov @ V).align_to(..., "R", "C") / 2
-            + nt.transpose(mean) @ V @ mean
+            + nt.transpose(mean) @ V @ mean / 2
             + nt.transpose(v) @ mean
             + c
         )
