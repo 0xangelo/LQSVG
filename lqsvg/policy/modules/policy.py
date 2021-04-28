@@ -64,13 +64,15 @@ class TVLinearFeedback(nn.Module):
             K, k = (nt.index_by(x, dim="H", index=index) for x in (K, k))
         return K, k
 
-    def forward(self, obs: Tensor) -> Tensor:
+    def forward(self, obs: Tensor, frozen: bool = False) -> Tensor:
         """Compute the action vector for the observed state."""
         obs = nt.vector(obs)
         state, time = unpack_obs(obs)
 
         # noinspection PyTypeChecker
         K, k = self._gains_at(nt.vector_to_scalar(time))
+        if frozen:
+            K, k = K.detach(), k.detach()
 
         ctrl = K @ nt.vector_to_matrix(state) + nt.vector_to_matrix(k)
         ctrl = nt.matrix_to_vector(ctrl)
@@ -143,3 +145,11 @@ class TVLinearPolicy(DeterministicPolicy):
     def standard_form(self) -> lqr.Linear:
         """Return self as linear function parameters."""
         return self.action_linear.gains()
+
+    def frozen(self, obs: Tensor) -> Tensor:
+        """Compute action for observation with parameters frozen.
+
+        Useful for stochastic computation graphs where gradients should flow
+        from action to previous observation but not to policy parameters.
+        """
+        return self.action_linear(obs, frozen=True)

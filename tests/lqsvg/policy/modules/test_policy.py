@@ -10,6 +10,9 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import TVLinearFeedback, TVLinearPolicy
+from lqsvg.testing.fixture import standard_fixture
+
+frozen = standard_fixture((True, False), "Frozen")
 
 
 @pytest.fixture
@@ -68,19 +71,23 @@ class TestTVLinearFeedBack:
         self,
         module: TVLinearFeedback,
         obs: Tensor,
+        frozen: bool,
         batch_shape: tuple[int, ...],
         n_ctrl: int,
     ):
-        act = module(obs)
+        # pylint:disable=too-many-arguments
+        act = module(obs, frozen=frozen)
         assert torch.is_tensor(act)
         assert torch.isfinite(act).all()
         assert act.size("R") == n_ctrl
         assert tuple(s for s, n in zip(act.shape, act.names) if n != "R") == batch_shape
 
         assert act.grad_fn is not None
+        module.zero_grad(set_to_none=True)
         act.sum().backward()
         assert obs.grad is not None
-        assert not torch.allclose(obs.grad, torch.zeros_like(obs.grad))
+        assert not torch.allclose(obs.grad, torch.zeros(()))
+        assert frozen == all(list(p.grad is None for p in module.parameters()))
 
 
 class TestTVLinearPolicy:
@@ -98,17 +105,17 @@ class TestTVLinearPolicy:
 
         act.sum().backward()
         assert obs.grad is not None
-        assert not torch.allclose(obs.grad, torch.zeros_like(obs.grad))
+        assert not torch.allclose(obs.grad, torch.zeros(()))
         assert torch.isfinite(obs.grad).all()
         grads = [p.grad for p in module.parameters()]
         assert all(list(g is not None for g in grads))
-        assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
+        assert all(list(not torch.allclose(g, torch.zeros(())) for g in grads))
         assert all(list(torch.isfinite(g).all() for g in grads))
 
     def test_terminal_call(self, module: TVLinearPolicy, last_obs: Tensor, n_ctrl: int):
         act = module(last_obs)
 
-        assert nt.allclose(act, torch.zeros_like(act))
+        assert nt.allclose(act, torch.zeros(()))
         assert torch.is_tensor(act)
         assert torch.isfinite(act).all()
         assert act.names == last_obs.names
@@ -116,10 +123,10 @@ class TestTVLinearPolicy:
 
         act.sum().backward()
         assert last_obs.grad is not None
-        assert torch.allclose(last_obs.grad, torch.zeros_like(last_obs.grad))
+        assert torch.allclose(last_obs.grad, torch.zeros(()))
         grads = [p.grad for p in module.parameters()]
         assert all(list(g is not None for g in grads))
-        assert all(list(torch.allclose(g, torch.zeros_like(g)) for g in grads))
+        assert all(list(torch.allclose(g, torch.zeros(())) for g in grads))
 
     def test_mixed_call(self, module: TVLinearPolicy, mix_obs: Tensor, n_ctrl: int):
         act = module(mix_obs)
@@ -135,6 +142,23 @@ class TestTVLinearPolicy:
         grads = [p.grad for p in module.parameters()]
         assert all(list(g is not None for g in grads))
         assert all(list(torch.isfinite(g).all() for g in grads))
+
+    def test_frozen(self, module: TVLinearPolicy, obs: Tensor, n_ctrl: int):
+        act = module.frozen(obs)
+
+        assert torch.is_tensor(act)
+        assert torch.isfinite(act).all()
+        assert act.names == obs.names
+        # noinspection PyArgumentList
+        assert act.size("R") == n_ctrl
+
+        module.zero_grad(set_to_none=True)
+        act.sum().backward()
+        assert obs.grad is not None
+        assert not torch.allclose(obs.grad, torch.zeros(()))
+        assert torch.isfinite(obs.grad).all()
+        grads = [p.grad for p in module.parameters()]
+        assert all(list(g is None for g in grads))
 
     def test_standard_form(self, module: TVLinearPolicy):
         K, k = module.standard_form()
