@@ -100,8 +100,11 @@ def trace(tensor: Tensor) -> Tensor:
 
     Assumes input is a refined matrix.
     """
-    diag = torch.diagonal(tensor.rename(None), dim1=-2, dim2=-1)
-    return diag.sum(-1).refine_names(*tensor.names[:-2])
+    dim1, dim2 = tensor.names.index("R"), tensor.names.index("C")
+    diag = torch.diagonal(unnamed(tensor), dim1=dim1, dim2=dim2)
+    diag = vector(diag)
+    # noinspection PyTypeChecker
+    return diag.sum("R").refine_names(*tensor.select("R", 0).select("C", 0).names)
 
 
 def transpose(tensor: Tensor) -> Tensor:
@@ -115,23 +118,19 @@ def stack_horizon(*tensors: Tensor) -> Tensor:
 def index_select(
     tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]
 ) -> Tensor:
-    aligned = tensor.align_to(dim, ...)
-    selected = torch.index_select(unnamed(aligned), dim=0, index=unnamed(index))
-    refined = selected.refine_names(*aligned.names)
-    return refined.align_to(*tensor.names)
+    idim = tensor.names.index(dim)
+    selected = torch.index_select(unnamed(tensor), dim=idim, index=unnamed(index))
+    return selected.refine_names(*tensor.names)
 
 
 def index_by(tensor: Tensor, dim: str, index: Union[IntTensor, LongTensor]) -> Tensor:
-    int_dim = tensor.names.index(dim)
+    idim = tensor.names.index(dim)
     vector_index = unnamed(index).reshape(-1)
-    selected = torch.index_select(unnamed(tensor), dim=int_dim, index=vector_index)
-    reshaped = selected.reshape(
-        tensor.shape[:int_dim] + index.shape + tensor.shape[int_dim + 1 :]
-    )
-    refined = reshaped.refine_names(
-        *(tensor.names[:int_dim] + index.names + tensor.names[int_dim + 1 :])
-    )
-    return refined
+    selected = torch.index_select(unnamed(tensor), dim=idim, index=vector_index)
+    new_shape = tensor.shape[:idim] + index.shape + tensor.shape[idim + 1 :]
+    reshaped = selected.reshape(new_shape)
+    new_names = tensor.names[:idim] + index.names + tensor.names[idim + 1 :]
+    return reshaped.refine_names(*new_names)
 
 
 def diagonal(tensor: Tensor, offset: int = 0, dim1: str = "R", dim2: str = "C"):
