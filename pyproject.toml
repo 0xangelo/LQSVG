@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-raylab = "^0.15.5"
+raylab = "^0.15.7"
 ray = {extras = ["rllib", "tune"], version = "1.2.0"}
 
 [tool.poetry.dev-dependencies]
