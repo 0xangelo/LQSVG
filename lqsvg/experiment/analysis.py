@@ -100,6 +100,7 @@ def delta_to_return(
     """
     # pylint:disable=invalid-name
     n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
+    loss = PolicyLoss(n_state, n_ctrl, horizon)
     K_0, k_0 = policy
 
     @torch.no_grad()
@@ -107,7 +108,6 @@ def delta_to_return(
         vector = nt.vector(as_float_tensor(delta))
         delta_K, delta_k = vector_to_tensors(vector, policy)
         K, k = K_0 + delta_K, k_0 + delta_k
-        loss = PolicyLoss(n_state, n_ctrl, horizon)
 
         ret = loss((K, k), dynamics, cost, init).neg()
         return ret.numpy()
