@@ -278,7 +278,7 @@ python-versions = "*"
 
 [[package]]
 name = "bokeh"
-version = "2.3.1"
+version = "2.2.2"
 description = "Interactive plots and applications in the browser from Python"
 category = "main"
 optional = false
@@ -1841,14 +1841,14 @@ tune = ["pandas", "tabulate", "tensorboardx", "dataclasses"]
 
 [[package]]
 name = "raylab"
-version = "0.15.5"
+version = "0.15.7"
 description = "Reinforcement learning algorithms in RLlib and PyTorch."
 category = "main"
 optional = false
 python-versions = ">=3.7,<4.0"
 
 [package.dependencies]
-bokeh = ">=2.1.0,<3.0.0"
+bokeh = "<=2.2.2"
 cachetools = {version = ">=4.1.0,<5.0.0", markers = "python_version >= \"3.7\" and python_version < \"4.0\""}
 click = ">=7.1.2,<8.0.0"
 dataclasses-json = ">=0.5.1,<0.6.0"
@@ -1857,7 +1857,7 @@ opencv-contrib-python = ">=4.4.0,<5.0.0"
 opencv-python = ">=4.2.0,<5.0.0"
 poetry-version = ">=0.1.5,<0.2.0"
 pytorch-lightning = ">=1.0,<2.0"
-ray = {version = ">=1.0.0,<2.0.0", extras = ["rllib", "tune"]}
+ray = {version = "<1.3", extras = ["rllib", "tune"]}
 sklearn = ">=0.0,<0.1"
 streamlit = ">=0.62,<0.81"
 tabulate = ">=0.8.7,<0.9.0"
@@ -2440,7 +2440,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "ba2db4ca1974557fcf44cda17e11b225830b78b17a5c5a85cfd5a0228a3620f5"
+content-hash = "f90538f94b49b5367e1e08ea885c9fc2c5e2e33ddb399feea50485170b3183fd"
 
 [metadata.files]
 absl-py = [
@@ -2594,7 +2594,7 @@ blinker = [
     {file = "blinker-1.4.tar.gz", hash = "sha256:471aee25f3992bd325afa3772f1063dbdbbca947a041b8b89466dc00d606f8b6"},
 ]
 bokeh = [
-    {file = "bokeh-2.3.1.tar.gz", hash = "sha256:2f2fb8bab8ca8fa039f48b1f0bed56d3a847c75694ece1d206ffab645ff5beec"},
+    {file = "bokeh-2.2.2.tar.gz", hash = "sha256:d3b0b29e7dc78b7aef6330cb8f0067a4689a4ba74bdf5ab58d35d863e44fd058"},
 ]
 cachetools = [
     {file = "cachetools-4.2.1-py3-none-any.whl", hash = "sha256:1d9d5f567be80f7c07d765e21b814326d78c61eb0c3a637dffc0e5d1796cb2e2"},
@@ -3727,8 +3727,8 @@ ray = [
     {file = "ray-1.2.0-cp38-cp38-win_amd64.whl", hash = "sha256:e095c5c7d59bd7c172c1a517d0db83df65c65ed6cb771d58ac17ec94276f8f39"},
 ]
 raylab = [
-    {file = "raylab-0.15.5-py3-none-any.whl", hash = "sha256:43fa87d0126ac3666a6fbae78c67eb9bb9b3c7d6155ff224cc60e22f347b09bb"},
-    {file = "raylab-0.15.5.tar.gz", hash = "sha256:43488adec3aca5e9b0a7aebe9f2bd6ca50873a342d6ad1a12751ae7c5bc9494d"},
+    {file = "raylab-0.15.7-py3-none-any.whl", hash = "sha256:e2d197c29c6c499d5570423feba732b7f25704ceaf7a7a2ea9e43142d3134621"},
+    {file = "raylab-0.15.7.tar.gz", hash = "sha256:5a2732a248c9ba36756d64b01a911ac9a74dcbf8f82b73dcaabfa22f408fdfb2"},
 ]
 redis = [
     {file = "redis-3.5.3-py2.py3-none-any.whl", hash = "sha256:432b788c4530cfe16d8d943a09d40ca6c16149727e4afe8c2c9d5580c59d9f24"},
