@@ -118,6 +118,14 @@ class TVLinearPolicy(DeterministicPolicy):
         self.K = self.action_linear.K
         self.k = self.action_linear.k
 
+    @classmethod
+    def from_existing(cls, policy: lqr.Linear):
+        """Create time-varying linear policy from linear parameters."""
+        n_state, n_ctrl, horizon = lqr.dims_from_policy(policy)
+        new = cls(n_state, n_ctrl, horizon)
+        new.action_linear.copy_(policy)
+        return new
+
     def noisy_(self, policy: lqr.Linear):
         """Initialize self from given linear policy plus white noise."""
         self.action_linear.copy_(perturb_policy(policy))
