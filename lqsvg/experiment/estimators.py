@@ -207,7 +207,7 @@ class MonteCarloSVG(nn.Module):
         return mc_performance, svg
 
 
-class BootstrappedSVG(nn.Module):
+class DPG(nn.Module):
     """Computes a bootstrapped SVG estimate via the DPG theorem."""
 
     def __init__(
@@ -254,7 +254,7 @@ class BootstrappedSVG(nn.Module):
         return nstep_return.mean()
 
     def forward(self, obs: Tensor, n_steps: int = 0) -> tuple[Tensor, lqr.Linear]:
-        """Monte Carlo estimate of the bootstrapped Stochastic Value Gradient.
+        """Monte Carlo estimate of the Stochastic Value Gradient.
 
         Args:
             obs: starting state samples
@@ -267,3 +267,22 @@ class BootstrappedSVG(nn.Module):
         surrogate = self.surrogate(obs, n_steps)
         svg = policy_svg(self.policy, surrogate)
         return surrogate, svg
+
+
+class MAAC(DPG):
+    """Computes a bootstrapped SVG estimate as in MAAC."""
+
+    def surrogate(self, obs: Tensor, n_steps: int = 0) -> Tensor:
+        self.policy.train()
+        self.transition.eval()
+        self.reward.eval()
+        self.qvalue.eval()
+        act = self.policy(obs)
+        partial_return = torch.zeros(())
+        for _ in range(n_steps):
+            partial_return = partial_return + self.reward(obs, act)
+            obs, _ = self.transition.rsample(self.transition(obs, act))
+            act = self.policy(obs)
+
+        nstep_return = partial_return + self.qvalue(obs, act)
+        return nstep_return.mean()

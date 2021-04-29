@@ -13,7 +13,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.utils import pack_obs
-from lqsvg.experiment.estimators import BootstrappedSVG, MonteCarloSVG
+from lqsvg.experiment.estimators import DPG, MAAC, MonteCarloSVG
 from lqsvg.policy.modules import (
     BatchNormModel,
     InitStateModel,
@@ -108,7 +108,7 @@ class TestMonteCarloSVG:
         assert torch.isfinite(K).all() and torch.isfinite(k).all()
 
 
-class TestBootstrappedSVG:
+class TestDPG:
     @pytest.fixture
     def qvalue(self, n_state: int, n_ctrl: int, horizon: int) -> QValue:
         return QuadQValue(n_state + n_ctrl, horizon)
@@ -120,8 +120,8 @@ class TestBootstrappedSVG:
         trans: StochasticModel,
         reward: QuadRewardModel,
         qvalue: QValue,
-    ) -> BootstrappedSVG:
-        return BootstrappedSVG(policy, trans, reward, qvalue)
+    ) -> DPG:
+        return DPG(policy, trans, reward, qvalue)
 
     @pytest.fixture(params=(1, 4), ids=lambda x: f"NBatch{x}")
     def n_batch(self, request) -> int:
@@ -152,7 +152,7 @@ class TestBootstrappedSVG:
         assert not torch.allclose(K, torch.zeros([]))
         assert not torch.allclose(k, torch.zeros([]))
 
-    def test_call(self, module: BootstrappedSVG, obs: Tensor, n_step: int):
+    def test_call(self, module: DPG, obs: Tensor, n_step: int):
         val, svg = module(obs, n_step)
         self.check_val_svg(val, svg)
 
@@ -161,6 +161,18 @@ class TestBootstrappedSVG:
         time = torch.full((n_batch, 1), fill_value=horizon - 1, dtype=torch.int)
         return pack_obs(state, nt.vector(time).refine_names("B", ...))
 
-    def test_absorving(self, module: BootstrappedSVG, pre_terminal: Tensor):
+    def test_absorving(self, module: DPG, pre_terminal: Tensor):
         val, svg = module(pre_terminal, n_steps=4)  # Exceed the horizon
         self.check_val_svg(val, svg)
+
+
+class TestMAAC(TestDPG):
+    @pytest.fixture
+    def module(
+        self,
+        policy: TVLinearPolicy,
+        trans: StochasticModel,
+        reward: QuadRewardModel,
+        qvalue: QValue,
+    ) -> MAAC:
+        return MAAC(policy, trans, reward, qvalue)
