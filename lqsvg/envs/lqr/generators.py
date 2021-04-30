@@ -48,8 +48,7 @@ class LQGGenerator(DataClassJsonMixin):
             quadratic one in the cost
         cost_cross: whether to include state-ctrl cross terms in the quadratic
             cost matrix (C_sa and C_as)
-        seed: integer seed for random number generator used in
-            initializing LQG parameters
+        rng: random number generator state
     """
 
     # pylint:disable=too-many-instance-attributes
@@ -64,11 +63,7 @@ class LQGGenerator(DataClassJsonMixin):
     rand_init_cov: bool = False
     cost_linear: bool = False
     cost_cross: bool = False
-    seed: Optional[int] = None
-
-    def __post_init__(self):
-        # pylint:disable=attribute-defined-outside-init
-        self._rng = np.random.default_rng(self.seed)
+    rng: RNG = None
 
     def __call__(
         self, n_batch: Optional[int] = None
@@ -108,14 +103,14 @@ class LQGGenerator(DataClassJsonMixin):
             passive_eigval_range=self.passive_eigval_range,
             controllable=self.controllable,
             bias=self.transition_bias,
-            rng=self._rng,
+            rng=self.rng,
         )
         dynamics = make_linsdynamics(
             dynamics,
             stationary=self.stationary,
             n_batch=n_batch,
             sample_covariance=self.rand_trans_cov,
-            rng=self._rng,
+            rng=self.rng,
         )
         return dynamics
 
@@ -136,7 +131,7 @@ class LQGGenerator(DataClassJsonMixin):
             n_batch=n_batch,
             linear=self.cost_linear,
             cross_terms=self.cost_cross,
-            rng=self._rng,
+            rng=self.rng,
         )
 
     def make_init(self, n_batch: Optional[int] = None) -> GaussInit:
@@ -152,7 +147,7 @@ class LQGGenerator(DataClassJsonMixin):
             state_size=self.n_state,
             n_batch=n_batch,
             sample_covariance=self.rand_init_cov,
-            rng=self._rng,
+            rng=self.rng,
         )
 
     @contextmanager

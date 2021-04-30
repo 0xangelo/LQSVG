@@ -38,4 +38,4 @@ stationary = standard_fixture((True, False), "Stationary")
 def lqg_generator(
     n_state: int, n_ctrl: int, horizon: int, stationary: bool, seed: int
 ) -> LQGGenerator:
-    return LQGGenerator(n_state, n_ctrl, horizon, stationary=stationary, seed=seed)
+    return LQGGenerator(n_state, n_ctrl, horizon, stationary=stationary, rng=seed)

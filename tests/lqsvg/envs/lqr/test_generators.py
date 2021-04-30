@@ -1,8 +1,8 @@
-# pylint:disable=too-many-arguments,unsubscriptable-object
+# pylint:disable=too-many-arguments
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable, Optional, Type, Union
+from typing import Callable, Optional, Union
 
 import numpy as np
 import pytest
@@ -52,20 +52,8 @@ def controllable(stat_ctrb: tuple[bool, bool]) -> bool:
 
 
 @pytest.fixture
-def generator_cls() -> Type[LQGGenerator]:
-    return LQGGenerator
-
-
-# noinspection PyArgumentList
-@pytest.fixture
-def generator_fn(
-    generator_cls: Type[LQGGenerator],
-    n_state: int,
-    n_ctrl: int,
-    horizon: int,
-    seed: int,
-) -> GeneratorFn:
-    return partial(generator_cls, n_state, n_ctrl, horizon, seed=seed)
+def generator_fn(n_state: int, n_ctrl: int, horizon: int, seed: int) -> GeneratorFn:
+    return partial(LQGGenerator, n_state, n_ctrl, horizon, rng=seed)
 
 
 # Test LQGGenerator interface ==========================================
@@ -80,7 +68,7 @@ def test_generator_init(
     assert generator.n_state == n_state
     assert generator.n_ctrl == n_ctrl
     assert generator.horizon == horizon
-    assert generator.seed == seed
+    assert generator.rng == seed
 
 
 def check_generated_dynamics(

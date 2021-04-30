@@ -30,12 +30,12 @@ def config(
     horizon: int,
     seed: int,
 ) -> dict:
-    return dict(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, seed=seed)
+    return dict(n_state=n_state, n_ctrl=n_ctrl, horizon=horizon, rng=seed)
 
 
 # Test common TorchLQGMixin interface ==========================================
-def test_seed(env_creator: EnvCreator, config: dict):
-    config["seed"] = 42
+def test_rng(env_creator: EnvCreator, config: dict):
+    config["rng"] = 42
     env1 = env_creator(config)
     env2 = env_creator(config)
 
@@ -142,7 +142,7 @@ def swap_row(arr: np.ndarray, in1: int, in2: int):
 
 def test_reset_at(vector_config: dict):
     env = RandomVectorLQG(vector_config)
-    rng = np.random.default_rng(vector_config["seed"])
+    rng = np.random.default_rng(vector_config["rng"])
 
     obs = np.array(env.vector_reset())
     index = rng.choice(env.num_envs)
