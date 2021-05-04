@@ -60,11 +60,12 @@ class QuadraticMixin:
         # noinspection PyTypeChecker
         return quadratic
 
-    def copy_(self, quadratic: Quadratic):
+    def copy_(self, quadratic: Quadratic) -> QuadraticMixin:
         """Update parameters to existing quadratic."""
         params = (self.quad, self.linear, self.const)
         for param, tensor in zip(params, quadratic):
             param.data.copy_(tensor.data)
+        return self
 
     @staticmethod
     def predict_value(
@@ -113,6 +114,20 @@ class QuadVValue(VValue, QuadraticMixin):
         self.linear.data.copy_(random_normal_vector(size=n_state, horizon=horizon + 1))
         nn.init.uniform_(self.const, -1, 1)
 
+    def match_policy_(
+        self, policy: Linear, dynamics: LinSDynamics, cost: QuadCost
+    ) -> QuadVValue:
+        """Copy a policy's true quadratic state-value function.
+
+        Note:
+            The module will predict the same values as the true
+            value function, however its gradient w.r.t. the policy's parameters
+            is zero, unlike the real value function. Gradients of the predicted
+            value w.r.t. to state inputs are still defined.
+        """
+        _, vvalue = self.predict_value(policy, dynamics, cost)
+        return self.copy_(vvalue)
+
     @classmethod
     def from_existing(cls, quadratic: Quadratic) -> QuadVValue:
         """Create a quadratic state-value function from existing parameters."""
@@ -121,9 +136,7 @@ class QuadVValue(VValue, QuadraticMixin):
         n_state = quad.size("C")
         # noinspection PyArgumentList
         horizon = quad.size("H") - 1
-        new = cls(n_state, horizon)
-        new.copy_(quadratic)
-        return new
+        return cls(n_state, horizon).copy_(quadratic)
 
     @classmethod
     def from_policy(
@@ -208,6 +221,20 @@ class QuadQValue(QValue, QuadraticMixin):
         """
         qvalue, _ = cls.predict_value(policy, dynamics, cost)
         return cls.from_existing(qvalue)
+
+    def match_policy_(
+        self, policy: Linear, dynamics: LinSDynamics, cost: QuadCost
+    ) -> QuadQValue:
+        """Copy a policy's true quadratic action-value function.
+
+        Note:
+            The module will predict the same values as the true
+            value function, however its gradient w.r.t. the policy's parameters
+            is zero, unlike the real value function. Gradients of the predicted
+            value w.r.t. to state and action inputs are still defined.
+        """
+        qvalue, _ = self.predict_value(policy, dynamics, cost)
+        return self.copy_(qvalue)
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
         state, time = unpack_obs(obs)
