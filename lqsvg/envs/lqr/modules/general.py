@@ -53,6 +53,8 @@ class EnvModule(nn.Module):
 class LQGModule(EnvModule):
     """Linear Quadratic Gaussian as neural network module."""
 
+    trans: LinearDynamics
+
     def __init__(
         self,
         dims: tuple[int, int, int],
