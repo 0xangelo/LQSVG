@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from raylab.policy.modules.model import StochasticModel
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -9,7 +10,6 @@ from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics, LinearDynamicsModule
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
-from lqsvg.testing.fixture import standard_fixture
 
 
 @pytest.fixture
@@ -68,11 +68,99 @@ def act(
     )
 
 
-stationary = standard_fixture((True, False), "Stationary")
+# noinspection PyMethodMayBeStatic
+class DynamicsModuleTests:
+    def test_forward(self, module: StochasticModel, obs: Tensor, act: Tensor):
+        params = module(obs, act)
+        keys = "loc scale_tril time".split()
+        assert all(list(k in params for k in keys))
+        loc, scale_tril, time = (params[k] for k in keys)
+
+        assert loc.names == obs.names
+        assert scale_tril.names == obs.names + ("C",)
+        assert time.names == obs.names
+
+    def test_rsample(self, module: StochasticModel, obs: Tensor, act: Tensor):
+        params = module(obs, act)
+        sample, logp = module.rsample(params)
+
+        assert sample.shape == obs.shape
+        assert sample.names == obs.names
+        _, time = unpack_obs(obs)
+        _, time_ = unpack_obs(sample)
+        assert time.eq(time_ - 1).all()
+
+        assert sample.grad_fn is not None
+        sample.sum().backward(retain_graph=True)
+        assert obs.grad is not None
+        assert act.grad is not None
+
+        assert logp.shape == tuple(s for s, n in zip(obs.shape, obs.names) if n != "R")
+        assert logp.names == tuple(n for n in obs.names if n != "R")
+
+        obs.grad, act.grad = None, None
+        assert logp.grad_fn is not None
+        logp.sum().backward()
+        assert obs.grad is not None
+        assert act.grad is not None
+
+    def test_absorving(self, module: StochasticModel, last_obs: Tensor, act: Tensor):
+        params = module(last_obs, act)
+        sample, logp = module.rsample(params)
+
+        assert sample.shape == last_obs.shape
+        assert sample.names == last_obs.names
+        state, time = unpack_obs(last_obs)
+        state_, time_ = unpack_obs(sample)
+        assert nt.allclose(state, state_)
+        assert time.eq(time_).all()
+
+        assert sample.grad_fn is not None
+        sample.sum().backward(retain_graph=True)
+        assert last_obs.grad is not None
+        expected_grad = torch.cat(
+            [torch.ones_like(state), torch.zeros_like(time)], dim="R"
+        )
+        assert nt.allclose(last_obs.grad, expected_grad)
+        assert nt.allclose(act.grad, torch.zeros(()))
+
+        last_obs.grad, act.grad = None, None
+        assert logp.shape == tuple(
+            s for s, n in zip(last_obs.shape, last_obs.names) if n != "R"
+        )
+        assert logp.names == tuple(n for n in last_obs.names if n != "R")
+        assert nt.allclose(logp, torch.zeros(()))
+        logp.sum().backward()
+        assert nt.allclose(last_obs.grad, torch.zeros(()))
+        assert nt.allclose(act.grad, torch.zeros(()))
+
+    def test_log_prob(
+        self, module: StochasticModel, obs: Tensor, act: Tensor, new_obs: Tensor
+    ):
+        params = module(obs, act)
+        log_prob = module.log_prob(new_obs, params)
+        _, time = unpack_obs(obs)
+        _, time_ = unpack_obs(new_obs)
+        time, time_ = nt.vector_to_scalar(time, time_)
+
+        assert torch.is_tensor(log_prob)
+        assert torch.isfinite(log_prob).all()
+        assert log_prob.shape == time.shape == time_.shape
+        assert log_prob.names == time.names == time_.names
+
+        assert log_prob.grad_fn is not None
+        log_prob.sum().backward()
+        assert obs.grad is not None
+        assert act.grad is not None
+        assert not nt.allclose(obs.grad, torch.zeros(()))
+        assert not nt.allclose(act.grad, torch.zeros(()))
+        grads = list(p.grad for p in module.parameters())
+        assert all(list(g is not None for g in grads))
+        assert all(list(not torch.allclose(g, torch.zeros(())) for g in grads))
 
 
 # noinspection PyMethodMayBeStatic
-class TestLinearDynamicsModule:
+class TestLinearDynamicsModule(DynamicsModuleTests):
     @pytest.fixture
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int, stationary: bool
@@ -98,95 +186,6 @@ class TestLinearDynamicsModule:
         self, n_state: int, n_ctrl: int, horizon: int, stationary: bool
     ) -> LinearDynamicsModule:
         return LinearDynamicsModule(n_state, n_ctrl, horizon, stationary)
-
-    def test_forward(self, module: LinearDynamics, obs: Tensor, act: Tensor):
-        params = module(obs, act)
-        keys = "loc scale_tril time".split()
-        assert all(list(k in params for k in keys))
-        loc, scale_tril, time = (params[k] for k in keys)
-
-        assert loc.names == obs.names
-        assert scale_tril.names == obs.names + ("C",)
-        assert time.names == obs.names
-
-    def test_rsample(self, module: LinearDynamics, obs: Tensor, act: Tensor):
-        params = module(obs, act)
-        sample, logp = module.rsample(params)
-
-        assert sample.shape == obs.shape
-        assert sample.names == obs.names
-        _, time = unpack_obs(obs)
-        _, time_ = unpack_obs(sample)
-        assert time.eq(time_ - 1).all()
-
-        assert sample.grad_fn is not None
-        sample.sum().backward(retain_graph=True)
-        assert obs.grad is not None
-        assert act.grad is not None
-
-        assert logp.shape == tuple(s for s, n in zip(obs.shape, obs.names) if n != "R")
-        assert logp.names == tuple(n for n in obs.names if n != "R")
-
-        obs.grad, act.grad = None, None
-        assert logp.grad_fn is not None
-        logp.sum().backward()
-        assert obs.grad is not None
-        assert act.grad is not None
-
-    def test_absorving(self, module: LinearDynamics, last_obs: Tensor, act: Tensor):
-        params = module(last_obs, act)
-        sample, logp = module.rsample(params)
-
-        assert sample.shape == last_obs.shape
-        assert sample.names == last_obs.names
-        state, time = unpack_obs(last_obs)
-        state_, time_ = unpack_obs(sample)
-        assert nt.allclose(state, state_)
-        assert time.eq(time_).all()
-
-        assert sample.grad_fn is not None
-        sample.sum().backward(retain_graph=True)
-        assert last_obs.grad is not None
-        last_state, last_time = unpack_obs(last_obs)
-        expected_grad = torch.cat(
-            [torch.ones_like(last_state), torch.zeros_like(last_time)], dim="R"
-        )
-        assert nt.allclose(last_obs.grad, expected_grad)
-        assert nt.allclose(act.grad, torch.zeros_like(act))
-
-        last_obs.grad, act.grad = None, None
-        assert logp.shape == tuple(
-            s for s, n in zip(last_obs.shape, last_obs.names) if n != "R"
-        )
-        assert logp.names == tuple(n for n in last_obs.names if n != "R")
-        assert nt.allclose(logp, torch.zeros_like(logp))
-        logp.sum().backward()
-        assert nt.allclose(last_obs.grad, torch.zeros_like(last_obs))
-        assert nt.allclose(act.grad, torch.zeros_like(act))
-
-    def test_log_prob(
-        self, module: LinearDynamics, obs: Tensor, act: Tensor, new_obs: Tensor
-    ):
-        params = module(obs, act)
-        log_prob = module.log_prob(new_obs, params)
-        _, time = unpack_obs(obs)
-        _, time_ = unpack_obs(new_obs)
-        time, time_ = nt.vector_to_scalar(time, time_)
-
-        assert torch.is_tensor(log_prob)
-        assert torch.isfinite(log_prob).all()
-        assert log_prob.shape == time.shape == time_.shape
-        assert log_prob.names == time.names == time_.names
-
-        assert log_prob.grad_fn is not None
-        log_prob.sum().backward()
-        assert obs.grad is not None
-        assert act.grad is not None
-        assert not nt.allclose(obs.grad, torch.zeros_like(obs.grad))
-        assert not nt.allclose(act.grad, torch.zeros_like(act.grad))
-        grads = list(p.grad for p in module.parameters())
-        assert all(list(g is not None for g in grads))
-        assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
 
     def test_standard_form(
         self, module: LinearDynamics, stationary: bool, horizon: int
