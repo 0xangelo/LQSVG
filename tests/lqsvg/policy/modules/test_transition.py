@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import pytest
 
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.policy.modules.transition import LinearTransitionModel
+from lqsvg.policy.modules.transition import LinearTransitionModel, MLPDynamicsModel
+from lqsvg.testing.fixture import standard_fixture
 from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import DynamicsModuleTests
 
 
@@ -17,4 +20,28 @@ class TestLinearTransitionModel(DynamicsModuleTests):
         assert isinstance(module, LinearDynamicsModule)
         assert all(
             list(hasattr(module, attr) for attr in "n_state n_ctrl horizon".split())
+        )
+
+
+hunits = standard_fixture([(), (10,), (32, 32)], "HiddenUnits")
+activation = standard_fixture((None, "ReLU", "ELU", "Tanh"), "Activation")
+
+
+@pytest.mark.skip(reason="Unimplemented")
+class TestMLPTransitionModel(DynamicsModuleTests):
+    @pytest.fixture
+    def module(
+        self,
+        n_state: int,
+        n_ctrl: int,
+        horizon: int,
+        hunits: tuple[int, ...],
+        activation: str,
+    ) -> MLPDynamicsModel:
+        return MLPDynamicsModel(
+            n_state,
+            n_ctrl,
+            horizon,
+            hunits=hunits,
+            activation=activation,
         )
