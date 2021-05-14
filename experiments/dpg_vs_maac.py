@@ -15,7 +15,7 @@ from torch.optim import Optimizer
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
-from lqsvg.experiment.estimators import DPG, MAAC, MonteCarloSVG
+from lqsvg.experiment.estimators import DPG, MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.experiment.utils import calver
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
@@ -81,12 +81,17 @@ class Experiment(tune.Trainable):
         self.rollout = MonteCarloSVG(policy, lqg)
 
     def make_optimizer(self):
-        self.optimizer = torch.optim.Adam(self.policy.parameters())
+        self.optimizer = torch.optim.SGD(
+            self.policy.parameters(), lr=self.run.config.learning_rate
+        )
 
     def make_estimator(self, config: dict):
+        # pylint:disable=attribute-defined-outside-init
         ecls = DPG if config["estimator"] == "dpg" else MAAC
         self.estimator = ecls(self.policy, self.lqg.trans, self.lqg.reward, self.qvalue)
         self.n_step = config["K"]
+        # noinspection PyAttributeOutsideInit
+        self._golden_standard = AnalyticSVG(policy=self.policy, model=self.lqg)
 
     def _init_stats(self):
         # pylint:disable=attribute-defined-outside-init
@@ -122,6 +127,7 @@ class Experiment(tune.Trainable):
 
     def get_stats(self) -> dict:
         info = {
+            "true_value": self._golden_standard.value().item(),
             "episode_reward_mean": np.mean(self._return_history),
             "episode_reward_max": np.max(self._return_history),
             "episode_reward_min": np.min(self._return_history),
@@ -137,11 +143,12 @@ def main():
     ray.init(logging_level=logging.WARNING)
     config = {
         "wandb_dir": os.getcwd(),
-        "wandb_tags": "unstable controllable".split(),
+        "wandb_tags": "unstable controllable SGD".split(),
         "seed": tune.grid_search(list(range(10))),
         "estimator": tune.grid_search("dpg maac".split()),
         "K": 6,
         "B": 200,
+        "learning_rate": 1e-2,
     }
     tune.run(
         Experiment,
