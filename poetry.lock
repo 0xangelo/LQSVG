@@ -223,14 +223,14 @@ tests = ["pytest (>=4.6)", "pytest-flake8", "pytest-cov", "PyHamcrest (>=2.0.2)"
 
 [[package]]
 name = "black"
-version = "21.5b0"
+version = "21.5b1"
 description = "The uncompromising code formatter."
 category = "dev"
 optional = false
 python-versions = ">=3.6.2"
 
 [package.dependencies]
-aiohttp = {version = ">=3.3.2", optional = true, markers = "extra == \"d\""}
+aiohttp = {version = ">=3.6.0", optional = true, markers = "extra == \"d\""}
 aiohttp-cors = {version = "*", optional = true, markers = "extra == \"d\""}
 appdirs = "*"
 click = ">=7.1.2"
@@ -241,7 +241,7 @@ toml = ">=0.10.1"
 
 [package.extras]
 colorama = ["colorama (>=0.4.3)"]
-d = ["aiohttp (>=3.3.2)", "aiohttp-cors"]
+d = ["aiohttp (>=3.6.0)", "aiohttp-cors"]
 python2 = ["typed-ast (>=1.4.2)"]
 
 [[package]]
@@ -661,26 +661,27 @@ protobuf = ["grpcio-tools (>=1.37.1)"]
 
 [[package]]
 name = "gym"
-version = "0.17.3"
+version = "0.18.3"
 description = "The OpenAI Gym: A toolkit for developing and comparing your reinforcement learning agents."
 category = "main"
 optional = false
-python-versions = ">=3.5"
+python-versions = ">=3.6"
 
 [package.dependencies]
 atari_py = {version = ">=0.2.0,<0.3.0", optional = true, markers = "extra == \"atari\""}
 cloudpickle = ">=1.2.0,<1.7.0"
 numpy = ">=1.10.4"
-opencv-python = {version = "*", optional = true, markers = "extra == \"atari\""}
-Pillow = {version = "*", optional = true, markers = "extra == \"atari\""}
-pyglet = ">=1.4.0,<=1.5.0"
+opencv-python = {version = ">=3", optional = true, markers = "extra == \"atari\""}
+Pillow = "<=8.2.0"
+pyglet = ">=1.4.0,<=1.5.15"
 scipy = "*"
 
 [package.extras]
-all = ["atari_py (>=0.2.0,<0.3.0)", "pillow", "opencv-python", "box2d-py (>=2.3.5,<2.4.0)", "mujoco_py (>=1.50,<2.0)", "imageio", "mujoco_py (>=1.50,<2.0)", "imageio"]
-atari = ["atari_py (>=0.2.0,<0.3.0)", "pillow", "opencv-python"]
+all = ["box2d-py (>=2.3.5,<2.4.0)", "opencv-python (>=3)", "imageio", "atari_py (>=0.2.0,<0.3.0)", "mujoco_py (>=1.50,<2.0)"]
+atari = ["atari_py (>=0.2.0,<0.3.0)", "opencv-python (>=3)"]
 box2d = ["box2d-py (>=2.3.5,<2.4.0)"]
 mujoco = ["mujoco_py (>=1.50,<2.0)", "imageio"]
+nomujoco = ["box2d-py (>=2.3.5,<2.4.0)", "opencv-python (>=3)", "atari_py (>=0.2.0,<0.3.0)"]
 robotics = ["mujoco_py (>=1.50,<2.0)", "imageio"]
 
 [[package]]
@@ -2477,7 +2478,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "d22543644dfb61c5b22806f9325b068683bb276ec4896cd8f948328b166c28cd"
+content-hash = "b00793ceeb8fdd02341e4f663cb3f8ce1a3cd3320732ba48a68f37a3e69b3de7"
 
 [metadata.files]
 absl-py = [
@@ -2615,8 +2616,8 @@ base58 = [
     {file = "base58-2.1.0.tar.gz", hash = "sha256:171a547b4a3c61e1ae3807224a6f7aec75e364c4395e7562649d7335768001a2"},
 ]
 black = [
-    {file = "black-21.5b0-py3-none-any.whl", hash = "sha256:0e80435b8a88f383c9149ae89d671eb2095b72344b0fe8a1d61d2ff5110ed173"},
-    {file = "black-21.5b0.tar.gz", hash = "sha256:9dc2042018ca10735366d944c2c12d9cad6dec74a3d5f679d09384ea185d9943"},
+    {file = "black-21.5b1-py3-none-any.whl", hash = "sha256:8a60071a0043876a4ae96e6c69bd3a127dad2c1ca7c8083573eb82f92705d008"},
+    {file = "black-21.5b1.tar.gz", hash = "sha256:23695358dbcb3deafe7f0a3ad89feee5999a46be5fec21f4f1d108be0bcdb3b1"},
 ]
 bleach = [
     {file = "bleach-3.3.0-py2.py3-none-any.whl", hash = "sha256:6123ddc1052673e52bab52cdc955bcb57a015264a1c57d37bea2f6b817af0125"},
@@ -2855,7 +2856,7 @@ grpcio = [
     {file = "grpcio-1.37.1.tar.gz", hash = "sha256:df8305806311d3fe913d4f7eb3ef28e2072159ea12f95baab5d447f1380a71e3"},
 ]
 gym = [
-    {file = "gym-0.17.3.tar.gz", hash = "sha256:96a7dd4e9cdb39e30c7a79e5773570fd9408f7fdb58c714c293cfbb314818eb6"},
+    {file = "gym-0.18.3.tar.gz", hash = "sha256:81a3e3fbf7fcf57c8cf98f7e22d1bdd5815f3824d9c148a7eb42420d3d642967"},
 ]
 hiredis = [
     {file = "hiredis-2.0.0-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:b4c8b0bc5841e578d5fb32a16e0c305359b987b850a06964bd5a62739d688048"},
