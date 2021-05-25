@@ -15,8 +15,15 @@ from torch.optim import Optimizer
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
-from lqsvg.experiment.estimators import DPG, MAAC, AnalyticSVG, MonteCarloSVG
-from lqsvg.experiment.utils import calver
+from lqsvg.envs.lqr.solvers import NamedLQGControl
+from lqsvg.experiment.estimators import (
+    DPG,
+    MAAC,
+    AnalyticSVG,
+    ExpectedValue,
+    MonteCarloSVG,
+)
+from lqsvg.experiment.utils import calver, linear_feedback_norm
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
 
@@ -96,6 +103,10 @@ class Experiment(tune.Trainable):
     def _init_stats(self):
         # pylint:disable=attribute-defined-outside-init
         self._return_history = deque([0], maxlen=100)
+        _, _, vstar = NamedLQGControl(
+            self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon
+        )(self.lqg.trans.standard_form(), self.lqg.reward.standard_form())
+        self._optimal_value = ExpectedValue()(self.lqg.init.standard_form(), vstar)
 
     def step(self):
         obs = self.lqg_rollout()
@@ -104,6 +115,7 @@ class Experiment(tune.Trainable):
         self.optimizer.zero_grad()
         loss = self.estimator.surrogate(obs, n_steps=self.n_step).neg()
         loss.backward()
+        self.postprocess_svg()
         self.optimizer.step()
 
         return self.get_stats()
@@ -125,9 +137,17 @@ class Experiment(tune.Trainable):
             self.lqg.reward.standard_form(),
         )
 
+    def postprocess_svg(self):
+        if self.run.config.normalize_svg:
+            svg = tuple(g.grad for g in self.policy.standard_form())
+            svg_norm = linear_feedback_norm(svg)
+            for par in self.policy.parameters():
+                par.data.div_(svg_norm)
+
     def get_stats(self) -> dict:
         info = {
             "true_value": self._golden_standard.value().item(),
+            "optimal_value": self._optimal_value,
             "episode_reward_mean": np.mean(self._return_history),
             "episode_reward_max": np.max(self._return_history),
             "episode_reward_min": np.min(self._return_history),
@@ -149,6 +169,7 @@ def main():
         "K": 6,
         "B": 200,
         "learning_rate": 1e-2,
+        "normalize_svg": tune.grid_search([True, False]),
     }
     tune.run(
         Experiment,
