@@ -30,7 +30,7 @@ class ExpectedValue(nn.Module):
         mean = nt.vector_to_matrix(mean)
 
         value = (
-            nt.trace(cov @ V).align_to(..., "R", "C") / 2
+            nt.scalar_to_matrix(nt.trace(cov @ V)) / 2
             + nt.transpose(mean) @ V @ mean / 2
             + nt.transpose(v) @ mean
             + c
