@@ -103,10 +103,11 @@ class Experiment(tune.Trainable):
     def _init_stats(self):
         # pylint:disable=attribute-defined-outside-init
         self._return_history = deque([0], maxlen=100)
-        _, _, vstar = NamedLQGControl(
-            self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon
-        )(self.lqg.trans.standard_form(), self.lqg.reward.standard_form())
-        self._optimal_value = ExpectedValue()(self.lqg.init.standard_form(), vstar)
+        dynamics, cost, init = self.lqg.standard_form()
+        solver = NamedLQGControl(self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon)
+        _, _, vstar = solver(dynamics, cost)
+        vstar = tuple(v.select("H", 0) for v in vstar)
+        self._optimal_value = ExpectedValue()(init, vstar).item()
 
     def step(self):
         obs = self.lqg_rollout()
@@ -142,7 +143,7 @@ class Experiment(tune.Trainable):
             svg = tuple(g.grad for g in self.policy.standard_form())
             svg_norm = linear_feedback_norm(svg)
             for par in self.policy.parameters():
-                par.data.div_(svg_norm)
+                par.grad.data.div_(svg_norm)
 
     def get_stats(self) -> dict:
         info = {
