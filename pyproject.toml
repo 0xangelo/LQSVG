@@ -16,7 +16,7 @@ ipywidgets = "^7.6.3"
 tqdm = "^4.61.0"
 ipython = "^7.23.1"
 pre-commit = "^2.13.0"
-wandb = "^0.10.30"
+wandb = "^0.10.31"
 pylint = "^2.8.2"
 pytest = "^6.2.3"
 black = {extras = ["d"], version = "^21.5b1"}
