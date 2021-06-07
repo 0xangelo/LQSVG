@@ -43,11 +43,11 @@ class Experiment(tune.Trainable):
 
     def setup(self, config: dict):
         self._init_wandb(config)
-        self.rng = np.random.default_rng(config["seed"])
+        self.rng = np.random.default_rng(self.run.config.env_seed)
         self.make_generator()
         self.make_modules()
         self.make_optimizer()
-        self.make_estimator(config)
+        self.make_estimator()
         self._init_stats()
 
     def _init_wandb(self, config: dict):
@@ -82,7 +82,7 @@ class Experiment(tune.Trainable):
             dynamics, cost, init = self.generator()
         lqg = LQGModule.from_existing(dynamics, cost, init)
         policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon)
-        policy.stabilize_(dynamics, rng=self.rng)
+        policy.stabilize_(dynamics, rng=self.run.config.policy_seed)
         qvalue = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
         self.lqg, self.policy, self.qvalue = lqg, policy, qvalue
         self.rollout = MonteCarloSVG(policy, lqg)
@@ -92,11 +92,13 @@ class Experiment(tune.Trainable):
             self.policy.parameters(), lr=self.run.config.learning_rate
         )
 
-    def make_estimator(self, config: dict):
+    def make_estimator(
+        self,
+    ):
         # pylint:disable=attribute-defined-outside-init
-        ecls = DPG if config["estimator"] == "dpg" else MAAC
+        ecls = DPG if self.run.config.estimator == "dpg" else MAAC
         self.estimator = ecls(self.policy, self.lqg.trans, self.lqg.reward, self.qvalue)
-        self.n_step = config["K"]
+        self.n_step = self.run.config.K
         # noinspection PyAttributeOutsideInit
         self._golden_standard = AnalyticSVG(policy=self.policy, model=self.lqg)
 
@@ -165,9 +167,10 @@ def main():
     config = {
         "wandb_dir": os.getcwd(),
         "wandb_tags": "unstable controllable SGD".split(),
-        "seed": tune.grid_search(list(range(10))),
+        "env_seed": tune.grid_search(list(range(10))),
+        "policy_seed": tune.grid_search(list(range(10))),
         "estimator": tune.grid_search("dpg maac".split()),
-        "K": 6,
+        "K": 8,
         "B": 200,
         "learning_rate": 1e-2,
         "normalize_svg": tune.grid_search([True, False]),
@@ -175,7 +178,7 @@ def main():
     tune.run(
         Experiment,
         config=config,
-        num_samples=10,
+        num_samples=1,
         stop=dict(training_iteration=1000),
         local_dir="./results",
     )
