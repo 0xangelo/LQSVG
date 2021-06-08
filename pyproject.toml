@@ -14,7 +14,7 @@ ray = {extras = ["rllib", "tune"], version = "1.2.0"}
 jupyterlab = "^3.0.16"
 ipywidgets = "^7.6.3"
 tqdm = "^4.61.0"
-ipython = "^7.24.0"
+ipython = "^7.24.1"
 pre-commit = "^2.13.0"
 wandb = "^0.10.31"
 pylint = "^2.8.3"
