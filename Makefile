@@ -18,3 +18,9 @@ poetry-update:
 	make poetry-export
 	git add pyproject.toml poetry.lock requirements.txt
 	git commit -s -m "chore(deps): make poetry update"
+
+test-cov:
+	pytest --cov=lqsvg
+
+test-cov-lines:
+	pytest --cov=lqsvg --cov-report=term-missing
