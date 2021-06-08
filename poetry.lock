@@ -751,7 +751,7 @@ test = ["pytest (!=5.3.4)", "pytest-cov", "flaky", "nose", "jedi (<=0.17.2)"]
 
 [[package]]
 name = "ipython"
-version = "7.24.0"
+version = "7.24.1"
 description = "IPython: Productive Interactive Computing"
 category = "main"
 optional = false
@@ -1361,7 +1361,7 @@ optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-numpy = ">=1.17.3"
+numpy = ">=1.19.3"
 
 [[package]]
 name = "opencv-python"
@@ -1372,7 +1372,7 @@ optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-numpy = ">=1.17.3"
+numpy = ">=1.19.3"
 
 [[package]]
 name = "opencv-python-headless"
@@ -2505,7 +2505,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "d450e34687c8de2fd73f6fbfc2d8c6c66236f27a96d09fb1f5c50d7dadc805cf"
+content-hash = "7cf1980a1ac9f6d938d05d58ce3c627d1d51aad4f16bb803514b961b2d36a7ba"
 
 [metadata.files]
 absl-py = [
@@ -3015,8 +3015,8 @@ ipykernel = [
     {file = "ipykernel-5.5.3.tar.gz", hash = "sha256:a682e4f7affd86d9ce9b699d21bcab6d5ec9fbb2bfcb194f2706973b252bc509"},
 ]
 ipython = [
-    {file = "ipython-7.24.0-py3-none-any.whl", hash = "sha256:f86788eef439891438af3498525094cc2acbdbea4f2aa2f8895782d4ff471341"},
-    {file = "ipython-7.24.0.tar.gz", hash = "sha256:a171caa3d3d4c819a1c0742e3abecfd5a2b8ab525ca1c9f114b40b76b0679ab1"},
+    {file = "ipython-7.24.1-py3-none-any.whl", hash = "sha256:d513e93327cf8657d6467c81f1f894adc125334ffe0e4ddd1abbb1c78d828703"},
+    {file = "ipython-7.24.1.tar.gz", hash = "sha256:9bc24a99f5d19721fb8a2d1408908e9c0520a17fff2233ffe82620847f17f1b6"},
 ]
 ipython-genutils = [
     {file = "ipython_genutils-0.2.0-py2.py3-none-any.whl", hash = "sha256:72dd37233799e619666c9f639a9da83c34013a73e8bbc79a7a6348d93c61fab8"},
