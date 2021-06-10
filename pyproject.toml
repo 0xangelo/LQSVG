@@ -29,6 +29,7 @@ jupyterlab-code-formatter = "^1.4.10"
 isort = "^5.8.0"
 watchdog = "^2.1.2"
 pytest-cov = "^2.12.1"
+hyperopt = "^0.2.5"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
