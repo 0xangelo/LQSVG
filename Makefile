@@ -4,9 +4,6 @@ pylint: ## lint code with pylint
 pylint-test: ## lint test files with pylint
 	pylint --rcfile=tests/pylintrc tests -d similarities
 
-reorder-imports-staged:
-	git diff --cached --name-only | xargs grep -rl --include "*.py" 'import' | xargs reorder-python-imports --separate-relative
-
 mypy-staged:
 	git diff --cached --name-only | xargs grep -rl --include "*.py" 'import' | xargs mypy --follow-imports silent
 
