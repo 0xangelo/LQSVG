@@ -1,4 +1,5 @@
 # pylint:disable=missing-docstring
+import json
 import logging
 import os
 from collections import deque
@@ -31,7 +32,7 @@ from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
 
 
 # noinspection PyAbstractClass
-class SuboptimalityGapSearch(tune.Trainable):
+class HparamSearch(tune.Trainable):
     # pylint:disable=abstract-method,too-many-instance-attributes
     rng: RNG
     generator: LQGGenerator
@@ -44,7 +45,6 @@ class SuboptimalityGapSearch(tune.Trainable):
     n_step: int
 
     def setup(self, config: dict):
-        config["seed"] = np.random.choice(config["seeds"])
         self._init_wandb(config)
         self.rng = np.random.default_rng(self.run.config.seed)
         self.make_generator()
@@ -174,26 +174,35 @@ def main():
     space = {
         "wandb_dir": os.getcwd(),
         "wandb_tags": "unstable controllable".split(),
-        "seeds": list(range(10)),
-        "env_dim": 6,
+        "seed": 42,
         "estimator": "maac",
         "K": 8,
         "B": tune.qrandint(20, 400, 20),
-        # "B": tune.grid_search(list(20 * i for i in range(5, 21))),
         "optimizer": "SGD",
         "learning_rate": tune.loguniform(1e-5, 1e-2),
-        "clip_grad_norm": 40,
+        "clip_grad_norm": 100,
     }
-    hyperopt_search = HyperOptSearch(
-        space, metric="true_value", mode="max", random_state_seed=42
-    )
-    tune.run(
-        SuboptimalityGapSearch,
-        search_alg=hyperopt_search,
-        local_dir="./results",
-        stop={"training_iteration": 1000},
-        num_samples=1000,
-    )
+
+    for env_dim in range(10, 11):
+        hyperopt_search = HyperOptSearch(
+            {"env_dim": env_dim, **space},
+            metric="true_value",
+            mode="max",
+            random_state_seed=42,
+        )
+        name = f"HparamSearch-Dim{env_dim}"
+        analysis = tune.run(
+            HparamSearch,
+            name=name,
+            search_alg=hyperopt_search,
+            local_dir="./results",
+            stop={"time_total_s": 300},
+            num_samples=1000,
+        )
+        best = analysis.get_best_config("true_value", mode="max")
+        with open(os.path.join("./results", name, "search_best.json"), "w") as file:
+            json.dump(best, file)
+
     ray.shutdown()
 
 
