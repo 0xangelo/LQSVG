@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import wandb
 from ray import tune
+from ray.tune.analysis import Analysis
 from torch import Tensor
 from torch.optim import Optimizer
 
@@ -64,7 +65,7 @@ class SuboptimalityGap(tune.Trainable):
             entity="angelovtt",
             tags=[calver()] + tags,
             reinit=True,
-            mode="online",
+            mode="offline",
         )
 
     def make_generator(self):
@@ -169,6 +170,11 @@ class SuboptimalityGap(tune.Trainable):
 
 def main():
     ray.init(logging_level=logging.WARNING)
+    best = Analysis(
+        "results/HparamSearch-Dim10",
+        default_metric="true_value",
+        default_mode="max",
+    ).get_best_config()
     config = {
         "wandb_dir": os.getcwd(),
         "wandb_tags": "unstable controllable".split(),
@@ -176,16 +182,16 @@ def main():
         "env_dim": tune.grid_search(list(range(2, 11))),
         "estimator": tune.grid_search("dpg maac".split()),
         "K": 8,
-        "B": 200,
+        "B": best["B"],
         "optimizer": "SGD",
-        "learning_rate": 1e-3,
-        "clip_grad_norm": 40,
+        "learning_rate": best["learning_rate"],
+        "clip_grad_norm": 100,
     }
     tune.run(
         SuboptimalityGap,
         config=config,
         num_samples=1,
-        stop=dict(training_iteration=1000),
+        stop=dict(time_total_s=300),
         local_dir="./results",
     )
     ray.shutdown()
