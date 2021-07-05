@@ -122,6 +122,3 @@ checkpoints/
 
 # Pytorch Lightning
 lightning_logs/
-
-# Tune
-results/
