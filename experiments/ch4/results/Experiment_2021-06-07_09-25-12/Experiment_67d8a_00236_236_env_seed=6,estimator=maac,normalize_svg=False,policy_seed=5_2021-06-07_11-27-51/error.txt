@@ -1,0 +1,35 @@
+Failure # 1 (occurred at 2021-06-07_11-28-12)
+Traceback (most recent call last):
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/tune/trial_runner.py", line 586, in _process_trial
+    results = self.trial_executor.fetch_result(trial)
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/tune/ray_trial_executor.py", line 609, in fetch_result
+    result = ray.get(trial_future[0], timeout=DEFAULT_GET_TIMEOUT)
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/_private/client_mode_hook.py", line 47, in wrapper
+    return func(*args, **kwargs)
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/worker.py", line 1456, in get
+    raise value.as_instanceof_cause()
+ray.exceptions.RayTaskError(ValueError): [36mray::Experiment.train_buffered()[39m (pid=37861, ip=192.168.15.44)
+  File "python/ray/_raylet.pyx", line 480, in ray._raylet.execute_task
+  File "python/ray/_raylet.pyx", line 432, in ray._raylet.execute_task.function_executor
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/tune/trainable.py", line 167, in train_buffered
+    result = self.train()
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/ray/tune/trainable.py", line 226, in train
+    result = self.step()
+  File "dpg_vs_maac.py", line 114, in step
+  File "dpg_vs_maac.py", line 128, in lqg_rollout
+    n_trajs = int(np.ceil(self.config["B"] / self.lqg.horizon))
+  File "/home/angelo/Repositories/LQSVG/lqsvg/experiment/estimators.py", line 154, in rsample_trajectory
+    new_obs, logp_t = self.model.trans.rsample(self.model.trans(obs, act))
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/raylab/policy/modules/model/stochastic/single.py", line 48, in rsample
+    return self.dist.rsample(params, sample_shape)
+  File "/home/angelo/Repositories/LQSVG/lqsvg/envs/lqr/modules/dynamics/common.py", line 44, in rsample
+    sample = self._gen_sample(loc, scale_tril, time)
+  File "/home/angelo/Repositories/LQSVG/lqsvg/envs/lqr/modules/dynamics/common.py", line 58, in _gen_sample
+    next_obs = self._transition(loc, scale_tril, time)
+  File "/home/angelo/Repositories/LQSVG/lqsvg/envs/lqr/modules/dynamics/common.py", line 69, in _transition
+    dist = torch.distributions.MultivariateNormal(loc=loc, scale_tril=scale_tril)
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/torch/distributions/multivariate_normal.py", line 146, in __init__
+    super(MultivariateNormal, self).__init__(batch_shape, event_shape, validate_args=validate_args)
+  File "/home/angelo/.cache/pypoetry/virtualenvs/lqsvg-3RqEHojC-py3.8/lib/python3.8/site-packages/torch/distributions/distribution.py", line 53, in __init__
+    raise ValueError("The parameter {} has invalid values".format(param))
+ValueError: The parameter loc has invalid values

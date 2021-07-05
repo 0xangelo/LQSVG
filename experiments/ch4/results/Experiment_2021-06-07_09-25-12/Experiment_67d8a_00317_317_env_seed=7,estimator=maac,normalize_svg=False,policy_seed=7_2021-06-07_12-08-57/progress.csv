@@ -1,0 +1,3 @@
+true_value,optimal_value,episode_reward_mean,episode_reward_max,episode_reward_min,done,timesteps_total,episodes_total,training_iteration,experiment_id,date,timestamp,time_this_iter_s,time_total_s,pid,hostname,node_ip,time_since_restore,timesteps_since_restore,iterations_since_restore,trial_id
+nan,37.82746124267578,-6951.421852805398,0.0,-19722.140625,False,,,1,9833140328be497e916d8fa0b38333f9,2021-06-07_12-09-20,1623078560,7.009301662445068,7.009301662445068,47664,LOGGI004112,192.168.15.44,7.009301662445068,0,1,67d8a_00317
+nan,37.82746124267578,nan,nan,nan,False,,,2,9833140328be497e916d8fa0b38333f9,2021-06-07_12-09-21,1623078561,0.32880187034606934,7.338103532791138,47664,LOGGI004112,192.168.15.44,7.338103532791138,0,2,67d8a_00317

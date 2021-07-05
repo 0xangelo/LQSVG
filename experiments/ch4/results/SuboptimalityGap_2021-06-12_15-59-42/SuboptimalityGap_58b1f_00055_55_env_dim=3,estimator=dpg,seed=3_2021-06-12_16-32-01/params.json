@@ -1,0 +1,15 @@
+{
+  "B": 20,
+  "K": 8,
+  "clip_grad_norm": 100,
+  "env_dim": 3,
+  "estimator": "dpg",
+  "learning_rate": 0.009918581274170838,
+  "optimizer": "SGD",
+  "seed": 3,
+  "wandb_dir": "/home/angelo/Repositories/LQSVG/experiments",
+  "wandb_tags": [
+    "unstable",
+    "controllable"
+  ]
+}

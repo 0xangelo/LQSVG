@@ -1,0 +1,15 @@
+{
+  "B": 200,
+  "K": 8,
+  "env_seed": 7,
+  "estimator": "maac",
+  "learning_rate": 0.01,
+  "normalize_svg": false,
+  "policy_seed": 9,
+  "wandb_dir": "/home/angelo/Repositories/LQSVG/experiments",
+  "wandb_tags": [
+    "unstable",
+    "controllable",
+    "SGD"
+  ]
+}
