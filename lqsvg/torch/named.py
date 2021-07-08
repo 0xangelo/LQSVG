@@ -145,7 +145,9 @@ def tril(tensor: Tensor, *args, **kwargs) -> Tensor:
 
 
 def cholesky(tensor: Tensor, *args, **kwargs) -> Tensor:
-    return torch.cholesky(unnamed(tensor), *args, **kwargs).refine_names(*tensor.names)
+    return torch.linalg.cholesky(unnamed(tensor), *args, **kwargs).refine_names(
+        *tensor.names
+    )
 
 
 def softplus(tensor: Tensor, *, beta: float = 1) -> Tensor:

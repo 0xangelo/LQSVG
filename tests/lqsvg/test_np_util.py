@@ -19,7 +19,7 @@ def test_spd_matrix(n_row: int, batch_shape: tuple[int, ...], seed: int):
     assert A.shape == batch_shape + (n_row, n_row)
     B = torch.as_tensor(A)
     assert torch.allclose(B, B.transpose(-2, -1))
-    eigval, _ = torch.symeig(B)
+    eigval, _ = torch.linalg.eigh(B)
     assert eigval.ge(0).all()
 
 
