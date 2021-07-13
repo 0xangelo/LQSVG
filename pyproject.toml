@@ -19,7 +19,7 @@ pre-commit = "^2.13.0"
 wandb = "^0.10.32"
 pylint = "^2.8.3"
 pytest = "^6.2.3"
-black = {extras = ["d"], version = "^21.5b2"}
+black = {extras = ["d"], version = "^21.6b0"}
 flake8 = "^3.9.2"
 sklearn = "^0.0"
 matplotlib = "^3.4.2"
