@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import torch
-from raylab.policy.modules.model import MLPModel
+from raylab.policy.modules.model import MLPModel, StochasticModel
 from raylab.utils.types import TensorDict
 from torch import Tensor
 
 from lqsvg.envs.lqr import spaces_from_dims, unpack_obs
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
+
 from .wrappers import StochasticModelWrapper
 
 __all__ = ["LinearTransitionModel", "MLPDynamicsModel"]
@@ -16,6 +17,10 @@ __all__ = ["LinearTransitionModel", "MLPDynamicsModel"]
 
 class LinearTransitionModel(LinearDynamicsModule):
     """Linear Gaussian transition model."""
+
+
+class LinearDiagDynamicsModel(StochasticModel):
+    """Linear Gaussian model with diagonal covariance."""
 
 
 class MLPDynamicsModel(StochasticModelWrapper):
@@ -33,6 +38,7 @@ class MLPDynamicsModel(StochasticModelWrapper):
         hunits: tuple[int, ...],
         activation: str,
     ):
+        # pylint:disable=too-many-arguments
         self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
         obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
         spec = MLPModel.spec_cls(
