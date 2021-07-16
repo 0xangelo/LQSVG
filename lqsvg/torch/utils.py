@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch import Generator, Tensor
 
-import lqsvg.np_util as np_util
+from lqsvg import np_util
 from lqsvg.torch import named as nt
 
 
@@ -74,7 +74,7 @@ def softplusinv(tensor: Tensor, *, beta: float = 1.0) -> Tensor:
 
 def disassemble_cholesky(tensor: Tensor, *, beta: float = 1.0) -> Tuple[Tensor, Tensor]:
     """Compute cholesky factor and break it into unconstrained parameters."""
-    tril = nt.cholesky(tensor, upper=False)
+    tril = nt.cholesky(tensor)
     ltril = nt.tril(tril, diagonal=-1)
     pre_diag = softplusinv(nt.diagonal(tril, dim1="R", dim2="C"), beta=beta)
     return ltril, pre_diag
