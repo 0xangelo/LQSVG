@@ -198,7 +198,7 @@ def check_dynamics_covariance(
     assert_col_size(W, n_state)
 
     assert nt.allclose(W, nt.transpose(W))
-    eigval, _ = torch.symeig(nt.unnamed(W))
+    eigval, _ = torch.linalg.eigh(nt.unnamed(W))
     assert eigval.gt(0).all()
 
     assert sample_covariance != nt.allclose(W, nt.matrix(torch.eye(n_state)))
@@ -229,7 +229,7 @@ def check_cost(
     assert_row_size(c, n_tau)
     assert_col_size(C, n_tau)
 
-    eigval, _ = torch.symeig(nt.unnamed(C))
+    eigval, _ = torch.linalg.eigh(nt.unnamed(C))
     assert eigval.ge(0).all()
     assert linear or nt.allclose(c, torch.zeros_like(c))
 
