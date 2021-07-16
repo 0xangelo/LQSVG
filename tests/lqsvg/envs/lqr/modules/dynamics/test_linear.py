@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 from raylab.policy.modules.model import StochasticModel
+from raylab.utils.types import TensorDict
 from torch import Tensor
 
 import lqsvg.torch.named as nt
@@ -70,16 +71,6 @@ def act(
 
 # noinspection PyMethodMayBeStatic
 class DynamicsModuleTests:
-    def test_forward(self, module: StochasticModel, obs: Tensor, act: Tensor):
-        params = module(obs, act)
-        keys = "loc scale_tril time".split()
-        assert all(list(k in params for k in keys))
-        loc, scale_tril, time = (params[k] for k in keys)
-
-        assert loc.names == obs.names
-        assert scale_tril.names == obs.names + ("C",)
-        assert time.names == obs.names
-
     def test_rsample(self, module: StochasticModel, obs: Tensor, act: Tensor):
         params = module(obs, act)
         sample, logp = module.rsample(params)
@@ -160,7 +151,33 @@ class DynamicsModuleTests:
 
 
 # noinspection PyMethodMayBeStatic
-class TestLinearDynamicsModule(DynamicsModuleTests):
+class LinearParamsTestMixin:
+    def test_forward(self, module: StochasticModel, obs: Tensor, act: Tensor):
+        params = module(obs, act)
+        loc, scale_tril, time = self.check_keys(params)
+        self.check_names(loc, scale_tril, time, obs)
+        self.check_shapes(loc, scale_tril, time, obs)
+
+    def check_keys(self, params: TensorDict) -> (Tensor, Tensor, Tensor):
+        keys = "loc scale_tril time".split()
+        assert all(list(k in params for k in keys))
+        loc, scale_tril, time = (params[k] for k in keys)
+        return loc, scale_tril, time
+
+    def check_names(self, loc: Tensor, scale_tril: Tensor, time: Tensor, obs: Tensor):
+        assert loc.names == obs.names
+        assert scale_tril.names == obs.names + ("C",)
+        assert time.names == obs.names
+
+    def check_shapes(self, loc: Tensor, scale_tril: Tensor, time: Tensor, obs: Tensor):
+        state, time_ = unpack_obs(obs)
+        assert loc.shape == state.shape
+        assert scale_tril.shape == state.shape + state.shape[-1:]
+        assert time.shape == time_.shape
+
+
+# noinspection PyMethodMayBeStatic
+class TestLinearDynamicsModule(DynamicsModuleTests, LinearParamsTestMixin):
     @pytest.fixture
     def dynamics(
         self, n_state: int, n_ctrl: int, horizon: int, seed: int, stationary: bool

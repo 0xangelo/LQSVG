@@ -5,10 +5,13 @@ import pytest
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.policy.modules.transition import LinearTransitionModel, MLPDynamicsModel
 from lqsvg.testing.fixture import standard_fixture
-from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import DynamicsModuleTests
+from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import (
+    DynamicsModuleTests,
+    LinearParamsTestMixin,
+)
 
 
-class TestLinearTransitionModel(DynamicsModuleTests):
+class TestLinearTransitionModel(DynamicsModuleTests, LinearParamsTestMixin):
     @pytest.fixture
     def module(
         self, n_state: int, n_ctrl: int, horizon: int, stationary: bool
@@ -38,6 +41,7 @@ class TestMLPTransitionModel(DynamicsModuleTests):
         hunits: tuple[int, ...],
         activation: str,
     ) -> MLPDynamicsModel:
+        # pylint:disable=too-many-arguments
         return MLPDynamicsModel(
             n_state,
             n_ctrl,
