@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import abc
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
-import torch.nn as nn
 from raylab.policy.modules.model import StochasticModel
-from torch import IntTensor, Tensor
+from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
@@ -18,63 +17,14 @@ from lqsvg.torch.modules import CholeskyFactor
 from .common import TVMultivariateNormal
 
 
-# noinspection PyPep8Naming
-class LinearNormalParams(nn.Module):
-    """Linear state-action conditional Gaussian parameters."""
+class LinearNormalMixin(abc.ABC):
+    """Common interface for linear Gaussian parameter modules."""
 
     # pylint:disable=invalid-name
-    n_state: int
-    n_ctrl: int
     horizon: int
     stationary: bool
     F: nn.Parameter
     f: nn.Parameter
-    scale_tril: CholeskyFactor
-
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
-        super().__init__()
-        self.n_state = n_state
-        self.n_ctrl = n_ctrl
-        self.horizon = horizon
-        self.stationary = stationary
-
-        h_size = 1 if stationary else horizon
-        self.F = nn.Parameter(Tensor(h_size, n_state, n_state + n_ctrl))
-        self.f = nn.Parameter(Tensor(h_size, n_state))
-        self.scale_tril = CholeskyFactor((h_size, n_state, n_state))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        """Default parameter initialization."""
-        linear = make_lindynamics(
-            self.n_state, self.n_ctrl, self.horizon, stationary=self.stationary
-        )
-        dynamics = make_linsdynamics(linear, stationary=self.stationary)
-        self.copy_(dynamics)
-        self.scale_tril.reset_parameters()
-
-    def copy_(self, dynamics: lqr.LinSDynamics) -> LinearNormalParams:
-        """Set parameters to mirror a given linear stochastic dynamics."""
-        if self.stationary:
-            dynamics = stationary_dynamics(dynamics)
-        F, f, Sigma = dynamics
-        self.F.data.copy_(F)
-        self.f.data.copy_(f)
-        self.scale_tril.factorize_(Sigma)
-        return self
-
-    def _transition_factors(
-        self, index: Optional[IntTensor] = None
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        F, f, L = nt.horizon(nt.matrix(self.F), nt.vector(self.f), self.scale_tril())
-        if index is not None:
-            if self.stationary:
-                idx = torch.zeros_like(index)
-            else:
-                # Timesteps after termination use last parameters
-                idx = torch.clamp(index, max=self.horizon - 1).int()
-            F, f, L = (nt.index_by(x, dim="H", index=idx) for x in (F, f, L))
-        return F, f, L
 
     def forward(self, obs: Tensor, action: Tensor):
         # pylint:disable=missing-function-docstring
@@ -93,6 +43,71 @@ class LinearNormalParams(nn.Module):
         terminal = time.eq(self.horizon)
         loc = nt.where(terminal, state, trans_loc)
         return {"loc": loc, "scale_tril": scale_tril, "time": time}
+
+    def _transition_factors(
+        self, index: Optional[IntTensor] = None
+    ) -> (Tensor, Tensor, Tensor):
+        F, f, L = nt.horizon(nt.matrix(self.F), nt.vector(self.f), self.scale_tril())
+        if index is not None:
+            if self.stationary:
+                idx = torch.zeros_like(index)
+            else:
+                # Timesteps after termination use last parameters
+                idx = torch.clamp(index, max=self.horizon - 1).int()
+            F, f, L = (nt.index_by(x, dim="H", index=idx) for x in (F, f, L))
+        return F, f, L
+
+    @abc.abstractmethod
+    def scale_tril(self) -> Tensor:
+        """Compute scale tril from pre-diagonal parameters.
+
+        Output is differentiable w.r.t. pre-diagonal parameters.
+        """
+
+
+# noinspection PyPep8Naming
+class LinearNormalParams(LinearNormalMixin, nn.Module):
+    """Linear state-action conditional Gaussian parameters."""
+
+    # pylint:disable=invalid-name
+    n_state: int
+    n_ctrl: int
+    cov_cholesky: CholeskyFactor
+
+    def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
+        super().__init__()
+        self.n_state = n_state
+        self.n_ctrl = n_ctrl
+        self.horizon = horizon
+        self.stationary = stationary
+
+        h_size = 1 if stationary else horizon
+        self.F = nn.Parameter(Tensor(h_size, n_state, n_state + n_ctrl))
+        self.f = nn.Parameter(Tensor(h_size, n_state))
+        self.cov_cholesky = CholeskyFactor((h_size, n_state, n_state))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Default parameter initialization."""
+        linear = make_lindynamics(
+            self.n_state, self.n_ctrl, self.horizon, stationary=self.stationary
+        )
+        dynamics = make_linsdynamics(linear, stationary=self.stationary)
+        self.copy_(dynamics)
+        self.cov_cholesky.reset_parameters()
+
+    def scale_tril(self) -> Tensor:
+        return self.cov_cholesky()
+
+    def copy_(self, dynamics: lqr.LinSDynamics) -> LinearNormalParams:
+        """Set parameters to mirror a given linear stochastic dynamics."""
+        if self.stationary:
+            dynamics = stationary_dynamics(dynamics)
+        F, f, Sigma = dynamics
+        self.F.data.copy_(F)
+        self.f.data.copy_(f)
+        self.cov_cholesky.factorize_(Sigma)
+        return self
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring

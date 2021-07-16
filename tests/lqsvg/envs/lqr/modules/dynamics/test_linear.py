@@ -218,6 +218,8 @@ class TestLinearDynamicsModule(DynamicsModuleTests, LinearParamsTestMixin):
         assert torch.allclose(module.F.grad, torch.ones([]))
         assert torch.allclose(module.f.grad, torch.ones([]))
         assert not torch.allclose(
-            module.params.scale_tril.pre_diag.grad, torch.zeros([])
+            module.params.cov_cholesky.pre_diag.grad, torch.zeros([])
         )
-        assert not torch.allclose(module.params.scale_tril.ltril.grad, torch.zeros([]))
+        assert not torch.allclose(
+            module.params.cov_cholesky.ltril.grad, torch.zeros([])
+        )

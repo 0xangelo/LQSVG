@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.policy.modules.transition import LinearTransitionModel, MLPDynamicsModel
+from lqsvg.policy.modules.transition import (
+    LinearDiagDynamicsModel,
+    LinearTransitionModel,
+    MLPDynamicsModel,
+)
 from lqsvg.testing.fixture import standard_fixture
 from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import (
     DynamicsModuleTests,
@@ -24,6 +28,12 @@ class TestLinearTransitionModel(DynamicsModuleTests, LinearParamsTestMixin):
         assert all(
             list(hasattr(module, attr) for attr in "n_state n_ctrl horizon".split())
         )
+
+
+class TestLinearDiagDynamicsModel(DynamicsModuleTests, LinearParamsTestMixin):
+    @pytest.fixture
+    def module(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
+        return LinearDiagDynamicsModel(n_state, n_ctrl, horizon, stationary)
 
 
 hunits = standard_fixture([(), (10,), (32, 32)], "HiddenUnits")
