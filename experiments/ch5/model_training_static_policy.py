@@ -2,13 +2,15 @@
 import numpy as np
 import ray
 import torch
+import wandb
 from ray import tune
 from raylab.policy.modules.model import StochasticModel
 from torch.optim import Optimizer
 from wandb.sdk import wandb_config
 
+import lqsvg.envs.lqr.utils as lqg_util
+import lqsvg.experiment.utils as utils
 import lqsvg.torch.named as nt
-import wandb
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment.estimators import MAAC
@@ -76,6 +78,29 @@ class Experiment(tune.Trainable):
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.hparams.learning_rate
         )
+
+    def step(self) -> dict:
+        with self.run:
+            self.log_env_info()
+            self.build_dataset()
+            with utils.suppress_dataloader_warning():
+                self.trainer.fit(self.model, datamodule=self.datamodule)
+                final_eval = self.trainer.test(self.model, datamodule=self.datamodule)
+
+        return {tune.result.DONE: True, **final_eval}
+
+    def log_env_info(self):
+        dynamics = self.lqg.trans.standard_form()
+        eigvals = lqg_util.stationary_eigvals(dynamics)
+        tests = {
+            "stability": lqg_util.isstable(eigvals=eigvals),
+            "controllability": lqg_util.iscontrollable(dynamics),
+        }
+        self.run.summary.update(tests)
+        self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
+
+    def cleanup(self):
+        self.run.finish()
 
 
 def main():
