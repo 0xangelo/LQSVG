@@ -18,7 +18,19 @@ from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalMixin
 
 from .wrappers import StochasticModelWrapper
 
-__all__ = ["LinearTransitionModel", "MLPDynamicsModel", "LinearDiagDynamicsModel"]
+__all__ = [
+    "LinearTransitionModel",
+    "MLPDynamicsModel",
+    "LinearDiagDynamicsModel",
+    "SegmentStochasticModel",
+]
+
+
+class SegmentStochasticModel(StochasticModel):
+    """Probabilistic model of trajectory segments."""
+
+    def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+        """Log-probability (density) of trajectory segment."""
 
 
 class LinearTransitionModel(LinearDynamicsModule):
@@ -63,15 +75,11 @@ class LinearDiagNormalParams(LinearNormalMixin, nn.Module):
         nn.init.constant_(self.pre_diag, 0)
 
     def scale_tril(self) -> Tensor:
-        """Compute scale tril from pre-diagonal parameters.
-
-        Output is differentiable w.r.t. pre-diagonal parameters.
-        """
         diag = softplus(self.pre_diag, beta=self._softplus_beta)
         return nt.matrix(torch.diag_embed(diag))
 
 
-class LinearDiagDynamicsModel(StochasticModel):
+class LinearDiagDynamicsModel(SegmentStochasticModel):
     """Linear Gaussian model with diagonal covariance.
 
     Args:
