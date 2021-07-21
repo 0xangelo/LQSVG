@@ -31,6 +31,9 @@ class SegmentStochasticModel(StochasticModel):
 
     def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Log-probability (density) of trajectory segment."""
+        obs, act, new_obs = (x.align_to("H", ..., "R") for x in (obs, act, new_obs))
+
+        return self.log_prob(new_obs, self(obs, act)).sum(dim="H")
 
 
 class LinearTransitionModel(LinearDynamicsModule):
