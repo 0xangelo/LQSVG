@@ -1,4 +1,5 @@
 # pylint:disable=missing-docstring
+import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -12,14 +13,15 @@ from torch.utils.data import DataLoader, Dataset
 from wandb.sdk import wandb_config
 
 import lqsvg.envs.lqr.utils as lqg_util
-import lqsvg.experiment.utils as utils
 import lqsvg.torch.named as nt
 import wandb
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
+from lqsvg.experiment import utils
+from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.data import split_dataset
-from lqsvg.experiment.estimators import MAAC, AnalyticSVG
+from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
 from lqsvg.policy.modules.transition import (
@@ -31,6 +33,7 @@ BATCH = Tuple[Tensor, Tensor, Tensor]
 
 
 class LightningModel(pl.LightningModule):
+    # pylint:disable=too-many-ancestors
     model: SegmentStochasticModel
     estimator: MAAC
     lqg: LQGModule
@@ -38,10 +41,15 @@ class LightningModel(pl.LightningModule):
     qval: QuadQValue
     gold_standard: Tuple[Tensor, lqr.Linear]
 
-    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy):
+    def __init__(
+        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
+    ):
         super().__init__()
         self.lqg = lqg
         self.policy = policy
+        self.hparams.update(hparams)
+
+        # NN modules
         self.qval = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
         self.qval.match_policy_(
             policy.standard_form(),
@@ -51,6 +59,8 @@ class LightningModel(pl.LightningModule):
         self.model = LinearDiagDynamicsModel(
             lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True
         )
+
+        # Gradients
         self.estimator = MAAC(policy, self.model, lqg.reward, self.qval)
         self.compute_gold_standards()
 
@@ -60,23 +70,31 @@ class LightningModel(pl.LightningModule):
     # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Log-likelihood of (batched) trajectory segment."""
+        # pylint:disable=arguments-differ
         return self.model.seg_log_prob(obs, act, new_obs) / obs.size("H")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
+    # noinspection PyTypeChecker
+    @staticmethod
+    def _refine_batch(batch: BATCH) -> BATCH:
+        return tuple(x.refine_names("B", "H", "R") for x in batch)
+
     def _compute_loss_on_batch(self, batch: BATCH, _: int) -> Tensor:
-        obs, act, new_obs = (x.refine_names("B", "H", "R") for x in batch)
+        obs, act, new_obs = batch
         return -self(obs, act, new_obs).mean()
 
     def training_step(self, batch: BATCH, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
+        batch = self._refine_batch(batch)
         loss = self._compute_loss_on_batch(batch, batch_idx)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch: BATCH, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
+        batch = self._refine_batch(batch)
         loss = self._compute_loss_on_batch(batch, batch_idx)
         grad_acc = self._compute_grad_acc_on_batch(batch)
         self.log("val/loss", loss)
@@ -85,17 +103,41 @@ class LightningModel(pl.LightningModule):
 
     def test_step(self, batch: BATCH, batch_idx: int):
         # pylint:disable=arguments-differ
+        batch = self._refine_batch(batch)
         loss = self._compute_loss_on_batch(batch, batch_idx)
         grad_acc = self._compute_grad_acc_on_batch(batch)
         self.log("test/loss", loss)
         self.log("test/grad_acc", grad_acc)
 
+    @torch.enable_grad()
     def _compute_grad_acc_on_batch(self, batch: BATCH) -> Tensor:
         obs, _, _ = batch
         obs = obs.flatten(["B", "H"], "B")
-        estim = self.estimator(
-            obs,
+        _, svg = self.estimator(obs, n_steps=4)
+        return torch.as_tensor(gradient_accuracy([svg], self.gold_standard[1]))
+
+
+class TrajectorySegmentDataset(Dataset):
+    # noinspection PyArgumentList
+    def __init__(self, obs: Tensor, act: Tensor, new_obs: Tensor, segment_len: int):
+        self.tensors = tuple(x.align_to("B", "H", ...) for x in (obs, act, new_obs))
+        self.segment_len = segment_len
+        horizon: int = obs.size("H")
+        trajs: int = obs.size("B")
+        self.segs_per_traj = horizon - segment_len + 1
+        self._len = trajs * self.segs_per_traj
+
+    def __getitem__(self, index) -> BATCH:
+        traj_idx = index // self.segs_per_traj
+        timestep_start = index % self.segs_per_traj
+        # noinspection PyTypeChecker
+        return tuple(
+            t[traj_idx, timestep_start : timestep_start + self.segment_len].rename(None)
+            for t in self.tensors
         )
+
+    def __len__(self) -> int:
+        return self._len
 
 
 @dataclass
@@ -103,6 +145,7 @@ class DataSpec:
     train_val_split: (float, float)
     train_batch_size: int
     val_batch_size: int
+    segment_len: int
 
 
 class DataModule(pl.LightningDataModule):
@@ -113,6 +156,18 @@ class DataModule(pl.LightningDataModule):
     def __init__(self, spec: DataSpec):
         super().__init__()
         self.spec = spec
+
+    def build(self, lqg: LQGModule, policy: TVLinearPolicy, trajectories: int):
+        assert self.spec.segment_len <= lqg.horizon, "Invalid trajectory segment length"
+        rollout = MonteCarloSVG(policy, lqg)
+        with torch.no_grad():
+            obs, act, _, new_obs, _ = rollout.rsample_trajectory(
+                torch.Size([trajectories])
+            )
+        obs, act, new_obs = (x.rename(B1="B") for x in (obs, act, new_obs))
+        self.full_dataset = TrajectorySegmentDataset(
+            obs, act, new_obs, self.spec.segment_len
+        )
 
     def setup(self, stage: Optional[str] = None):
         del stage
@@ -145,7 +200,7 @@ class Experiment(tune.Trainable):
     lqg: LQGModule
     policy: TVLinearPolicy
     model: LightningModel
-    datamodule: pl.LightningDataModule
+    datamodule: DataModule
     trainer: pl.Trainer
 
     def setup(self, config: dict):
@@ -184,11 +239,19 @@ class Experiment(tune.Trainable):
     def make_modules(self):
         with nt.suppress_named_tensor_warning():
             dynamics, cost, init = self.generator()
-        lqg = LQGModule.from_existing(dynamics, cost, init)
+        lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
         policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon)
         policy.stabilize_(dynamics, rng=self.rng)
         self.lqg, self.policy = lqg, policy
-        self.model = LightningModel(lqg, policy)
+        self.model = LightningModel(lqg, policy, self.hparams)
+        self.datamodule = DataModule(
+            DataSpec(
+                train_val_split=(0.8, 0.2),
+                train_batch_size=self.hparams.train_batch_size,
+                val_batch_size=self.hparams.val_batch_size,
+                segment_len=self.hparams.segment_len,
+            )
+        )
 
     def make_trainer(self):
         logger = pl.loggers.WandbLogger(
@@ -212,7 +275,7 @@ class Experiment(tune.Trainable):
                 self.trainer.fit(self.model, datamodule=self.datamodule)
                 final_eval = self.trainer.test(self.model, datamodule=self.datamodule)
 
-        return {tune.result.DONE: True, **final_eval}
+        return {tune.result.DONE: True, **final_eval[0]}
 
     def log_env_info(self):
         dynamics = self.lqg.trans.standard_form()
@@ -225,14 +288,31 @@ class Experiment(tune.Trainable):
         self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
     def build_dataset(self):
-        pass
+        self.datamodule.build(
+            self.lqg, self.policy, trajectories=self.hparams.trajectories
+        )
 
     def cleanup(self):
         self.run.finish()
 
 
 def main():
-    ray.init()
+    ray.init(logging_level=logging.WARNING)
+
+    config = {
+        "learning_rate": 1e-3,
+        "seed": tune.grid_search(list(range(42, 52))),
+        "n_state": 2,
+        "n_ctrl": 2,
+        "horizon": 20,
+        "train_batch_size": 32,
+        "val_batch_size": 32,
+        "max_epochs": 1000,
+        "trajectories": 10000,
+        "segment_len": 4,
+    }
+    tune.run(Experiment, config=config, num_samples=1, local_dir="./results")
+    ray.shutdown()
 
 
 if __name__ == "__main__":
