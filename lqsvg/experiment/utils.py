@@ -91,7 +91,7 @@ def suppress_dataloader_warning():
         warnings.filterwarnings(
             "ignore",
             message=".*Consider increasing the value of the `num_workers`.*",
-            module="pytorch_lightning.utilities.distributed",
+            module="pytorch_lightning.trainer.data_loading",
         )
         yield
 
