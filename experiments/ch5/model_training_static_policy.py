@@ -3,10 +3,12 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import click
 import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
+from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
@@ -56,6 +58,7 @@ class LightningModel(pl.LightningModule):
             lqg.trans.standard_form(),
             lqg.reward.standard_form(),
         )
+        self.qval.requires_grad_(False)
         self.model = LinearDiagDynamicsModel(
             lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True
         )
@@ -113,14 +116,18 @@ class LightningModel(pl.LightningModule):
     def _compute_grad_acc_on_batch(self, batch: BATCH) -> Tensor:
         obs, _, _ = batch
         obs = obs.flatten(["B", "H"], "B")
-        _, svg = self.estimator(obs, n_steps=4)
+        _, svg = self.estimator(obs, n_steps=self.hparams.pred_horizon)
         return torch.as_tensor(gradient_accuracy([svg], self.gold_standard[1]))
 
 
 class TrajectorySegmentDataset(Dataset):
     # noinspection PyArgumentList
     def __init__(self, obs: Tensor, act: Tensor, new_obs: Tensor, segment_len: int):
-        self.tensors = tuple(x.align_to("B", "H", ...) for x in (obs, act, new_obs))
+        # Pytorch Lightning deepcopies the dataloader when using overfit_batches=True
+        # Deepcopying is incompatible with named tensors for some reason
+        self.tensors = nt.unnamed(
+            *(x.align_to("B", "H", ...) for x in (obs, act, new_obs))
+        )
         self.segment_len = segment_len
         horizon: int = obs.size("H")
         trajs: int = obs.size("B")
@@ -132,7 +139,7 @@ class TrajectorySegmentDataset(Dataset):
         timestep_start = index % self.segs_per_traj
         # noinspection PyTypeChecker
         return tuple(
-            t[traj_idx, timestep_start : timestep_start + self.segment_len].rename(None)
+            t[traj_idx, timestep_start : timestep_start + self.segment_len]
             for t in self.tensors
         )
 
@@ -170,20 +177,26 @@ class DataModule(pl.LightningDataModule):
         )
 
     def setup(self, stage: Optional[str] = None):
-        del stage
+        print("SETUP:", stage)
         self.train_dataset, self.val_dataset, _ = split_dataset(
             self.full_dataset, self.spec.train_val_split + (0,)
         )
 
     def train_dataloader(self) -> DataLoader:
         # pylint:disable=arguments-differ
-        spec = self.spec
         dataloader = DataLoader(
-            self.train_dataset, shuffle=True, batch_size=spec.train_batch_size
+            self.train_dataset, shuffle=True, batch_size=self.spec.train_batch_size
         )
         return dataloader
 
     def val_dataloader(self) -> DataLoader:
+        # pylint:disable=arguments-differ
+        dataloader = DataLoader(
+            self.val_dataset, shuffle=False, batch_size=self.spec.val_batch_size
+        )
+        return dataloader
+
+    def test_dataloader(self) -> DataLoader:
         # pylint:disable=arguments-differ
         dataloader = DataLoader(
             self.val_dataset, shuffle=False, batch_size=self.spec.val_batch_size
@@ -205,6 +218,7 @@ class Experiment(tune.Trainable):
 
     def setup(self, config: dict):
         self._init_wandb(config)
+        seed_everything(self.hparams.seed)
         self.rng = np.random.default_rng(self.hparams.seed)
         self.make_generator()
         self.make_modules()
@@ -216,7 +230,7 @@ class Experiment(tune.Trainable):
             config=config,
             project="LQG-SVG",
             entity="angelovtt",
-            tags=["ch5"],
+            tags=["ch5", utils.calver()],
             reinit=True,
             mode="online",
         )
@@ -257,14 +271,23 @@ class Experiment(tune.Trainable):
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
+        if self.hparams.debugging:
+            kwargs = self.hparams.debugging.copy()
+        else:
+            kwargs = dict(
+                # don't show progress bar for model training
+                progress_bar_refresh_rate=0,
+                # don't print summary before training
+                weights_summary=None,
+            )
         self.trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
-            num_sanity_val_steps=2,
+            callbacks=[pl.callbacks.EarlyStopping("val/loss")],
             max_epochs=self.hparams.max_epochs,
-            progress_bar_refresh_rate=0,  # don't show progress bar for model training
-            weights_summary=None,  # don't print summary before training
+            num_sanity_val_steps=0,
             checkpoint_callback=False,  # don't save last model checkpoint
+            **kwargs
         )
 
     def step(self) -> dict:
@@ -296,7 +319,7 @@ class Experiment(tune.Trainable):
         self.run.finish()
 
 
-def main():
+def run_with_tune():
     ray.init(logging_level=logging.WARNING)
 
     config = {
@@ -310,10 +333,48 @@ def main():
         "max_epochs": 1000,
         "trajectories": 10000,
         "segment_len": 4,
+        "pred_horizon": 4,
+        "debugging": {},
     }
     tune.run(Experiment, config=config, num_samples=1, local_dir="./results")
     ray.shutdown()
 
 
+def run_simple():
+    config = {
+        "learning_rate": 1e-3,
+        "seed": 42,
+        "n_state": 2,
+        "n_ctrl": 2,
+        "horizon": 20,
+        "train_batch_size": 32,
+        "val_batch_size": 32,
+        "max_epochs": 100,
+        "trajectories": 6000,
+        "segment_len": 4,
+        "pred_horizon": 4,
+        "debugging": dict(
+            # fast_dev_run=True,
+            track_grad_norm=2,
+            # overfit_batches=10,
+            weights_summary="full",
+            limit_train_batches=0.1,
+            limit_val_batches=0.1,
+            # profiler="simple",
+        ),
+    }
+    experiment = Experiment(config)
+    experiment.train()
+
+
+@click.command()
+@click.option("--debug/--no-debug", default=False)
+def main(debug: bool):
+    if debug:
+        run_simple()
+    else:
+        run_with_tune()
+
+
 if __name__ == "__main__":
-    main()
+    main()  # pylint:disable=no-value-for-parameter
