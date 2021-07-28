@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 import pytorch_lightning as pl
@@ -136,12 +136,6 @@ class DataModule(pl.LightningDataModule):
             self.test_dataset, shuffle=False, batch_size=self.spec.batch_size
         )
         return dataloader
-
-    def transfer_batch_to_device(self, batch: Any, device: torch.device) -> Any:
-        pass
-
-    def prepare_data(self, *args, **kwargs):
-        pass
 
 
 class TrajectoryData(DataModule):
