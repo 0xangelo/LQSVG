@@ -7,7 +7,6 @@ from typing import Optional
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from dataclasses_json import DataClassJsonMixin
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
@@ -19,7 +18,7 @@ from .utils import group_batch_episodes
 
 
 @dataclass
-class DataModuleSpec(DataClassJsonMixin):
+class DataModuleSpec:
     """Specifications for creating the data module.
 
     Attributes:
