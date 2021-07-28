@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
 from raylab.policy.modules.critic import QValue
 from raylab.policy.modules.model import StochasticModel
-from torch import Tensor
+from torch import Tensor, nn
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
@@ -157,6 +156,8 @@ class MonteCarloSVG(nn.Module):
             logp = logp + logp_t
             obs = new_obs
 
+        # FIXME: return new_obs as a view on the full sequence of observations
+        # (t=0,...,H)
         obs, act, rew, new_obs = (nt.stack_horizon(*x) for x in zip(*batch))
         return obs, act, rew, new_obs, logp
 
