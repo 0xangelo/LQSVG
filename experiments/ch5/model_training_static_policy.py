@@ -1,7 +1,7 @@
 # pylint:disable=missing-docstring
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple, Union
 
 import click
 import numpy as np
@@ -11,7 +11,7 @@ import torch
 from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb.sdk import wandb_config
 
 import lqsvg.envs.lqr.utils as lqg_util
@@ -22,7 +22,6 @@ from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
-from lqsvg.experiment.data import split_dataset
 from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
@@ -31,7 +30,8 @@ from lqsvg.policy.modules.transition import (
     SegmentStochasticModel,
 )
 
-BATCH = Tuple[Tensor, Tensor, Tensor]
+Batch = Tuple[Tensor, Tensor, Tensor]
+ValBatch = Union[Batch, Sequence[Tensor]]
 
 
 class LightningModel(pl.LightningModule):
@@ -81,41 +81,46 @@ class LightningModel(pl.LightningModule):
 
     # noinspection PyTypeChecker
     @staticmethod
-    def _refine_batch(batch: BATCH) -> BATCH:
+    def _refine_batch(batch: Batch) -> Batch:
         return tuple(x.refine_names("B", "H", "R") for x in batch)
 
-    def _compute_loss_on_batch(self, batch: BATCH, _: int) -> Tensor:
+    def _compute_loss_on_batch(self, batch: Batch) -> Tensor:
         obs, act, new_obs = batch
         return -self(obs, act, new_obs).mean()
 
-    def training_step(self, batch: BATCH, batch_idx: int) -> Tensor:
+    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
+        del batch_idx
         batch = self._refine_batch(batch)
-        loss = self._compute_loss_on_batch(batch, batch_idx)
+        loss = self._compute_loss_on_batch(batch)
         self.log("train/loss", loss)
         return loss
 
-    def validation_step(self, batch: BATCH, batch_idx: int) -> Tensor:
+    def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
-        batch = self._refine_batch(batch)
-        loss = self._compute_loss_on_batch(batch, batch_idx)
-        grad_acc = self._compute_grad_acc_on_batch(batch)
-        self.log("val/loss", loss)
-        self.log("val/grad_acc", grad_acc)
-        return loss
+        del batch_idx
+        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="val")
 
-    def test_step(self, batch: BATCH, batch_idx: int):
+    def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
-        batch = self._refine_batch(batch)
-        loss = self._compute_loss_on_batch(batch, batch_idx)
-        grad_acc = self._compute_grad_acc_on_batch(batch)
-        self.log("test/loss", loss)
-        self.log("test/grad_acc", grad_acc)
+        del batch_idx
+        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="test")
+
+    def _compute_and_log_loss_or_grad_acc(
+        self, batch: ValBatch, dataloader_idx: int, *, stage: str
+    ):
+        if dataloader_idx == 0:
+            # Compute log-prob of traj segments
+            loss = self._compute_loss_on_batch(self._refine_batch(batch))
+            self.log(stage + "/loss", loss)
+        else:
+            # Compute gradient acc using uniformly sampled states
+            grad_acc = self._compute_grad_acc_on_batch(batch[0].refine_names("B", "R"))
+            self.log(stage + "/grad_acc", grad_acc)
 
     @torch.enable_grad()
-    def _compute_grad_acc_on_batch(self, batch: BATCH) -> Tensor:
-        obs, _, _ = batch
-        obs = obs.flatten(["B", "H"], "B")
+    def _compute_grad_acc_on_batch(self, batch: Tensor) -> Tensor:
+        obs = batch
         _, svg = self.estimator(obs, n_steps=self.hparams.pred_horizon)
         return torch.as_tensor(gradient_accuracy([svg], self.gold_standard[1]))
 
@@ -134,7 +139,7 @@ class TrajectorySegmentDataset(Dataset):
         self.segs_per_traj = horizon - segment_len + 1
         self._len = trajs * self.segs_per_traj
 
-    def __getitem__(self, index) -> BATCH:
+    def __getitem__(self, index) -> Batch:
         traj_idx = index // self.segs_per_traj
         timestep_start = index % self.segs_per_traj
         # noinspection PyTypeChecker
@@ -154,11 +159,22 @@ class DataSpec:
     val_batch_size: int
     segment_len: int
 
+    def __post_init__(self):
+        assert sum(self.train_val_split) == 1.0
+
+    def train_val_sizes(self, total: int) -> Tuple[int, int]:
+        """Compute train and validation dataset sizes from total size."""
+        train, _ = self.train_val_split
+        train_samples = int(total * train)
+        val_samples = total - train_samples
+        return train_samples, val_samples
+
 
 class DataModule(pl.LightningDataModule):
-    full_dataset: Dataset
+    tensors: Tuple[Tensor, Tensor, Tensor]
     train_dataset: Dataset
-    val_dataset: Dataset
+    val_seg_dataset: Dataset
+    val_state_dataset: Dataset
 
     def __init__(self, spec: DataSpec):
         super().__init__()
@@ -172,14 +188,31 @@ class DataModule(pl.LightningDataModule):
                 torch.Size([trajectories])
             )
         obs, act, new_obs = (x.rename(B1="B") for x in (obs, act, new_obs))
-        self.full_dataset = TrajectorySegmentDataset(
-            obs, act, new_obs, self.spec.segment_len
-        )
+        self.tensors = (obs, act, new_obs)
+        # noinspection PyArgumentList
+        assert all(t.size("B") == obs.size("B") for t in self.tensors)
 
     def setup(self, stage: Optional[str] = None):
-        print("SETUP:", stage)
-        self.train_dataset, self.val_dataset, _ = split_dataset(
-            self.full_dataset, self.spec.train_val_split + (0,)
+        # noinspection PyArgumentList
+        n_trajs = self.tensors[0].size("B")
+        train_traj_idxs, val_traj_idxs = torch.split(
+            torch.randperm(n_trajs),
+            split_size_or_sections=self.spec.train_val_sizes(n_trajs),
+        )
+        # noinspection PyTypeChecker
+        train_trajs, val_trajs = (
+            tuple(nt.index_select(t, "B", idxs) for t in self.tensors)
+            for idxs in (train_traj_idxs, val_traj_idxs)
+        )
+        self.train_dataset = TrajectorySegmentDataset(
+            *train_trajs, segment_len=self.spec.segment_len
+        )
+        self.val_seg_dataset = TrajectorySegmentDataset(
+            *val_trajs, segment_len=self.spec.segment_len
+        )
+        val_obs = val_trajs[0]
+        self.val_state_dataset = TensorDataset(
+            nt.unnamed(val_obs.flatten(["H", "B"], "B"))
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -189,19 +222,21 @@ class DataModule(pl.LightningDataModule):
         )
         return dataloader
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> Tuple[DataLoader, DataLoader]:
         # pylint:disable=arguments-differ
-        dataloader = DataLoader(
-            self.val_dataset, shuffle=False, batch_size=self.spec.val_batch_size
+        # For loss evaluation
+        seg_loader = DataLoader(
+            self.val_seg_dataset, shuffle=False, batch_size=self.spec.val_batch_size
         )
-        return dataloader
+        # For gradient estimation
+        state_loader = DataLoader(
+            self.val_state_dataset, shuffle=True, batch_size=self.spec.val_batch_size
+        )
+        return seg_loader, state_loader
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> Tuple[DataLoader, DataLoader]:
         # pylint:disable=arguments-differ
-        dataloader = DataLoader(
-            self.val_dataset, shuffle=False, batch_size=self.spec.val_batch_size
-        )
-        return dataloader
+        return self.val_dataloader()
 
 
 # noinspection PyAbstractClass
@@ -283,7 +318,7 @@ class Experiment(tune.Trainable):
         self.trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
-            callbacks=[pl.callbacks.EarlyStopping("val/loss")],
+            callbacks=[pl.callbacks.EarlyStopping("val/loss/dataloader_idx_0")],
             max_epochs=self.hparams.max_epochs,
             num_sanity_val_steps=0,
             checkpoint_callback=False,  # don't save last model checkpoint
@@ -358,8 +393,8 @@ def run_simple():
             track_grad_norm=2,
             # overfit_batches=10,
             weights_summary="full",
-            # limit_train_batches=0.1,
-            # limit_val_batches=0.1,
+            # limit_train_batches=10,
+            # limit_val_batches=10,
             # profiler="simple",
         ),
     }
