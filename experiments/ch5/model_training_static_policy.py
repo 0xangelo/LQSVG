@@ -154,18 +154,18 @@ class TrajectorySegmentDataset(Dataset):
 
 @dataclass
 class DataSpec:
-    train_val_split: (float, float)
+    train_frac: float
     train_batch_size: int
-    val_batch_size: int
+    val_loss_batch_size: int
+    val_grad_batch_size: int
     segment_len: int
 
     def __post_init__(self):
-        assert sum(self.train_val_split) == 1.0
+        assert self.train_frac < 1.0
 
     def train_val_sizes(self, total: int) -> Tuple[int, int]:
         """Compute train and validation dataset sizes from total size."""
-        train, _ = self.train_val_split
-        train_samples = int(total * train)
+        train_samples = int(total * self.train_frac)
         val_samples = total - train_samples
         return train_samples, val_samples
 
@@ -226,11 +226,15 @@ class DataModule(pl.LightningDataModule):
         # pylint:disable=arguments-differ
         # For loss evaluation
         seg_loader = DataLoader(
-            self.val_seg_dataset, shuffle=False, batch_size=self.spec.val_batch_size
+            self.val_seg_dataset,
+            shuffle=False,
+            batch_size=self.spec.val_loss_batch_size,
         )
         # For gradient estimation
         state_loader = DataLoader(
-            self.val_state_dataset, shuffle=True, batch_size=self.spec.val_batch_size
+            self.val_state_dataset,
+            shuffle=True,
+            batch_size=self.spec.val_grad_batch_size,
         )
         return seg_loader, state_loader
 
@@ -294,35 +298,20 @@ class Experiment(tune.Trainable):
         self.lqg, self.policy = lqg, policy
         self.model = LightningModel(lqg, policy, self.hparams)
         self.datamodule = DataModule(
-            DataSpec(
-                train_val_split=(0.8, 0.2),
-                train_batch_size=self.hparams.train_batch_size,
-                val_batch_size=self.hparams.val_batch_size,
-                segment_len=self.hparams.segment_len,
-            )
+            DataSpec(train_frac=0.9, **self.hparams.datamodule)
         )
 
     def make_trainer(self):
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
-        if self.hparams.debugging:
-            kwargs = self.hparams.debugging.copy()
-        else:
-            kwargs = dict(
-                # don't show progress bar for model training
-                progress_bar_refresh_rate=0,
-                # don't print summary before training
-                weights_summary=None,
-            )
         self.trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
             callbacks=[pl.callbacks.EarlyStopping("val/loss/dataloader_idx_0")],
-            max_epochs=self.hparams.max_epochs,
-            num_sanity_val_steps=0,
+            num_sanity_val_steps=0,  # avoid evaluating gradients in the beginning?
             checkpoint_callback=False,  # don't save last model checkpoint
-            **kwargs
+            **self.hparams.trainer
         )
 
     def step(self) -> dict:
@@ -363,13 +352,21 @@ def run_with_tune():
         "n_state": 2,
         "n_ctrl": 2,
         "horizon": 20,
-        "train_batch_size": 32,
-        "val_batch_size": 32,
-        "max_epochs": 1000,
-        "trajectories": 10000,
-        "segment_len": 4,
         "pred_horizon": 4,
-        "debugging": {},
+        "trajectories": 10000,
+        "datamodule": {
+            "train_batch_size": 128,
+            "val_loss_batch_size": 128,
+            "val_grad_batch_size": 200,
+            "segment_len": 4,
+        },
+        "trainer": {
+            "max_epochs": 1000,
+            # don't show progress bar for model training
+            "progress_bar_refresh_rate": 0,
+            # don't print summary before training
+            "weights_summary": None,
+        },
     }
     tune.run(Experiment, config=config, num_samples=1, local_dir="./results")
     ray.shutdown()
@@ -377,18 +374,21 @@ def run_with_tune():
 
 def run_simple():
     config = {
-        "learning_rate": 1e-3,
+        "learning_rate": 5e-4,
         "seed": 42,
         "n_state": 2,
         "n_ctrl": 2,
-        "horizon": 20,
-        "train_batch_size": 32,
-        "val_batch_size": 32,
-        "max_epochs": 100,
-        "trajectories": 5000,
-        "segment_len": 4,
+        "horizon": 100,
         "pred_horizon": 8,
-        "debugging": dict(
+        "trajectories": 5000,
+        "datamodule": {
+            "train_batch_size": 128,
+            "val_loss_batch_size": 128,
+            "val_grad_batch_size": 200,
+            "segment_len": 1,
+        },
+        "trainer": dict(
+            max_epochs=100,
             # fast_dev_run=True,
             track_grad_norm=2,
             # overfit_batches=10,
@@ -396,6 +396,7 @@ def run_simple():
             # limit_train_batches=10,
             # limit_val_batches=10,
             # profiler="simple",
+            val_check_interval=0.5,
         ),
     }
     experiment = Experiment(config)
