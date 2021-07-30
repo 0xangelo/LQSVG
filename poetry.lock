@@ -1000,7 +1000,7 @@ test = ["coverage", "pytest", "pytest-cov", "pytest-mock", "requests", "pytest-t
 
 [[package]]
 name = "jupyterlab"
-version = "3.0.16"
+version = "3.1.1"
 description = "JupyterLab computational environment"
 category = "dev"
 optional = false
@@ -1018,6 +1018,7 @@ tornado = ">=6.1.0"
 
 [package.extras]
 test = ["coverage", "pytest (>=6.0)", "pytest-cov", "pytest-console-scripts", "pytest-check-links (>=0.5)", "jupyterlab-server[test] (>=2.2,<3.0)", "requests", "requests-cache", "virtualenv", "check-manifest"]
+ui-tests = ["build"]
 
 [[package]]
 name = "jupyterlab-code-formatter"
@@ -2613,7 +2614,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "4b47c6aa39b058e1f77ead59eeec1aac6f2bd94d00f61a354cd0c380c66e9425"
+content-hash = "2bcdac763d08a549b493c7b4100f77c4c88de5e04d7d93e92e130fbb11f72c11"
 
 [metadata.files]
 absl-py = [
@@ -3245,8 +3246,8 @@ jupyter-server = [
     {file = "jupyter_server-1.9.0.tar.gz", hash = "sha256:7d19006380f6217458a9db309b54e3dab87ced6c06329c61823907bef2a6f51b"},
 ]
 jupyterlab = [
-    {file = "jupyterlab-3.0.16-py3-none-any.whl", hash = "sha256:88f6e7580c15cf731d96495fda362e786753e18d1e3e7e735915862efb602a92"},
-    {file = "jupyterlab-3.0.16.tar.gz", hash = "sha256:7ad4fbe1f6d38255869410fd151a8b15692a663ca97c0a8146b3f5c40e275c23"},
+    {file = "jupyterlab-3.1.1-py3-none-any.whl", hash = "sha256:a181184b1000a550c38da35471dcf91ce11e96750de56430be3fc93ca01dde1e"},
+    {file = "jupyterlab-3.1.1.tar.gz", hash = "sha256:f6b04b5cfbe1fab79dbcecd58c941cbc73b0da5e1ccc5d4333a36860d37789b0"},
 ]
 jupyterlab-code-formatter = [
     {file = "jupyterlab_code_formatter-1.4.10-py3-none-any.whl", hash = "sha256:10a7f2ab44a4539a44ec6bf3fc3b27e7ed22c7ab975e6503823e21d7e60abae7"},
