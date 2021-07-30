@@ -27,6 +27,7 @@ from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
 from lqsvg.policy.modules.transition import (
     LinearDiagDynamicsModel,
+    MLPDynamicsModel,
     SegmentStochasticModel,
 )
 
@@ -59,13 +60,23 @@ class LightningModel(pl.LightningModule):
             lqg.reward.standard_form(),
         )
         self.qval.requires_grad_(False)
-        self.model = LinearDiagDynamicsModel(
-            lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True
-        )
+        self.model = self.make_model()
 
         # Gradients
         self.estimator = MAAC(policy, self.model, lqg.reward, self.qval)
         self.compute_gold_standards()
+
+    def make_model(self) -> SegmentStochasticModel:
+        if self.hparams.model["type"] == "linear":
+            return LinearDiagDynamicsModel(
+                self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon, stationary=True
+            )
+        return MLPDynamicsModel(
+            self.lqg.n_state,
+            self.lqg.n_ctrl,
+            self.lqg.horizon,
+            **self.hparams.model["kwargs"]
+        )
 
     def compute_gold_standards(self):
         self.gold_standard = AnalyticSVG(self.policy, self.lqg)()
@@ -354,6 +365,7 @@ def run_with_tune():
         "horizon": 20,
         "pred_horizon": 4,
         "trajectories": 10000,
+        "model": {"type": "linear"},
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
@@ -381,6 +393,13 @@ def run_simple():
         "horizon": 100,
         "pred_horizon": 8,
         "trajectories": 5000,
+        "model": {
+            "type": "mlp",
+            "kwargs": {
+                "hunits": (10,),
+                "activation": "ReLU",
+            },
+        },
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
