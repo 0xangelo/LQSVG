@@ -40,7 +40,6 @@ hunits = standard_fixture([(), (10,), (32, 32)], "HiddenUnits")
 activation = standard_fixture((None, "ReLU", "ELU", "Tanh"), "Activation")
 
 
-@pytest.mark.skip(reason="Unimplemented")
 class TestMLPTransitionModel(DynamicsModuleTests):
     @pytest.fixture
     def module(

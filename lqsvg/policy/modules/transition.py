@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import math
 
+import raylab.torch.nn as nnx
 import torch
 from raylab.policy.modules.model import MLPModel, StochasticModel
+from raylab.policy.modules.model.stochastic.single import DynamicsParams
+from raylab.policy.modules.networks.mlp import StateActionMLP
 from raylab.utils.types import TensorDict
 from torch import Tensor, nn
 from torch.nn.functional import softplus
@@ -15,8 +18,6 @@ from lqsvg.envs.lqr import spaces_from_dims, unpack_obs
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.envs.lqr.modules.dynamics.common import TVMultivariateNormal
 from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalMixin
-
-from .wrappers import StochasticModelWrapper
 
 __all__ = [
     "LinearTransitionModel",
@@ -115,7 +116,7 @@ class LinearDiagDynamicsModel(SegmentStochasticModel):
         return self.n_state, self.n_ctrl, self.horizon
 
 
-class MLPDynamicsModel(StochasticModelWrapper):
+class MLPDynamicsModel(StochasticModel):
     """Multilayer perceptron transition model."""
 
     n_state: int
@@ -131,15 +132,46 @@ class MLPDynamicsModel(StochasticModelWrapper):
         activation: str,
     ):
         # pylint:disable=too-many-arguments
+        # Define input/output spaces.
         self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
         obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
+
+        # Create encoder and Normal parameters head
         spec = MLPModel.spec_cls(
             units=hunits, activation=activation, input_dependent_scale=False
         )
-        model = MLPModel(obs_space, act_space, spec)
-        super().__init__(model)
+        encoder = StateActionMLP(obs_space, act_space, spec)
+
+        params = nnx.NormalParams(
+            encoder.out_features,
+            self.n_state,
+            input_dependent_scale=spec.input_dependent_scale,
+            bound_parameters=not spec.fix_logvar_bounds,
+        )
+        if spec.fix_logvar_bounds:
+            params.max_logvar.fill_(2)
+            params.min_logvar.fill_(-20)
+        params = DynamicsParams(encoder, params)
+
+        # Create conditional distribution
+        dist = TVMultivariateNormal(self.horizon)
+
+        super().__init__(params, dist)
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
         state, time = unpack_obs(obs)
-        obs = torch.cat([state, time.float() / self.horizon], dim="R")
-        return self._model(obs, action)
+        obs_ = torch.cat([state, time.float() / self.horizon], dim="R")
+        mlp_params = self.params(obs_, action)
+
+        # Shave-off values to be replaced by time
+        # Assume last dimension corresponds to named dimension "R"
+        trans_loc = mlp_params["loc"][..., : self.n_state]
+        trans_scale = mlp_params["scale"][..., : self.n_state]
+
+        # Convert scale vector to scale tril
+        scale_tril = torch.diag_embed(trans_scale)
+
+        # Treat absorving states if necessary
+        terminal = time.eq(self.horizon)
+        loc = nt.where(terminal, state, trans_loc)
+        return {"loc": loc, "scale_tril": scale_tril, "time": time}
