@@ -116,7 +116,7 @@ class LinearDiagDynamicsModel(SegmentStochasticModel):
         return self.n_state, self.n_ctrl, self.horizon
 
 
-class MLPDynamicsModel(StochasticModel):
+class MLPDynamicsModel(SegmentStochasticModel):
     """Multilayer perceptron transition model."""
 
     n_state: int
