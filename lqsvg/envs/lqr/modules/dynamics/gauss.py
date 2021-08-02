@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from typing import List, Tuple, Union
 
-import raylab.torch.nn.distributions as ptd
+import nnrl.nn.distributions as ptd
 import torch
-import torch.nn as nn
-from raylab.torch.nn.distributions.types import DistParams, SampleLogp
-from torch import IntTensor, Tensor
+from nnrl.nn.distributions.types import DistParams, SampleLogp
+from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr

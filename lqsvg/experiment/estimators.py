@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import torch
-from raylab.policy.modules.critic import QValue
-from raylab.policy.modules.model import StochasticModel
+from nnrl.nn.critic import QValue
+from nnrl.nn.model import StochasticModel
 from torch import Tensor, nn
 
 from lqsvg.envs import lqr

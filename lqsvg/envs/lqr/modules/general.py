@@ -2,9 +2,8 @@
 """Compilation of LQG modules."""
 from __future__ import annotations
 
-import torch.nn as nn
-from raylab.policy.modules.model import StochasticModel
-from torch import Tensor
+from nnrl.nn.model import StochasticModel
+from torch import Tensor, nn
 
 from lqsvg.envs import lqr
 

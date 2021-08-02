@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-from raylab.policy.modules.model import StochasticModel
-from raylab.utils.types import TensorDict
+from nnrl.nn.model import StochasticModel
+from nnrl.types import TensorDict
 from torch import Tensor
 
 import lqsvg.torch.named as nt

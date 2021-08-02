@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import math
 
-import raylab.torch.nn as nnx
+import nnrl.nn as nnx
 import torch
-from raylab.policy.modules.model import MLPModel, StochasticModel
-from raylab.policy.modules.model.stochastic.single import DynamicsParams
-from raylab.policy.modules.networks.mlp import StateActionMLP
-from raylab.utils.types import TensorDict
+from nnrl.nn.model import StochasticModel
+from nnrl.nn.model.stochastic.single import DynamicsParams, MLPModel
+from nnrl.nn.networks.mlp import StateActionMLP
+from nnrl.types import TensorDict
 from torch import Tensor, nn
 from torch.nn.functional import softplus
 

@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
-from raylab.policy.modules.critic import QValue, VValue
-from torch import IntTensor, Tensor
+from nnrl.nn.critic import QValue, VValue
+from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic

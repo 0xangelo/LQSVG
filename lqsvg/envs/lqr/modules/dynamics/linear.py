@@ -5,7 +5,7 @@ import abc
 from typing import Optional
 
 import torch
-from raylab.policy.modules.model import StochasticModel
+from nnrl.nn.model import StochasticModel
 from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt

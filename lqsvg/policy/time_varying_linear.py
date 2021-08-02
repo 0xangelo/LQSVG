@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from gym.spaces import Box
-from raylab.policy.modules.model import StochasticModel
+from nnrl.nn.model import StochasticModel
 from torch import nn
 
 from lqsvg.envs import lqr

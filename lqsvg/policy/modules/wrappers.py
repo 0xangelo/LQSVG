@@ -1,9 +1,9 @@
 """Transition model wrappers."""
 from __future__ import annotations
 
-from raylab.policy.modules.model import StochasticModel
-from raylab.torch.nn.distributions.types import SampleLogp
-from raylab.utils.types import TensorDict
+from nnrl.nn.distributions.types import SampleLogp
+from nnrl.nn.model import StochasticModel
+from nnrl.types import TensorDict
 from torch import Tensor, nn
 
 import lqsvg.torch.named as nt

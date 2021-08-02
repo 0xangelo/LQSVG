@@ -121,7 +121,7 @@ def group_batch_episodes(samples: SampleBatch) -> SampleBatch:
 def num_complete_episodes(samples: SampleBatch) -> int:
     """Return the number of complete episodes in a SampleBatch."""
     num_eps = len(np.unique(samples[SampleBatch.EPS_ID]))
-    num_dones = np.sum(samples[SampleBatch.DONES])
+    num_dones = np.sum(samples[SampleBatch.DONES]).item()
     assert (
         num_dones <= num_eps
     ), f"More done flags than episodes: dones={num_dones}, episodes={num_eps}"
