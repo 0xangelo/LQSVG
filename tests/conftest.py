@@ -1,7 +1,5 @@
 import pytest
 
-from .mock_env import MockEnv, MockReward, MockTermination
-
 
 # ==============================================================================
 # Test setup from:
@@ -44,18 +42,3 @@ def disable_gym_logger_warnings():
     import gym
 
     gym.logger.set_level(logging.ERROR)
-
-
-@pytest.fixture(autouse=True, scope="session")
-def register_envs():
-    import raylab
-    import raylab.envs as envs
-
-    import lqsvg
-
-    lqsvg.register_all_environments()
-    raylab.register_all_environments()
-    # pylint:disable=unnecessary-lambda
-    envs.register_env("MockEnv", lambda c: MockEnv(c))
-    envs.register_reward_fn("MockEnv")(MockReward)
-    envs.register_termination_fn("MockEnv")(MockTermination)

@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
-import pytorch_lightning as pl
 import torch
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
+from torch.utils.data import Dataset, random_split
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 
@@ -83,105 +81,3 @@ def split_dataset(
         dataset, (train_samples, val_samples, test_samples)
     )
     return train_data, val_data, test_data
-
-
-class DataModule(pl.LightningDataModule):
-    """Generic datamodule for dynamics model training."""
-
-    spec_cls = DataModuleSpec
-
-    def __init__(self, rollout_worker: RolloutWorker, spec: DataModuleSpec):
-        super().__init__()
-        self.worker = rollout_worker
-        check_worker_config(self.worker)
-
-        self.spec = spec
-        self.full_dataset = None
-        self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
-
-    def collect_trajectories(self, prog: bool = True) -> list[SampleBatch]:
-        """Sample trajectories with rollout worker and build dataset."""
-        return collect_trajs_from_worker(
-            self.worker, self.spec.total_trajs, progress=prog
-        )
-
-    def build_dataset(self, prog: bool = False):
-        """Create the full dataset of experiences."""
-
-    def setup(self, stage: Optional[str] = None):
-        del stage
-        self.train_dataset, self.val_dataset, self.test_dataset = split_dataset(
-            self.full_dataset, self.spec.train_val_test_split
-        )
-
-    def train_dataloader(self) -> DataLoader:
-        # pylint:disable=arguments-differ
-        spec = self.spec
-        dataloader = DataLoader(
-            self.train_dataset, shuffle=spec.shuffle, batch_size=spec.batch_size
-        )
-        return dataloader
-
-    def val_dataloader(self) -> DataLoader:
-        # pylint:disable=arguments-differ
-        dataloader = DataLoader(
-            self.val_dataset, shuffle=False, batch_size=self.spec.batch_size
-        )
-        return dataloader
-
-    def test_dataloader(self) -> DataLoader:
-        # pylint:disable=arguments-differ
-        dataloader = DataLoader(
-            self.test_dataset, shuffle=False, batch_size=self.spec.batch_size
-        )
-        return dataloader
-
-
-class TrajectoryData(DataModule):
-    """Data module for on-policy trajectory data in LQG envs."""
-
-    def build_dataset(self, prog: bool = False):
-        trajs = self.collect_trajectories(prog=prog)
-        self.full_dataset = self.trajectory_dataset(trajs)
-
-    @staticmethod
-    def trajectory_dataset(trajs: list[SampleBatch]) -> TensorDataset:
-        """Concat and convert a list of trajectories into a tensor dataset."""
-        dataset = TensorDataset(
-            batched(trajs, SampleBatch.CUR_OBS),
-            batched(trajs, SampleBatch.ACTIONS),
-            batched(trajs, SampleBatch.NEXT_OBS),
-        )
-        assert len(dataset) == len(trajs)
-        return dataset
-
-
-class TransitionData(DataModule):
-    """Data module for on-policy transition data in LQG envs."""
-
-    def build_dataset(self, prog: bool = True):
-        """Sample trajectories with rollout worker and build dataset."""
-        trajs = collect_trajs_from_worker(
-            self.worker, self.spec.total_trajs, progress=prog
-        )
-        self.full_dataset = self.transition_dataset(trajs)
-
-    @staticmethod
-    def transition_dataset(trajs: list[SampleBatch]) -> TensorDataset:
-        """Convert a list of trajectories into a transition tensor dataset."""
-        transitions = SampleBatch.concat_samples(trajs)
-
-        dataset = TensorDataset(
-            torch.from_numpy(transitions[SampleBatch.CUR_OBS]),
-            torch.from_numpy(transitions[SampleBatch.ACTIONS]),
-            torch.from_numpy(transitions[SampleBatch.NEXT_OBS]),
-        )
-        assert len(dataset) == transitions.count
-        return dataset
-
-
-def build_trajectory_datamodule(worker: RolloutWorker, **kwargs):
-    # pylint:disable=missing-function-docstring
-    data_spec = DataModuleSpec(**kwargs)
-    datamodule = TrajectoryData(worker, data_spec)
-    return datamodule

@@ -4,11 +4,9 @@ import numpy as np
 import torch
 from gym.spaces import Box
 from ray.rllib.utils import override
-from raylab.envs.rewards import RewardFn
-from raylab.envs.termination import TerminationFn
 
 
-class MockEnv(gym.Env):  # pylint:disable=abstract-method
+class MockEnv(gym.Env):
     """Dummy environment with continuous action space."""
 
     def __init__(self, _):
@@ -44,6 +42,7 @@ class MockEnv(gym.Env):  # pylint:disable=abstract-method
         reward = np.linalg.norm((self.state[:3] - self.goal.numpy()), axis=-1)
         return self.state, reward, self.time >= self.horizon, {}
 
+    # noinspection PyUnusedLocal
     @staticmethod
     def reward_fn(state, action, next_state):
         # pylint:disable=missing-docstring,unused-argument
@@ -61,18 +60,5 @@ class MockEnv(gym.Env):  # pylint:disable=abstract-method
         new_time = torch.clamp((time + 1) / self.horizon, min=0, max=1)
         return torch.cat([new_state, new_time], dim=-1), None
 
-
-class MockReward(RewardFn):  # pylint:disable=missing-class-docstring,abstract-method
-    @override(RewardFn)
-    def forward(self, state, action, next_state):
-        return torch.norm(next_state[..., :3], p=2, dim=-1)
-
-
-class MockTermination(TerminationFn):
-    # pylint:disable=missing-class-docstring,abstract-method
-    def __init__(self, _):
-        super().__init__()
-
-    @override(TerminationFn)
-    def forward(self, state, action, next_state):
-        return next_state[..., -1] >= 1.0
+    def render(self, mode="human"):
+        pass
