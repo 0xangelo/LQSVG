@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 
 import lqsvg.torch.named as nt
-from lqsvg.torch.modules import CholeskyFactor, SPDMatrix
+from lqsvg.torch.nn.cholesky import CholeskyFactor, SPDMatrix
 from lqsvg.torch.utils import make_spd_matrix
 
 

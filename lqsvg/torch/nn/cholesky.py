@@ -1,9 +1,8 @@
-"""Neural network modules."""
+"""Parameterized matrices via Cholesky decomposition."""
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv

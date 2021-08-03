@@ -10,7 +10,7 @@ from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.torch.modules import CholeskyFactor
+from lqsvg.torch.nn.cholesky import CholeskyFactor
 
 from .common import TVMultivariateNormal
 

@@ -4,15 +4,14 @@ from typing import Type
 
 import pytest
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr import pack_obs, unpack_obs
 from lqsvg.envs.lqr.modules.dynamics.gauss import InitStateDynamics
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.modules import CholeskyFactor
+from lqsvg.torch.nn.cholesky import CholeskyFactor
 
 dim = standard_fixture((2, 4, 8), "Dim")
 
