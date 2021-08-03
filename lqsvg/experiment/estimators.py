@@ -9,8 +9,8 @@ from torch import Tensor, nn
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.policy.modules import TVLinearPolicy
 from lqsvg.torch import named as nt
+from lqsvg.torch.nn.policy import TVLinearPolicy
 
 
 class ExpectedValue(nn.Module):

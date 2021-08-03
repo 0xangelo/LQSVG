@@ -11,12 +11,11 @@ from torch import IntTensor, LongTensor, Tensor, nn
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import unpack_obs
+from lqsvg.np_util import RNG
 
 from .utils import perturb_policy, stabilizing_policy
 
 __all__ = ["TVLinearFeedback", "TVLinearPolicy"]
-
-from ...np_util import RNG
 
 
 class TVLinearFeedback(nn.Module):

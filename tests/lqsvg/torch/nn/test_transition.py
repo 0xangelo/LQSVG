@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.policy.modules.transition import (
+from lqsvg.testing.fixture import standard_fixture
+from lqsvg.torch.nn.transition import (
     LinearDiagDynamicsModel,
     LinearTransitionModel,
     MLPDynamicsModel,
 )
-from lqsvg.testing.fixture import standard_fixture
 from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import (
     DynamicsModuleTests,
     LinearParamsTestMixin,

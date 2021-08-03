@@ -6,7 +6,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics_factors
-from lqsvg.policy.modules.utils import place_dynamics_poles, stabilizing_policy
+from lqsvg.torch.nn.utils import place_dynamics_poles, stabilizing_policy
 
 
 class TestStabilizingPolicy:

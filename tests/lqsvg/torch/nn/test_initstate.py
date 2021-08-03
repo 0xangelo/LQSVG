@@ -1,7 +1,7 @@
 import pytest
 
 from lqsvg.envs.lqr.modules import InitStateDynamics
-from lqsvg.policy.modules.initstate import InitStateModel
+from lqsvg.torch.nn.initstate import InitStateModel
 
 
 @pytest.fixture

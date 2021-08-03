@@ -9,8 +9,8 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.np_util import RNG
-from lqsvg.policy.modules import TVLinearFeedback, TVLinearPolicy
 from lqsvg.testing.fixture import standard_fixture
+from lqsvg.torch.nn.policy import TVLinearFeedback, TVLinearPolicy
 
 frozen = standard_fixture((True, False), "Frozen")
 

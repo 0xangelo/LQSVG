@@ -25,7 +25,7 @@ from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.np_util import RNG
 from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
-from lqsvg.policy.modules.transition import (
+from lqsvg.torch.nn.transition import (
     LinearDiagDynamicsModel,
     MLPDynamicsModel,
     SegmentStochasticModel,

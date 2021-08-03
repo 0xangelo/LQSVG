@@ -10,16 +10,11 @@ from torch import nn
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LinearDynamics
 from lqsvg.envs.lqr.modules.general import EnvModule, LQGModule
-
-from .modules import (
-    BatchNormModel,
-    InitStateModel,
-    LayerNormModel,
-    LinearTransitionModel,
-    QuadRewardModel,
-    ResidualModel,
-    TVLinearPolicy,
-)
+from lqsvg.torch.nn.initstate import InitStateModel
+from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch.nn.reward import QuadRewardModel
+from lqsvg.torch.nn.transition import LinearTransitionModel
+from lqsvg.torch.nn.wrappers import BatchNormModel, LayerNormModel, ResidualModel
 
 
 def glorot_init_policy(module: nn.Module):
