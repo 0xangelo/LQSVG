@@ -24,6 +24,7 @@ __all__ = [
     "MLPDynamicsModel",
     "LinearDiagDynamicsModel",
     "SegmentStochasticModel",
+    "GRUDynamicsModel",
 ]
 
 
@@ -161,7 +162,7 @@ class MLPDynamicsModel(SegmentStochasticModel):
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
         state, time = unpack_obs(obs)
         obs_ = torch.cat([state, time.float() / self.horizon], dim="R")
-        mlp_params = self.params(obs_, action)
+        mlp_params = self.params(*nt.unnamed(obs_, action))
 
         # Shave-off values to be replaced by time
         # Assume last dimension corresponds to named dimension "R"
@@ -175,3 +176,19 @@ class MLPDynamicsModel(SegmentStochasticModel):
         terminal = time.eq(self.horizon)
         loc = nt.where(terminal, state, trans_loc)
         return {"loc": loc, "scale_tril": scale_tril, "time": time}
+
+
+class GRUDynamicsModel(SegmentStochasticModel):
+    """Dynamics model based on GRU cells."""
+
+    def __init__(
+        self,
+        n_state: int,
+        n_ctrl: int,
+        horizon: int,
+        mlp_hunits: tuple[int, ...],
+        mlp_activ: str,
+        gru_hunits: tuple[int, ...],
+    ):
+        # pylint:disable=too-many-arguments,unused-argument
+        super().__init__(None, None)

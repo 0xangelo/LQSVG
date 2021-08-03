@@ -15,7 +15,7 @@ n_state = standard_fixture((2, 3), "NState")
 n_ctrl = standard_fixture((2, 3), "NCtrl")
 horizon = standard_fixture((1, 3, 10), "Horizon")
 stationary = standard_fixture((True, False), "Stationary")
-seed = standard_fixture((1, 2, 3), "Seed")
+seed = standard_fixture((1, 2), "Seed")
 batch_shape = standard_fixture([(), (1,), (4,)], "BatchShape")
 
 
