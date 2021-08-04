@@ -93,7 +93,7 @@ class TestMLPTransitionModel(SegmentModelTestMixin, DynamicsModuleTests):
         )
 
 
-@pytest.mark.xfail(reason="Unimplemented")
+@pytest.mark.skip(reason="Unimplemented")
 class TestGRUDynamicsModel(SegmentModelTestMixin, DynamicsModuleTests):
     @pytest.fixture
     def mlp_hunits(self, hunits: int) -> int:
