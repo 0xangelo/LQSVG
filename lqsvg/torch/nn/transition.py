@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+from typing import Optional, Sequence
 
 import nnrl.nn as nnx
+import nnrl.nn.init as nnx_init
 import torch
 from nnrl.nn.model import StochasticModel
 from nnrl.nn.model.stochastic.single import DynamicsParams, MLPModel
@@ -30,6 +32,12 @@ __all__ = [
 
 class SegmentStochasticModel(StochasticModel):
     """Probabilistic model of trajectory segments."""
+
+    def forward(
+        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
+    ) -> TensorDict:
+        # pylint:disable=arguments-differ,unused-argument
+        return self.params(obs, action)
 
     def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Log-probability (density) of trajectory segment."""
@@ -159,23 +167,174 @@ class MLPDynamicsModel(SegmentStochasticModel):
 
         super().__init__(params, dist)
 
-    def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
+    def forward(
+        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
+    ) -> TensorDict:
         state, time = unpack_obs(obs)
         obs_ = torch.cat([state, time.float() / self.horizon], dim="R")
         mlp_params = self.params(*nt.unnamed(obs_, action))
 
-        # Shave-off values to be replaced by time
-        # Assume last dimension corresponds to named dimension "R"
-        trans_loc = mlp_params["loc"][..., : self.n_state]
-        trans_scale = mlp_params["scale"][..., : self.n_state]
-
         # Convert scale vector to scale tril
-        scale_tril = torch.diag_embed(trans_scale)
+        scale_tril = torch.diag_embed(mlp_params["scale"])
 
         # Treat absorving states if necessary
         terminal = time.eq(self.horizon)
-        loc = nt.where(terminal, state, trans_loc)
+        loc = nt.where(terminal, state, mlp_params["loc"])
         return {"loc": loc, "scale_tril": scale_tril, "time": time}
+
+
+class DiagScale(nn.Module):
+    """Input dependent/independent diagonal stddev.
+
+    Utilizes bounded log_stddev as described in the 'Well behaved probabilistic
+    networks' appendix of `PETS`_.
+
+    .. _`PETS`: https://papers.nips.cc/paper/7725-deep-reinforcement-learning-in-a-handful-of-trials-using-probabilistic-dynamics-models
+
+    Args:
+        in_features: size of the input vector
+        event_size: size of the corresponding random variable for which the
+            diagonal stddev is predicted
+        input_dependent_scale: Whether to parameterize the standard deviation
+            as a function of the input. If False, uses the input only to infer
+            the batch dimensions
+        log_std_bounds: maximum and minimum values for the log standard
+            deviation parameter
+        bound_parameters: Whether to use buffers or learnable parameters for
+            the log-scale bounds
+    """  # pylint:disable=line-too-long
+
+    def __init__(
+        self,
+        in_features: int,
+        event_size: int,
+        input_dependent_scale: bool,
+        log_std_bounds: tuple[float, float] = (2.0, -20),
+        bound_parameters: bool = False,
+    ):
+        # pylint:disable=too-many-arguments
+        super().__init__()
+        if input_dependent_scale:
+            self.log_scale_module = nn.Linear(in_features, event_size)
+        else:
+            self.log_scale_module = nnx.LeafParameter(event_size)
+
+        max_logvar = torch.full((event_size,), log_std_bounds[0])
+        min_logvar = torch.full((event_size,), log_std_bounds[1])
+        if bound_parameters:
+            self.max_logvar = nn.Parameter(max_logvar)
+            self.min_logvar = nn.Parameter(min_logvar)
+        else:
+            self.register_buffer("max_logvar", max_logvar)
+            self.register_buffer("min_logvar", min_logvar)
+
+        self.apply(nnx_init.initialize_("orthogonal", gain=0.01))
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        # pylint:disable=arguments-differ,missing-function-docstring
+        log_scale = self.log_scale_module(inputs)
+        max_logvar = self.max_logvar.expand_as(log_scale)
+        min_logvar = self.min_logvar.expand_as(log_scale)
+        log_scale = max_logvar - softplus(max_logvar - log_scale)
+        log_scale = min_logvar + softplus(log_scale - min_logvar)
+        scale = log_scale.exp()
+        return torch.diag_embed(scale)
+
+
+class GRUGaussParams(nn.Module):
+    """Gaussian next-state distribution using GRU cells.
+
+    Args:
+        mlp_hunits: sequence of hidden unit sizes for the encoding and decoding
+            multilayer perceptrons. May be empty
+        gru_hunits: sequence of hidden unit sizes for the GRU cells. This
+            module requires at leat one GRU cell.
+        mlp_activ: activation function for the MLPs
+    """
+
+    # pylint:disable=too-many-instance-attributes
+
+    input_names: Sequence[str] = ("H", "B", "R")
+
+    def __init__(
+        self,
+        n_state: int,
+        n_ctrl: int,
+        horizon: int,
+        mlp_hunits: tuple[int, ...],
+        gru_hunits: tuple[int, ...],
+        mlp_activ: str = "ReLU",
+    ):
+        # pylint:disable=too-many-arguments
+        assert gru_hunits, f"Must have at least 1 GRU cell, got {gru_hunits}"
+        assert all(
+            h == gru_hunits[0] for h in gru_hunits
+        ), "Varying sizes of GRU hidden units is unsupported"
+        super().__init__()
+        self.n_state = n_state
+        self.n_ctrl = n_ctrl
+        self.horizon = horizon
+        self.mlp_hunits = mlp_hunits
+        self.mlp_activ = mlp_activ
+        self.gru_hunits = gru_hunits
+
+        # Slight departure from the original paper: we use the last activations
+        # of the MLP (no final linear layer) as inputs to the GRU. The original
+        # uses a final linear layer in the MLP projecting to the GRU hidden size
+        # and sets input_size=<GRU hidden size> in the GRU.
+        self.mlp_enc = nnx.FullyConnected(
+            self.n_state + self.n_ctrl + 1,
+            units=self.mlp_hunits,
+            activation=self.mlp_activ,
+        )
+        self.gru = nn.GRU(
+            input_size=self.mlp_enc.out_features,
+            hidden_size=self.gru_hunits[0],
+            num_layers=len(self.gru_hunits),
+            batch_first=False,
+        )
+        self.mlp_dec = nnx.FullyConnected(
+            self.gru_hunits[-1], units=self.mlp_hunits, activation=self.mlp_activ
+        )
+
+        self.loc_head = nn.Linear(self.mlp_dec.out_features, self.n_state)
+        self.scale_tril_head = DiagScale(
+            self.mlp_dec.out_features,  # Unused
+            self.n_state,
+            input_dependent_scale=False,
+        )
+
+    def forward(
+        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
+    ) -> TensorDict:
+        # pylint:disable=missing-function-docstring
+        # Concatenate state and action vectors and normalize time in [0, 1]
+        state, time = unpack_obs(obs)
+        vec = torch.cat((state, time.float() / self.horizon, action), dim="R")
+        # Ensure minimal dims for subsequent layers
+        vec = nt.unnamed(vec.align_to(*self.input_names))
+
+        # Embed, transition and decode
+        z_emb = self.mlp_enc(vec)
+        h_emb, new_context = self.gru(z_emb, hx=context)
+        # Predict residual mean of next state instead of next state directly
+        residual = self.mlp_dec(h_emb)
+        # Refine and squeeze dimensions
+        residual = residual.refine_names(*self.input_names).squeeze()
+
+        # Predict Gaussian parameters
+        loc = state + self.loc_head(residual)
+        scale_tril = self.scale_tril_head(residual)
+
+        # Treat absorving states if necessary
+        terminal = time.eq(self.horizon)
+        loc = nt.where(terminal, state, loc)
+        return {
+            "loc": loc,
+            "scale_tril": scale_tril,
+            "time": time,
+            "context": new_context,
+        }
 
 
 class GRUDynamicsModel(SegmentStochasticModel):
@@ -187,8 +346,39 @@ class GRUDynamicsModel(SegmentStochasticModel):
         n_ctrl: int,
         horizon: int,
         mlp_hunits: tuple[int, ...],
-        mlp_activ: str,
         gru_hunits: tuple[int, ...],
     ):
         # pylint:disable=too-many-arguments,unused-argument
-        super().__init__(None, None)
+        self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
+
+        params = GRUGaussParams(n_state, n_ctrl, horizon, mlp_hunits, gru_hunits)
+        # Create conditional distribution
+        dist = TVMultivariateNormal(self.horizon)
+        super().__init__(params, dist)
+
+    def forward(
+        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
+    ) -> TensorDict:
+        return self.params(obs, action, context=context)
+
+    def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+        # noinspection PyTypeChecker
+        obs_ = obs.select("H", 0)
+        context = None
+        logps = []
+        # noinspection PyArgumentList
+        for t in range(obs.size("H")):
+            # noinspection PyTypeChecker
+            params = self(obs_, act.select("H", t), context=context)
+            # noinspection PyTypeChecker
+            logp_ = nt.where(
+                nt.vector_to_scalar(params["time"]) == self.horizon,
+                torch.zeros_like(obs_.select("R", 0)),
+                self.dist.log_prob(new_obs.select("H", t), params),
+            )
+            logps += [logp_]
+
+            context = params["context"]
+            obs_, _ = self.dist.rsample(params)
+
+        return nt.stack_horizon(*logps).sum("H")

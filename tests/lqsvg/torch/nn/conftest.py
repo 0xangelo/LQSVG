@@ -30,14 +30,24 @@ def torch_generator_state(seed: int):
         yield
 
 
+@pytest.fixture
+def batch_names(batch_shape: tuple[int, ...]) -> tuple[str, ...]:
+    return () if not batch_shape else ("B",) if len(batch_shape) == 1 else ("H", "B")
+
+
 @pytest.fixture()
-def obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
+def obs(
+    n_state: int,
+    horizon: int,
+    batch_shape: tuple[int, ...],
+    batch_names: tuple[str, ...],
+) -> Tensor:
     state = nt.vector(torch.randn(batch_shape + (n_state,)))
     time = nt.vector(
         torch.randint_like(nt.unnamed(state[..., :1]), low=0, high=horizon)
     )
     # noinspection PyTypeChecker
-    return pack_obs(state, time).requires_grad_(True)
+    return pack_obs(state, time).refine_names(*batch_names, ...).requires_grad_(True)
 
 
 @pytest.fixture
@@ -49,11 +59,16 @@ def new_obs(obs: Tensor) -> Tensor:
 
 
 @pytest.fixture()
-def last_obs(n_state: int, horizon: int, batch_shape: tuple[int, ...]) -> Tensor:
+def last_obs(
+    n_state: int,
+    horizon: int,
+    batch_shape: tuple[int, ...],
+    batch_names: tuple[str, ...],
+) -> Tensor:
     state = nt.vector(torch.randn(batch_shape + (n_state,)))
     time = nt.vector(torch.full_like(state[..., :1], fill_value=horizon))
     # noinspection PyTypeChecker
-    return pack_obs(state, time).requires_grad_(True)
+    return pack_obs(state, time).refine_names(*batch_names, ...).requires_grad_(True)
 
 
 @pytest.fixture
@@ -65,5 +80,11 @@ def mix_obs(obs: Tensor, last_obs: Tensor) -> Tensor:
 
 
 @pytest.fixture()
-def act(n_ctrl: int, batch_shape: tuple[int, ...]) -> Tensor:
-    return nt.vector(torch.randn(batch_shape + (n_ctrl,))).requires_grad_(True)
+def act(
+    n_ctrl: int, batch_shape: tuple[int, ...], batch_names: tuple[str, ...]
+) -> Tensor:
+    return (
+        nt.vector(torch.randn(batch_shape + (n_ctrl,)))
+        .refine_names(*batch_names, ...)
+        .requires_grad_(True)
+    )
