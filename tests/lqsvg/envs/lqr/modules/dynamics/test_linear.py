@@ -11,6 +11,7 @@ from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics, LinearDynamicsModule
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
+from lqsvg.testing import check
 
 
 @pytest.fixture
@@ -141,13 +142,12 @@ class DynamicsModuleTests:
 
         assert log_prob.grad_fn is not None
         log_prob.sum().backward()
-        assert obs.grad is not None
-        assert act.grad is not None
-        assert not nt.allclose(obs.grad, torch.zeros(()))
-        assert not nt.allclose(act.grad, torch.zeros(()))
-        grads = list(p.grad for p in module.parameters())
-        assert all(list(g is not None for g in grads))
-        assert all(list(not torch.allclose(g, torch.zeros(())) for g in grads))
+        check.assert_grad_nonzero(obs)
+        check.assert_grad_nonzero(act)
+        # Some modules may have zero grads for some parameters
+        # E.g., GRU with 1 layer will have the weights for the context vector
+        # with grad zero if the context is all zeros
+        check.assert_any_grads_nonzero(module)
 
 
 # noinspection PyMethodMayBeStatic
