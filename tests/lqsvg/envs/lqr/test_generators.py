@@ -371,42 +371,6 @@ def test_make_quadcost(
     )
 
 
-@pytest.mark.skip(
-    reason="combinatorial explosion and overlap with dynamics and cost tests"
-)
-def test_make_lqr(
-    n_state: int,
-    n_ctrl: int,
-    horizon: int,
-    stationary: bool,
-    seed: int,
-    passive_eigval_range: Optional[tuple[float, float]],
-    transition_bias: bool,
-    cost_linear: bool,
-):
-    # pylint:disable=invalid-name,too-many-arguments
-    dynamics, cost = make_lqr(
-        state_size=n_state,
-        ctrl_size=n_ctrl,
-        horizon=horizon,
-        stationary=stationary,
-        rng=seed,
-        passive_eigval_range=passive_eigval_range,
-        transition_bias=transition_bias,
-        cost_linear=cost_linear,
-    )
-    check_dynamics(
-        dynamics,
-        n_state,
-        n_ctrl,
-        horizon,
-        stationary=stationary,
-        controllable=False,
-        transition_bias=transition_bias,
-    )
-    check_cost(cost, n_state, n_ctrl, horizon, stationary, cost_linear)
-
-
 def test_stack_lqs(n_state, n_ctrl, horizon, seed):
     system = make_lqr(n_state, n_ctrl, horizon, rng=seed)
     dynamics, cost = stack_lqs(system)
