@@ -1,11 +1,12 @@
-"""NN transition models."""
-# pylint:disable=invalid-name
+"""NN trajectory segment models."""
 from __future__ import annotations
 
+import functools
 import math
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import nnrl.nn as nnx
+import nnrl.nn.distributions as ptd
 import nnrl.nn.init as nnx_init
 import torch
 from nnrl.nn.model import StochasticModel
@@ -25,25 +26,9 @@ __all__ = [
     "LinearTransitionModel",
     "MLPDynamicsModel",
     "LinearDiagDynamicsModel",
-    "SegmentStochasticModel",
-    "GRUDynamicsModel",
+    "GRUGaussDynamics",
+    "log_prob_fn",
 ]
-
-
-class SegmentStochasticModel(StochasticModel):
-    """Probabilistic model of trajectory segments."""
-
-    def forward(
-        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
-    ) -> TensorDict:
-        # pylint:disable=arguments-differ,unused-argument
-        return self.params(obs, action)
-
-    def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
-        """Log-probability (density) of trajectory segment."""
-        obs, act, new_obs = (x.align_to("H", ..., "R") for x in (obs, act, new_obs))
-
-        return self.log_prob(new_obs, self(obs, act)).sum(dim="H")
 
 
 class LinearTransitionModel(LinearDynamicsModule):
@@ -62,6 +47,7 @@ class LinearDiagNormalParams(LinearNormalMixin, nn.Module):
     _softplus_beta: float = 0.2
 
     def __init__(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
+        # pylint:disable=invalid-name
         super().__init__()
         self.n_state = n_state
         self.n_ctrl = n_ctrl
@@ -92,7 +78,7 @@ class LinearDiagNormalParams(LinearNormalMixin, nn.Module):
         return nt.matrix(torch.diag_embed(diag))
 
 
-class LinearDiagDynamicsModel(SegmentStochasticModel):
+class LinearDiagDynamicsModel(StochasticModel):
     """Linear Gaussian model with diagonal covariance.
 
     Args:
@@ -125,7 +111,7 @@ class LinearDiagDynamicsModel(SegmentStochasticModel):
         return self.n_state, self.n_ctrl, self.horizon
 
 
-class MLPDynamicsModel(SegmentStochasticModel):
+class MLPDynamicsModel(StochasticModel):
     """Multilayer perceptron transition model."""
 
     n_state: int
@@ -164,12 +150,10 @@ class MLPDynamicsModel(SegmentStochasticModel):
 
         # Create conditional distribution
         dist = TVMultivariateNormal(self.horizon)
-
         super().__init__(params, dist)
 
-    def forward(
-        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
-    ) -> TensorDict:
+    def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
+        """Map observation and action to diagonal Normal parameters."""
         state, time = unpack_obs(obs)
         obs_ = torch.cat([state, time.float() / self.horizon], dim="R")
         mlp_params = self.params(*nt.unnamed(obs_, action))
@@ -241,8 +225,8 @@ class DiagScale(nn.Module):
         return torch.diag_embed(scale)
 
 
-class GRUGaussParams(nn.Module):
-    """Gaussian next-state distribution using GRU cells.
+class GRUGaussDynamics(nn.Module):
+    """Diagonal Gaussian next-state distribution using GRU cells.
 
     Args:
         mlp_hunits: sequence of hidden unit sizes for the encoding and decoding
@@ -304,6 +288,8 @@ class GRUGaussParams(nn.Module):
             input_dependent_scale=False,
         )
 
+        self.dist = TVMultivariateNormal(self.horizon)
+
     def forward(
         self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
     ) -> TensorDict:
@@ -337,31 +323,28 @@ class GRUGaussParams(nn.Module):
         }
 
 
-class GRUDynamicsModel(SegmentStochasticModel):
-    """Dynamics model based on GRU cells."""
+@functools.singledispatch
+def log_prob_fn(
+    params_fn: nn.Module, dist: ptd.ConditionalDistribution
+) -> Callable[[Tensor, Tensor, Tensor], Tensor]:
+    """Builds a mapping from trajectory segments to log-probabilities."""
 
-    def __init__(
-        self,
-        n_state: int,
-        n_ctrl: int,
-        horizon: int,
-        mlp_hunits: tuple[int, ...],
-        gru_hunits: tuple[int, ...],
-    ):
-        # pylint:disable=too-many-arguments,unused-argument
-        self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
+    def func(obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+        obs, act, new_obs = (x.align_to("H", ..., "R") for x in (obs, act, new_obs))
 
-        params = GRUGaussParams(n_state, n_ctrl, horizon, mlp_hunits, gru_hunits)
-        # Create conditional distribution
-        dist = TVMultivariateNormal(self.horizon)
-        super().__init__(params, dist)
+        params = params_fn(obs, act)
+        return dist.log_prob(new_obs, params).sum(dim="H")
 
-    def forward(
-        self, obs: Tensor, action: Tensor, context: Optional[Tensor] = None
-    ) -> TensorDict:
-        return self.params(obs, action, context=context)
+    return func
 
-    def seg_log_prob(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
+
+@log_prob_fn.register
+def _(
+    params_fn: GRUGaussDynamics, dist: ptd.ConditionalDistribution
+) -> Callable[[Tensor, Tensor, Tensor], Tensor]:
+    """Log-probobality of a trajectory segment under a GRU dynamics model."""
+
+    def func(obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         # noinspection PyTypeChecker
         obs_ = obs.select("H", 0)
         context = None
@@ -369,16 +352,18 @@ class GRUDynamicsModel(SegmentStochasticModel):
         # noinspection PyArgumentList
         for t in range(obs.size("H")):
             # noinspection PyTypeChecker
-            params = self(obs_, act.select("H", t), context=context)
+            params = params_fn(obs_, act.select("H", t), context=context)
             # noinspection PyTypeChecker
             logp_ = nt.where(
-                nt.vector_to_scalar(params["time"]) == self.horizon,
+                nt.vector_to_scalar(params["time"]) == params_fn.horizon,
                 torch.zeros_like(obs_.select("R", 0)),
-                self.dist.log_prob(new_obs.select("H", t), params),
+                dist.log_prob(new_obs.select("H", t), params),
             )
             logps += [logp_]
 
             context = params["context"]
-            obs_, _ = self.dist.rsample(params)
+            obs_, _ = dist.rsample(params)
 
         return nt.stack_horizon(*logps).sum("H")
+
+    return func

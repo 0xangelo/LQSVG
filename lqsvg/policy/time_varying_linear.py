@@ -10,7 +10,7 @@ from torch import nn
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LinearDynamics
 from lqsvg.envs.lqr.modules.general import EnvModule, LQGModule
-from lqsvg.torch.nn.dynamics.transition import LinearTransitionModel
+from lqsvg.torch.nn.dynamics.segment import LinearTransitionModel
 from lqsvg.torch.nn.initstate import InitStateModel
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.reward import QuadRewardModel

@@ -1,24 +1,36 @@
 from __future__ import annotations
 
+from typing import Optional, Tuple
+
 import pytest
 import torch
+from nnrl.nn.model import StochasticModel
 from torch import IntTensor, Tensor
 
 from lqsvg.envs.lqr import pack_obs, unpack_obs
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.testing import check
-from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.nn.dynamics.transition import (
-    GRUDynamicsModel,
+from lqsvg.torch.nn.dynamics.segment import (
+    GRUGaussDynamics,
     LinearDiagDynamicsModel,
     LinearTransitionModel,
     MLPDynamicsModel,
-    SegmentStochasticModel,
+    log_prob_fn,
 )
 from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import (
     DynamicsModuleTests,
     LinearParamsTestMixin,
 )
+
+
+@pytest.fixture(params=[(), (10,)], ids=lambda x: f"HiddenUnits:{x}")
+def hunits(request) -> Tuple[int, ...]:
+    return request.param
+
+
+@pytest.fixture(params=(None, "ReLU", "ELU", "Tanh"), ids=lambda x: f"Activation:{x}")
+def activation(request) -> Optional[str]:
+    return request.param
 
 
 class TestLinearTransitionModel(DynamicsModuleTests, LinearParamsTestMixin):
@@ -74,15 +86,16 @@ class SegmentModelTestMixin:
 
     def test_seg_log_prob(
         self,
-        module: SegmentStochasticModel,
+        module: StochasticModel,
         seg_obs: Tensor,
         seg_act: Tensor,
         seg_new_obs: Tensor,
         batch_shape: tuple[int, ...],
     ):
         # pylint:disable=too-many-arguments
+        seg_log_prob = log_prob_fn(module, module.dist)
         # Test shape
-        log_prob = module.seg_log_prob(seg_obs, seg_act, seg_new_obs)
+        log_prob = seg_log_prob(seg_obs, seg_act, seg_new_obs)
         assert torch.isfinite(log_prob).all()
         assert log_prob.shape == batch_shape
 
@@ -101,10 +114,6 @@ class TestLinearDiagDynamicsModel(
     @pytest.fixture
     def module(self, n_state: int, n_ctrl: int, horizon: int, stationary: bool):
         return LinearDiagDynamicsModel(n_state, n_ctrl, horizon, stationary)
-
-
-hunits = standard_fixture([(), (10,)], "HiddenUnits")
-activation = standard_fixture((None, "ReLU", "ELU", "Tanh"), "Activation")
 
 
 class TestMLPTransitionModel(SegmentModelTestMixin, DynamicsModuleTests):
@@ -127,7 +136,7 @@ class TestMLPTransitionModel(SegmentModelTestMixin, DynamicsModuleTests):
         )
 
 
-class TestGRUDynamicsModel(SegmentModelTestMixin, DynamicsModuleTests):
+class TestGRUGaussDynamics(SegmentModelTestMixin):
     @pytest.fixture(params=((1,), (2,)), ids=lambda x: f"Batch:{x}")
     def batch_shape(self, request) -> tuple[int, ...]:
         # GRU docs expect only one batch dimension
@@ -153,9 +162,9 @@ class TestGRUDynamicsModel(SegmentModelTestMixin, DynamicsModuleTests):
         horizon: int,
         mlp_hunits: tuple[int, ...],
         gru_hunits: tuple[int, ...],
-    ) -> GRUDynamicsModel:
+    ) -> GRUGaussDynamics:
         # pylint:disable=too-many-arguments
-        return GRUDynamicsModel(
+        return GRUGaussDynamics(
             n_state, n_ctrl, horizon, mlp_hunits=mlp_hunits, gru_hunits=gru_hunits
         )
 
@@ -166,7 +175,7 @@ class TestGRUDynamicsModel(SegmentModelTestMixin, DynamicsModuleTests):
         return torch.zeros((len(gru_hunits),) + batch_shape + (gru_hunits[0],))
 
     def test_forward_with_context(
-        self, module: GRUDynamicsModel, obs: Tensor, act: Tensor, context: Tensor
+        self, module: GRUGaussDynamics, obs: Tensor, act: Tensor, context: Tensor
     ):
         params = module(obs, act, context=context)
         assert "loc" in params
@@ -177,7 +186,7 @@ class TestGRUDynamicsModel(SegmentModelTestMixin, DynamicsModuleTests):
         assert params["loc"].names == obs.names
 
     def test_forward_without_context(
-        self, module: GRUDynamicsModel, obs: Tensor, act: Tensor
+        self, module: GRUGaussDynamics, obs: Tensor, act: Tensor
     ):
         params = module(obs, act)
         assert "loc" in params

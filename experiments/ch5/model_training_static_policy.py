@@ -10,7 +10,7 @@ import ray
 import torch
 from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
-from torch import Tensor
+from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb.sdk import wandb_config
 
@@ -24,10 +24,10 @@ from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.np_util import RNG
-from lqsvg.torch.nn.dynamics.transition import (
+from lqsvg.torch.nn.dynamics.segment import (
     LinearDiagDynamicsModel,
     MLPDynamicsModel,
-    SegmentStochasticModel,
+    log_prob_fn,
 )
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.value import QuadQValue
@@ -38,7 +38,7 @@ ValBatch = Union[Batch, Sequence[Tensor]]
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
-    model: SegmentStochasticModel
+    model: nn.Module
     estimator: MAAC
     lqg: LQGModule
     policy: TVLinearPolicy
@@ -62,12 +62,13 @@ class LightningModel(pl.LightningModule):
         )
         self.qval.requires_grad_(False)
         self.model = self.make_model()
+        self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
 
         # Gradients
         self.estimator = MAAC(policy, self.model, lqg.reward, self.qval)
         self.compute_gold_standards()
 
-    def make_model(self) -> SegmentStochasticModel:
+    def make_model(self) -> nn.Module:
         if self.hparams.model["type"] == "linear":
             return LinearDiagDynamicsModel(
                 self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon, stationary=True
@@ -86,7 +87,7 @@ class LightningModel(pl.LightningModule):
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
         """Log-likelihood of (batched) trajectory segment."""
         # pylint:disable=arguments-differ
-        return self.model.seg_log_prob(obs, act, new_obs) / obs.size("H")
+        return self.seg_log_prob(obs, act, new_obs) / obs.size("H")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
