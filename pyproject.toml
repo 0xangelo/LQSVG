@@ -12,27 +12,27 @@ pandas = "<1.4.0"
 nnrl = "^0.1.0"
 opencv-contrib-python = "^4.5.3"
 pytorch-lightning = "^1.4.0"
-
-[tool.poetry.dev-dependencies]
+sklearn = "^0.0"
+matplotlib = "^3.4.2"
+seaborn = "^0.11.1"
+hyperopt = "^0.2.5"
 jupyterlab = "^3.1.1"
 ipywidgets = "^7.6.3"
 tqdm = "^4.61.0"
+wandb = "^0.11.1"
+
+[tool.poetry.dev-dependencies]
 ipython = "^7.24.1"
 pre-commit = "^2.13.0"
-wandb = "^0.11.1"
 pylint = "^2.9.6"
 pytest = "^6.2.3"
 black = {extras = ["d"], version = "^21.5b2"}
 flake8 = "^3.9.2"
-sklearn = "^0.0"
-matplotlib = "^3.4.2"
-seaborn = "^0.11.1"
 pytest-mock = "^3.6.1"
 jupyterlab-code-formatter = "^1.4.10"
 isort = "^5.9.3"
 watchdog = "^2.1.2"
 pytest-cov = "^2.12.1"
-hyperopt = "^0.2.5"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
