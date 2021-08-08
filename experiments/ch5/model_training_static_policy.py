@@ -24,12 +24,12 @@ from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
 from lqsvg.np_util import RNG
-from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.transition import (
+from lqsvg.torch.nn.dynamics.transition import (
     LinearDiagDynamicsModel,
     MLPDynamicsModel,
     SegmentStochasticModel,
 )
+from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.value import QuadQValue
 
 Batch = Tuple[Tensor, Tensor, Tensor]

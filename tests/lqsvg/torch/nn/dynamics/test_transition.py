@@ -8,7 +8,7 @@ from lqsvg.envs.lqr import pack_obs, unpack_obs
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.testing import check
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.nn.transition import (
+from lqsvg.torch.nn.dynamics.transition import (
     GRUDynamicsModel,
     LinearDiagDynamicsModel,
     LinearTransitionModel,

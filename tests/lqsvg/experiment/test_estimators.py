@@ -14,10 +14,10 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.utils import pack_obs
 from lqsvg.experiment.estimators import DPG, MAAC, MonteCarloSVG
+from lqsvg.torch.nn.dynamics.transition import LinearTransitionModel
 from lqsvg.torch.nn.initstate import InitStateModel
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.reward import QuadRewardModel
-from lqsvg.torch.nn.transition import LinearTransitionModel
 from lqsvg.torch.nn.value import QuadQValue
 from lqsvg.torch.nn.wrappers import (
     BatchNormModel,
