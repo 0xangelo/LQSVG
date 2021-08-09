@@ -23,7 +23,7 @@ from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.data import markovian_state_sampler, trajectory_sampler
-from lqsvg.experiment.estimators import MAAC, AnalyticSVG
+from lqsvg.experiment.estimators import analytic_svg, maac_estimator
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.dynamics.segment import (
     LinearDiagDynamicsModel,
@@ -40,7 +40,6 @@ ValBatch = Union[Batch, Sequence[Tensor]]
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     model: nn.Module
-    estimator: MAAC
     lqg: LQGModule
     policy: TVLinearPolicy
     qval: QuadQValue
@@ -66,8 +65,14 @@ class LightningModel(pl.LightningModule):
         self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
 
         # Gradients
-        self.estimator = MAAC(policy, self.model, lqg.reward, self.qval)
-        self.compute_gold_standards()
+        self.estimator = maac_estimator(
+            self.policy,
+            markovian_state_sampler(self.model, self.model.rsample),
+            self.lqg.reward,
+            self.qval,
+        )
+        dynamics, cost, init = self.lqg.standard_form()
+        self.gold_standard = analytic_svg(self.policy, init, dynamics, cost)
 
     def make_model(self) -> nn.Module:
         if self.hparams.model["type"] == "linear":
@@ -80,9 +85,6 @@ class LightningModel(pl.LightningModule):
             self.lqg.horizon,
             **self.hparams.model["kwargs"]
         )
-
-    def compute_gold_standards(self):
-        self.gold_standard = AnalyticSVG(self.policy, self.lqg)()
 
     # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
@@ -135,7 +137,7 @@ class LightningModel(pl.LightningModule):
     @torch.enable_grad()
     def _compute_grad_acc_on_batch(self, batch: Tensor) -> Tensor:
         obs = batch
-        _, svg = self.estimator(obs, n_steps=self.hparams.pred_horizon)
+        _, svg = self.estimator(obs, self.hparams.pred_horizon)
         return torch.as_tensor(gradient_accuracy([svg], self.gold_standard[1]))
 
 
