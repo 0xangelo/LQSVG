@@ -13,15 +13,14 @@ from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.torch import named as nt
 
 from .tqdm_util import collect_with_progress
+from .types import (
+    DeterministicPolicy,
+    InitStateFn,
+    RewardFunction,
+    StateDynamics,
+    TrajectorySampler,
+)
 from .utils import group_batch_episodes
-
-DeterministicPolicy = Callable[[Tensor], Tensor]
-InitStateFn = Callable[[Sequence[int]], Tuple[Tensor, Tensor]]
-StateDynamics = Callable[[Tensor, Tensor], Tuple[Tensor, Tensor]]
-RewardFunction = Callable[[Tensor, Tensor], Tensor]
-TrajectorySampler = Callable[
-    [int, Sequence[int]], Tuple[Tensor, Tensor, Tensor, Tensor]
-]
 
 
 def split_dataset(
