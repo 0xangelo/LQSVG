@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.envs.lqr.modules.general import EnvModule
+from lqsvg.experiment.data import markovian_state_sampler, trajectory_sampler
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn.policy import TVLinearPolicy
 
@@ -118,6 +119,11 @@ class MonteCarloSVG(nn.Module):
         super().__init__()
         self.policy = policy
         self.model = model
+        state_transitioner = markovian_state_sampler(model.trans, model.trans.rsample)
+        # noinspection PyTypeChecker
+        self._rsampler = trajectory_sampler(
+            policy, model.init.sample, state_transitioner, model.reward
+        )
 
     def rsample_trajectory(
         self, sample_shape: torch.Size = torch.Size()
@@ -138,27 +144,12 @@ class MonteCarloSVG(nn.Module):
             Trajectory sample following the policy and its corresponding
             log-likelihood under the model
         """
-        sample_shape = torch.Size(sample_shape)
         self.policy.train()
         self.model.eval()
-
-        batch = []
-        # noinspection PyTypeChecker
-        obs, logp = self.model.init.rsample(sample_shape)
-        obs = obs.refine_names(*(f"B{i+1}" for i, _ in enumerate(sample_shape)), ...)
-        for _ in range(self.model.horizon):
-            act = self.policy(obs)
-            rew = self.model.reward(obs, act)
-            # No sample_shape needed since initial states are batched
-            new_obs, logp_t = self.model.trans.rsample(self.model.trans(obs, act))
-
-            batch += [(obs, act, rew, new_obs)]
-            logp = logp + logp_t
-            obs = new_obs
-
-        # FIXME: return new_obs as a view on the full sequence of observations
-        # (t=0,...,H)
-        obs, act, rew, new_obs = (nt.stack_horizon(*x) for x in zip(*batch))
+        all_obs, act, rew, logp = self._rsampler(self.model.horizon, sample_shape)
+        decision_steps = torch.arange(self.model.horizon).int()
+        obs = nt.index_select(all_obs, "H", decision_steps)
+        new_obs = nt.index_select(all_obs, "H", decision_steps + 1)
         return obs, act, rew, new_obs, logp
 
     def rsample_return(self, sample_shape: torch.Size = torch.Size()) -> Tensor:

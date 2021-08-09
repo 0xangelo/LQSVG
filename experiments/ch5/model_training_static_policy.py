@@ -22,7 +22,8 @@ from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
-from lqsvg.experiment.estimators import MAAC, AnalyticSVG, MonteCarloSVG
+from lqsvg.experiment.data import markovian_state_sampler, trajectory_sampler
+from lqsvg.experiment.estimators import MAAC, AnalyticSVG
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.dynamics.segment import (
     LinearDiagDynamicsModel,
@@ -195,13 +196,22 @@ class DataModule(pl.LightningDataModule):
 
     def build(self, lqg: LQGModule, policy: TVLinearPolicy, trajectories: int):
         assert self.spec.segment_len <= lqg.horizon, "Invalid trajectory segment length"
-        rollout = MonteCarloSVG(policy, lqg)
+        # noinspection PyTypeChecker
+        sample_fn = trajectory_sampler(
+            policy,
+            lqg.init.sample,
+            markovian_state_sampler(lqg.trans, lqg.trans.sample),
+            lqg.reward,
+        )
         with torch.no_grad():
-            obs, act, _, new_obs, _ = rollout.rsample_trajectory(
-                torch.Size([trajectories])
-            )
-        obs, act, new_obs = (x.rename(B1="B") for x in (obs, act, new_obs))
-        self.tensors = (obs, act, new_obs)
+            obs, act, _, _ = sample_fn(lqg.horizon, [trajectories])
+        obs, act = (x.rename(B1="B") for x in (obs, act))
+        decision_steps = torch.arange(lqg.horizon).int()
+        self.tensors = (
+            nt.index_select(obs, "H", decision_steps),
+            act,
+            nt.index_select(obs, "H", decision_steps + 1),
+        )
         # noinspection PyArgumentList
         assert all(t.size("B") == obs.size("B") for t in self.tensors)
 
