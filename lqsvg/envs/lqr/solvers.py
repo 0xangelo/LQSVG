@@ -6,8 +6,7 @@ for notation and more details on LQR.
 from typing import List, Tuple
 
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 
 from .named import (
     refine_cost_input,
@@ -127,10 +126,10 @@ class LQRPrediction(BuildQuadraticMixin, nn.Module):
 
         return self.stack_quadratic(q_val), self.stack_quadratic(v_val)
 
-    def standardize_system(self, dynamics: LinDynamics, cost: QuadCost):
+    def standardize_system(self, dynamics: LinDynamics, cost: QuadCost) -> LQR:
         F, f = dynamics
         C, c = cost
-        return F, f, C, c
+        return LQR(F, f, C, c)
 
     def final_V(self, system: LQR) -> Quadratic:
         F, _, _, _ = system
@@ -140,23 +139,27 @@ class LQRPrediction(BuildQuadraticMixin, nn.Module):
         vec_shape = mat_shape[:-1] + (1,)
         scl_shape = mat_shape[:-2] + (1, 1)
 
-        Vs = (torch.zeros(mat_shape), torch.zeros(vec_shape), torch.zeros(scl_shape))
+        Vs = Quadratic(
+            torch.zeros(mat_shape), torch.zeros(vec_shape), torch.zeros(scl_shape)
+        )
         return Vs
 
-    def system_at(self, system: LQR, time: int):
+    def system_at(self, system: LQR, time: int) -> LQR:
         F, f, C, c = system
-        return F[time], f[time], C[time], c[time]
+        return LQR(F[time], f[time], C[time], c[time])
 
-    def policy_at(self, policy: Linear, time: int):
+    def policy_at(self, policy: Linear, time: int) -> Linear:
         K, k = policy
-        return K[time], k[time]
+        return Linear(K[time], k[time])
 
-    def single_step(self, system: LQR, Ks: Linear, Vs: Quadratic):
+    def single_step(
+        self, system: LQR, Ks: Linear, Vs: Quadratic
+    ) -> Tuple[Quadratic, Quadratic]:
         Qs = self.compute_Q(system, Vs)
         Vs = self.compute_V(Qs, Ks)
         return Qs, Vs
 
-    def compute_Q(self, system: LQR, Vs: Quadratic):
+    def compute_Q(self, system: LQR, Vs: Quadratic) -> Quadratic:
         F, f, C, c = system
         V, v, vc = Vs
 
@@ -164,9 +167,9 @@ class LQRPrediction(BuildQuadraticMixin, nn.Module):
         Q = C + FV @ F
         q = c + FV @ f + transpose(F) @ v
         qc = transpose(f) @ V @ f / 2 + transpose(f) @ v + vc
-        return Q, q, qc
+        return Quadratic(Q, q, qc)
 
-    def compute_V(self, Qs: Quadratic, Ks: Linear):
+    def compute_V(self, Qs: Quadratic, Ks: Linear) -> Quadratic:
         # pylint:disable=too-many-locals
         n_state = self.n_state
         Q, q, qc = Qs
@@ -183,7 +186,7 @@ class LQRPrediction(BuildQuadraticMixin, nn.Module):
         V = Q_xx + Q_xu @ K + transpose(K) @ Q_ux + KTQ_uu @ K
         v = Q_xu @ k + KTQ_uu @ k + q_x + transpose(K) @ q_u
         vc = transpose(k) @ Q_uu @ k / 2 + transpose(k) @ q_u + qc
-        return V, v, vc
+        return Quadratic(V, v, vc)
 
 
 # noinspection PyPep8Naming,PyMethodOverriding
@@ -227,13 +230,14 @@ class LQRControl(BuildLinearMixin, LQRPrediction):
 
     def single_step(
         self, system: LQR, Vs: Quadratic
-    ):  # pylint:disable=arguments-differ
+    ) -> Tuple[Quadratic, Linear, Quadratic]:
+        # pylint:disable=arguments-differ
         Qs = self.compute_Q(system, Vs)
         Ks = self.compute_K(Qs)
         Vs = self.compute_V(Qs, Ks)
         return Qs, Ks, Vs
 
-    def compute_K(self, Qs: Quadratic):
+    def compute_K(self, Qs: Quadratic) -> Linear:
         n_state = self.n_state
         Q, q, _ = Qs
         Q_uu = Q[..., n_state:, n_state:]
@@ -244,7 +248,7 @@ class LQRControl(BuildLinearMixin, LQRPrediction):
 
         K = -inv_Q_uu @ Q_ux
         k = -inv_Q_uu @ q_u
-        return K, k
+        return Linear(K, k)
 
 
 # noinspection PyPep8Naming,PyMethodMayBeStatic
@@ -252,10 +256,10 @@ class LQGMixin:
     """Modifies LQR to handle time-varying stochastic linear quadratic systems."""
 
     # pylint:disable=invalid-name,missing-function-docstring,no-self-use
-    def standardize_system(self, dynamics: LinSDynamics, cost: QuadCost):
+    def standardize_system(self, dynamics: LinSDynamics, cost: QuadCost) -> LQG:
         F, f, W = dynamics
         C, c = cost
-        return F, f, W, C, c
+        return LQG(F, f, W, C, c)
 
     def final_V(self, system: LQG) -> Quadratic:
         F, _, _, _, _ = system
@@ -265,14 +269,16 @@ class LQGMixin:
         vec_shape = mat_shape[:-1] + (1,)
         scl_shape = mat_shape[:-2] + (1, 1)
 
-        Vs = (torch.zeros(mat_shape), torch.zeros(vec_shape), torch.zeros(scl_shape))
+        Vs = Quadratic(
+            torch.zeros(mat_shape), torch.zeros(vec_shape), torch.zeros(scl_shape)
+        )
         return Vs
 
-    def system_at(self, system: LQG, time: int):
+    def system_at(self, system: LQG, time: int) -> LQG:
         F, f, W, C, c = system
-        return F[time], f[time], W[time], C[time], c[time]
+        return LQG(F[time], f[time], W[time], C[time], c[time])
 
-    def compute_Q(self, system: LQG, Vs: Quadratic):
+    def compute_Q(self, system: LQG, Vs: Quadratic) -> Quadratic:
         F, f, W, C, c = system
         V, v, vc = Vs
 
@@ -285,7 +291,7 @@ class LQGMixin:
             + vc
             + self.matrix_trace(W @ V) / 2
         )
-        return Q, q, qc
+        return Quadratic(Q, q, qc)
 
     def matrix_trace(self, mat: Tensor) -> Tensor:
         """Returns the trace of a matrix as a unitary matrix (keeps dims)."""
