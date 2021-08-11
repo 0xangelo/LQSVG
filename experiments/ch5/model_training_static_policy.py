@@ -1,170 +1,30 @@
 # pylint:disable=missing-docstring
-import functools
 import logging
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Tuple
 
 import click
 import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
-from pytorch_lightning.utilities import AttributeDict
+from model import Batch, LightningModel
 from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
-from torch import Tensor, nn
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb.sdk import wandb_config
 
 import lqsvg.envs.lqr.utils as lqg_util
 import lqsvg.torch.named as nt
 import wandb
-from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
+from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils
-from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.data import trajectory_sampler
-from lqsvg.experiment.dynamics import markovian_state_sampler, recurrent_state_sampler
-from lqsvg.experiment.estimators import analytic_svg, maac_estimator
+from lqsvg.experiment.dynamics import markovian_state_sampler
 from lqsvg.np_util import RNG
-from lqsvg.torch.nn.dynamics.segment import (
-    GRUGaussDynamics,
-    LinearDiagDynamicsModel,
-    MLPDynamicsModel,
-    log_prob_fn,
-)
 from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.value import QuadQValue
-
-Batch = Tuple[Tensor, Tensor, Tensor]
-ValBatch = Union[Batch, Sequence[Tensor]]
-
-Estimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
-
-
-@functools.singledispatch
-def make_estimator(
-    model: nn.Module, policy: TVLinearPolicy, reward: QuadraticReward, qval: QuadQValue
-) -> Estimator:
-    return maac_estimator(
-        policy, markovian_state_sampler(model, model.rsample), reward, qval
-    )
-
-
-@make_estimator.register
-def _(
-    model: GRUGaussDynamics,
-    policy: TVLinearPolicy,
-    reward: QuadraticReward,
-    qval: QuadQValue,
-) -> Estimator:
-    return maac_estimator(
-        policy,
-        recurrent_state_sampler(model, model.dist.rsample),
-        reward,
-        qval,
-        recurrent=True,
-    )
-
-
-def make_model(
-    n_state: int, n_ctrl: int, horizon: int, hparams: AttributeDict
-) -> nn.Module:
-    if hparams.model["type"] == "linear":
-        return LinearDiagDynamicsModel(n_state, n_ctrl, horizon, stationary=True)
-    if hparams.model["type"] == "gru":
-        return GRUGaussDynamics(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
-    return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
-
-
-@torch.enable_grad()
-def _compute_grad_acc_on_batch(
-    estimator: Estimator, obs: Tensor, pred_horizon: int, target: lqr.Linear
-) -> Tensor:
-    _, svg = estimator(obs, pred_horizon)
-    return torch.as_tensor(gradient_accuracy([svg], target))
-
-
-def _refine_batch(batch: Batch) -> Batch:
-    # noinspection PyTypeChecker
-    return tuple(x.refine_names("B", "H", "R") for x in batch)
-
-
-class LightningModel(pl.LightningModule):
-    # pylint:disable=too-many-ancestors
-    model: nn.Module
-    seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
-    estimator: Estimator
-    true_svg: lqr.Linear
-
-    def __init__(
-        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
-    ):
-        super().__init__()
-        self.hparams.update(hparams)
-
-        # NN modules
-        self.model = make_model(lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams)
-        self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
-
-        # Gradients
-        qval = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
-        qval.match_policy_(
-            policy.standard_form(),
-            lqg.trans.standard_form(),
-            lqg.reward.standard_form(),
-        )
-        qval.requires_grad_(False)
-        self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
-        dynamics, cost, init = lqg.standard_form()
-        _, self.true_svg = analytic_svg(policy, init, dynamics, cost)
-
-    # noinspection PyArgumentList
-    def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
-        """Log-likelihood of (batched) trajectory segment."""
-        # pylint:disable=arguments-differ
-        return self.seg_log_prob(obs, act, new_obs) / obs.size("H")
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
-
-    def _compute_loss_on_batch(self, batch: Batch) -> Tensor:
-        obs, act, new_obs = batch
-        return -self(obs, act, new_obs).mean()
-
-    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
-        # pylint:disable=arguments-differ
-        del batch_idx
-        batch = _refine_batch(batch)
-        loss = self._compute_loss_on_batch(batch)
-        self.log("train/loss", loss)
-        return loss
-
-    def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
-        # pylint:disable=arguments-differ
-        del batch_idx
-        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="val")
-
-    def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
-        # pylint:disable=arguments-differ
-        del batch_idx
-        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="test")
-
-    def _compute_and_log_loss_or_grad_acc(
-        self, batch: ValBatch, dataloader_idx: int, *, stage: str
-    ):
-        if dataloader_idx == 0:
-            # Compute log-prob of traj segments
-            loss = self._compute_loss_on_batch(_refine_batch(batch))
-            self.log(stage + "/loss", loss)
-        else:
-            # Compute gradient acc using uniformly sampled states
-            obs = batch[0].refine_names("B", "R")
-            grad_acc = _compute_grad_acc_on_batch(
-                self.estimator, obs, self.hparams.pred_horizon, self.true_svg
-            )
-            self.log(stage + "/grad_acc", grad_acc)
 
 
 class TrajectorySegmentDataset(Dataset):
@@ -294,6 +154,13 @@ class DataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
 
+def extra_tags(config: dict) -> List[str]:
+    extra = []
+    if config["n_state"] > config["n_ctrl"]:
+        extra += ["underactuated"]
+    return extra
+
+
 class Experiment(tune.Trainable):
     # pylint:disable=abstract-method,too-many-instance-attributes
     run: wandb.sdk.wandb_run.Run
@@ -311,7 +178,7 @@ class Experiment(tune.Trainable):
             config=config,
             project="LQG-SVG",
             entity="angelovtt",
-            tags=["ch5", utils.calver()],
+            tags=["ch5", utils.calver()] + extra_tags(config),
             reinit=True,
             mode="online",
         )
@@ -355,7 +222,7 @@ class Experiment(tune.Trainable):
             callbacks=[pl.callbacks.EarlyStopping("val/loss/dataloader_idx_0")],
             num_sanity_val_steps=0,  # avoid evaluating gradients in the beginning?
             checkpoint_callback=False,  # don't save last model checkpoint
-            **self.hparams.trainer
+            **self.hparams.trainer,
         )
 
     def step(self) -> dict:
@@ -390,23 +257,29 @@ class Experiment(tune.Trainable):
 def run_with_tune():
     ray.init(logging_level=logging.WARNING)
 
+    models = [
+        {"type": "linear"},
+        {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
+        {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
+    ]
     config = {
-        "learning_rate": 1e-3,
-        "seed": tune.grid_search(list(range(42, 52))),
-        "n_state": 2,
-        "n_ctrl": 2,
-        "horizon": 20,
-        "pred_horizon": 4,
-        "trajectories": 10000,
-        "model": {"type": "linear"},
+        "learning_rate": 5e-4,
+        "seed": tune.grid_search(list(range(37, 42))),
+        "n_state": 4,
+        "n_ctrl": 4,
+        "horizon": 50,
+        "pred_horizon": [2, 4, 6, 8],
+        "trajectories": 1000,
+        "model": tune.grid_search(models),
+        "zero_q": tune.grid_search([True, False]),
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
-            "val_grad_batch_size": 200,
+            "val_grad_batch_size": 128,
             "segment_len": 4,
         },
         "trainer": {
-            "max_epochs": 1000,
+            "max_epochs": 20,
             # don't show progress bar for model training
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
@@ -430,6 +303,7 @@ def run_simple():
             "type": "gru",
             "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10, 10)},
         },
+        "zero_q": False,
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
