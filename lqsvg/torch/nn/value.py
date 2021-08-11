@@ -259,5 +259,8 @@ class ZeroQValue(QValue):
     """
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
-        obs, action = torch.broadcast_tensors(obs, action)
-        return torch.zeros_like(obs.select("R", 0))
+        # noinspection PyTypeChecker
+        scalar_batch, _ = torch.broadcast_tensors(
+            obs.select("R", 0), action.select("R", 0)
+        )
+        return torch.zeros_like(scalar_batch)
