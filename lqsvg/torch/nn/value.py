@@ -15,7 +15,7 @@ from lqsvg.envs.lqr.utils import (
     unpack_obs,
 )
 
-__all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue"]
+__all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue", "ZeroQValue"]
 
 
 def index_quadratic_parameters(
@@ -250,3 +250,14 @@ class QuadQValue(QValue, QuadraticMixin):
         )
         val = cost.neg()
         return nt.where(time.eq(self.horizon), torch.zeros_like(val), val)
+
+
+class ZeroQValue(QValue):
+    """Predicts action-value as zero for all inputs.
+
+    Useful for factoring out the value function in bootstrapped estimators.
+    """
+
+    def forward(self, obs: Tensor, action: Tensor) -> Tensor:
+        obs, action = torch.broadcast_tensors(obs, action)
+        return torch.zeros_like(obs.select("R", 0))
