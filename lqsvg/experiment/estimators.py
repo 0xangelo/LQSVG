@@ -1,7 +1,7 @@
 """Stochastic Value Gradient estimation utilities."""
 from __future__ import annotations
 
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Union
 
 import torch
 from nnrl.nn.critic import QValue
@@ -11,10 +11,12 @@ from torch import Tensor, nn
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.experiment.data import markovian_state_sampler, trajectory_sampler
+from lqsvg.experiment.data import trajectory_sampler
+from lqsvg.experiment.dynamics import markovian_state_sampler
 from lqsvg.experiment.types import (
     DeterministicPolicy,
     QValueFn,
+    RecurrentDynamics,
     RewardFunction,
     StateDynamics,
 )
@@ -91,7 +93,7 @@ def analytic_value(
     """
     _, vval = on_policy_value_functions(policy, dynamics, cost)
     # noinspection PyTypeChecker
-    vval = lqr.Quadratic(x.select("H", 0) for x in vval)
+    vval = lqr.Quadratic(*(x.select("H", 0) for x in vval))
     # Have to negate here since vval predicts costs
     value = -expected_value(init, vval)
     return value
@@ -103,7 +105,7 @@ def policy_svg(policy: TVLinearPolicy, value: Tensor) -> lqr.Linear:
     policy.zero_grad(set_to_none=True)
     value.backward()
     K, k = policy.standard_form()
-    return K.grad.clone(), k.grad.clone()
+    return lqr.Linear(K.grad.clone(), k.grad.clone())
 
 
 def analytic_svg(
@@ -214,18 +216,18 @@ def dpg_estimator(
     return nstep_estimator(policy, surrogate)
 
 
-def maac_surrogate(
-    policy: DeterministicPolicy,
+def maac_markovian(
     dynamics: StateDynamics,
+    policy: DeterministicPolicy,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tensor]:
     """Surrogate objective function of the MAAC estimator.
 
     Args:
+        dynamics: reparameterized markovian state transition sampler
         policy: differentiable function of policy parameters and states to
             actions
-        dynamics: reparameterized state transition sampler
         reward_fn: differentiable function of states and actions to rewards
         qvalue: differentiable function of states and actions to expected
             returns
@@ -249,11 +251,48 @@ def maac_surrogate(
     return surrogate
 
 
-def maac_estimator(
-    policy: TVLinearPolicy,
-    dynamics: StateDynamics,
+def maac_recurrent(
+    dynamics: RecurrentDynamics,
+    policy: DeterministicPolicy,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
+) -> Callable[[Tensor, int], Tensor]:
+    """MAAC estimator surrogate objective with recurrent dynamics.
+
+    Args:
+        dynamics: reparameterized recurrent state transition sampler
+        policy: differentiable function of policy parameters and states to
+            actions
+        reward_fn: differentiable function of states and actions to rewards
+        qvalue: differentiable function of states and actions to expected
+            returns
+
+    Returns:
+        Callable from starting state samples and number of steps to average
+        surrogate objective
+    """
+
+    def surrogate(obs: Tensor, n_steps: int) -> Tensor:
+        ctx = None
+        act = policy(obs)
+        partial_return = torch.zeros(())
+        for _ in range(n_steps):
+            partial_return = partial_return + reward_fn(obs, act)
+            obs, _, ctx = dynamics(obs, act, ctx)
+            act = policy(obs)
+
+        nstep_return = partial_return + qvalue(obs, act)
+        return nstep_return.mean()
+
+    return surrogate
+
+
+def maac_estimator(
+    policy: TVLinearPolicy,
+    dynamics: Union[StateDynamics, RecurrentDynamics],
+    reward_fn: RewardFunction,
+    qvalue: QValueFn,
+    recurrent: bool = False,
 ) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
     """Value gradient estimator based on the DPG theorem.
 
@@ -263,12 +302,14 @@ def maac_estimator(
         reward_fn: differentiable function of states and actions to rewards
         qvalue: differentiable function of states and actions to expected
             returns
+        recurrent: whether the dynamics model is recurrent
 
     Returns:
         A callable mapping a batch of states to the estimated surrogate
         objective
     """
-    surrogate = maac_surrogate(policy, dynamics, reward_fn, qvalue)
+    surrogate_fn = maac_recurrent if recurrent else maac_markovian
+    surrogate = surrogate_fn(dynamics, policy, reward_fn, qvalue)
     return nstep_estimator(policy, surrogate)
 
 

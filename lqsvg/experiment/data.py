@@ -1,10 +1,9 @@
 """Utilities for data collection in LQG envs."""
 from __future__ import annotations
 
-from typing import Callable, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import torch
-from nnrl.types import TensorDict
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
 from torch.utils.data import Dataset, random_split
@@ -41,26 +40,13 @@ def split_dataset(
     return train_data, val_data, test_data
 
 
-def markovian_state_sampler(
-    params_fn: Callable[[Tensor, Tensor], TensorDict],
-    sampler_fn: Callable[[TensorDict], Tuple[Tensor, Tensor]],
-) -> StateDynamics:
-    """Combine state-action conditional params and conditional state dist."""
-
-    def sampler(obs: Tensor, act: Tensor) -> Tuple[Tensor, Tensor]:
-        params = params_fn(obs, act)
-        return sampler_fn(params)
-
-    return sampler
-
-
 def trajectory_sampler(
     policy: DeterministicPolicy,
     init_fn: InitStateFn,
     dynamics: StateDynamics,
     reward_fn: RewardFunction,
 ) -> TrajectorySampler:
-    """Reparameterized trajectory sampler."""
+    """Full trajectory sampler."""
 
     def sample_trajectory(
         horizon: int,

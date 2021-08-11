@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Tuple
+
 import numpy as np
 import pytest
 import torch
@@ -7,16 +9,39 @@ from numpy.random import Generator
 from torch import Tensor
 
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
-from lqsvg.testing.fixture import standard_fixture
+from lqsvg.testing.fixture import std_id
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import default_generator_seed
 
-n_state = standard_fixture((2, 3), "NState")
-n_ctrl = standard_fixture((2, 3), "NCtrl")
-horizon = standard_fixture((1, 3, 10), "Horizon")
-stationary = standard_fixture((True, False), "Stationary")
-seed = standard_fixture((1, 2), "Seed")
-batch_shape = standard_fixture([(), (1,), (4,)], "BatchShape")
+
+@pytest.fixture(params=(2, 3), ids=std_id("NState"))
+def n_state(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=(2, 3), ids=std_id("NCtrl"))
+def n_ctrl(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=(1, 3, 10), ids=std_id("Horizon"))
+def horizon(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=(True, False), ids=std_id("Stationary"))
+def stationary(request) -> bool:
+    return request.param
+
+
+@pytest.fixture(params=(1, 2), ids=std_id("Seed"))
+def seed(request) -> int:
+    return request.param
+
+
+@pytest.fixture(params=[(), (1,), (4,)], ids=std_id("BatchShape"))
+def batch_shape(request) -> Tuple[int, ...]:
+    return request.param
 
 
 @pytest.fixture

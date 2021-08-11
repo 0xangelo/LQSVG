@@ -1,5 +1,6 @@
 """Utilities for RLlib sample batches, warnings, and linear feedback policies."""
 import datetime
+import functools
 import logging
 import warnings
 from contextlib import contextmanager
@@ -81,18 +82,27 @@ def linear_feedback_distance(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tens
     # pylint:disable=invalid-name
     Ka, ka = linear_a
     Kb, kb = linear_b
-    return linear_feedback_norm((Ka - Kb, ka - kb))
+    return linear_feedback_norm(lqr.Linear(Ka - Kb, ka - kb))
 
 
 @contextmanager
-def suppress_dataloader_warning():
-    """Ignore PyTorch Lightning warnings regarding num of dataloader workers."""
+def suppress_dataloader_warnings(num_workers: bool = True, shuffle: bool = False):
+    """Ignore PyTorch Lightning warnings regarding dataloaders.
+
+    Args:
+        num_workers: include number-of-workers warnings
+        shuffle: include val/test dataloader shuffling warnings
+    """
+    suppress = functools.partial(
+        warnings.filterwarnings,
+        "ignore",
+        module="pytorch_lightning.trainer.data_loading",
+    )
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=".*Consider increasing the value of the `num_workers`.*",
-            module="pytorch_lightning.trainer.data_loading",
-        )
+        if num_workers:
+            suppress(message=".*Consider increasing the value of the `num_workers`.*")
+        if shuffle:
+            suppress(message="Your .+_dataloader has `shuffle=True`")
         yield
 
 

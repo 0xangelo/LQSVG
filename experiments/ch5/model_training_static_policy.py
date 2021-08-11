@@ -1,13 +1,15 @@
 # pylint:disable=missing-docstring
+import functools
 import logging
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple, Union
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 import click
 import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
+from pytorch_lightning.utilities import AttributeDict
 from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
 from torch import Tensor, nn
@@ -19,13 +21,15 @@ import lqsvg.torch.named as nt
 import wandb
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.envs.lqr.modules import LQGModule
+from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.experiment import utils
 from lqsvg.experiment.analysis import gradient_accuracy
-from lqsvg.experiment.data import markovian_state_sampler, trajectory_sampler
+from lqsvg.experiment.data import trajectory_sampler
+from lqsvg.experiment.dynamics import markovian_state_sampler, recurrent_state_sampler
 from lqsvg.experiment.estimators import analytic_svg, maac_estimator
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.dynamics.segment import (
+    GRUGaussDynamics,
     LinearDiagDynamicsModel,
     MLPDynamicsModel,
     log_prob_fn,
@@ -36,55 +40,85 @@ from lqsvg.torch.nn.value import QuadQValue
 Batch = Tuple[Tensor, Tensor, Tensor]
 ValBatch = Union[Batch, Sequence[Tensor]]
 
+Estimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
+
+
+@functools.singledispatch
+def make_estimator(
+    model: nn.Module, policy: TVLinearPolicy, reward: QuadraticReward, qval: QuadQValue
+) -> Estimator:
+    return maac_estimator(
+        policy, markovian_state_sampler(model, model.rsample), reward, qval
+    )
+
+
+@make_estimator.register
+def _(
+    model: GRUGaussDynamics,
+    policy: TVLinearPolicy,
+    reward: QuadraticReward,
+    qval: QuadQValue,
+) -> Estimator:
+    return maac_estimator(
+        policy,
+        recurrent_state_sampler(model, model.dist.rsample),
+        reward,
+        qval,
+        recurrent=True,
+    )
+
+
+def make_model(
+    n_state: int, n_ctrl: int, horizon: int, hparams: AttributeDict
+) -> nn.Module:
+    if hparams.model["type"] == "linear":
+        return LinearDiagDynamicsModel(n_state, n_ctrl, horizon, stationary=True)
+    if hparams.model["type"] == "gru":
+        return GRUGaussDynamics(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
+    return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
+
+
+@torch.enable_grad()
+def _compute_grad_acc_on_batch(
+    estimator: Estimator, obs: Tensor, pred_horizon: int, target: lqr.Linear
+) -> Tensor:
+    _, svg = estimator(obs, pred_horizon)
+    return torch.as_tensor(gradient_accuracy([svg], target))
+
+
+def _refine_batch(batch: Batch) -> Batch:
+    # noinspection PyTypeChecker
+    return tuple(x.refine_names("B", "H", "R") for x in batch)
+
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     model: nn.Module
-    lqg: LQGModule
-    policy: TVLinearPolicy
-    qval: QuadQValue
-    gold_standard: Tuple[Tensor, lqr.Linear]
+    seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
+    estimator: Estimator
+    true_svg: lqr.Linear
 
     def __init__(
         self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
     ):
         super().__init__()
-        self.lqg = lqg
-        self.policy = policy
         self.hparams.update(hparams)
 
         # NN modules
-        self.qval = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
-        self.qval.match_policy_(
+        self.model = make_model(lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams)
+        self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
+
+        # Gradients
+        qval = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
+        qval.match_policy_(
             policy.standard_form(),
             lqg.trans.standard_form(),
             lqg.reward.standard_form(),
         )
-        self.qval.requires_grad_(False)
-        self.model = self.make_model()
-        self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
-
-        # Gradients
-        self.estimator = maac_estimator(
-            self.policy,
-            markovian_state_sampler(self.model, self.model.rsample),
-            self.lqg.reward,
-            self.qval,
-        )
-        dynamics, cost, init = self.lqg.standard_form()
-        self.gold_standard = analytic_svg(self.policy, init, dynamics, cost)
-
-    def make_model(self) -> nn.Module:
-        if self.hparams.model["type"] == "linear":
-            return LinearDiagDynamicsModel(
-                self.lqg.n_state, self.lqg.n_ctrl, self.lqg.horizon, stationary=True
-            )
-        return MLPDynamicsModel(
-            self.lqg.n_state,
-            self.lqg.n_ctrl,
-            self.lqg.horizon,
-            **self.hparams.model["kwargs"]
-        )
+        qval.requires_grad_(False)
+        self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
+        dynamics, cost, init = lqg.standard_form()
+        _, self.true_svg = analytic_svg(policy, init, dynamics, cost)
 
     # noinspection PyArgumentList
     def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
@@ -95,11 +129,6 @@ class LightningModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
-    # noinspection PyTypeChecker
-    @staticmethod
-    def _refine_batch(batch: Batch) -> Batch:
-        return tuple(x.refine_names("B", "H", "R") for x in batch)
-
     def _compute_loss_on_batch(self, batch: Batch) -> Tensor:
         obs, act, new_obs = batch
         return -self(obs, act, new_obs).mean()
@@ -107,7 +136,7 @@ class LightningModel(pl.LightningModule):
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
-        batch = self._refine_batch(batch)
+        batch = _refine_batch(batch)
         loss = self._compute_loss_on_batch(batch)
         self.log("train/loss", loss)
         return loss
@@ -127,18 +156,15 @@ class LightningModel(pl.LightningModule):
     ):
         if dataloader_idx == 0:
             # Compute log-prob of traj segments
-            loss = self._compute_loss_on_batch(self._refine_batch(batch))
+            loss = self._compute_loss_on_batch(_refine_batch(batch))
             self.log(stage + "/loss", loss)
         else:
             # Compute gradient acc using uniformly sampled states
-            grad_acc = self._compute_grad_acc_on_batch(batch[0].refine_names("B", "R"))
+            obs = batch[0].refine_names("B", "R")
+            grad_acc = _compute_grad_acc_on_batch(
+                self.estimator, obs, self.hparams.pred_horizon, self.true_svg
+            )
             self.log(stage + "/grad_acc", grad_acc)
-
-    @torch.enable_grad()
-    def _compute_grad_acc_on_batch(self, batch: Tensor) -> Tensor:
-        obs = batch
-        _, svg = self.estimator(obs, self.hparams.pred_horizon)
-        return torch.as_tensor(gradient_accuracy([svg], self.gold_standard[1]))
 
 
 class TrajectorySegmentDataset(Dataset):
@@ -268,7 +294,6 @@ class DataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
 
-# noinspection PyAbstractClass
 class Experiment(tune.Trainable):
     # pylint:disable=abstract-method,too-many-instance-attributes
     run: wandb.sdk.wandb_run.Run
@@ -281,14 +306,6 @@ class Experiment(tune.Trainable):
     trainer: pl.Trainer
 
     def setup(self, config: dict):
-        self._init_wandb(config)
-        seed_everything(self.hparams.seed)
-        self.rng = np.random.default_rng(self.hparams.seed)
-        self.make_generator()
-        self.make_modules()
-        self.make_trainer()
-
-    def _init_wandb(self, config: dict):
         self.run = wandb.init(
             name="LinearML",
             config=config,
@@ -298,12 +315,8 @@ class Experiment(tune.Trainable):
             reinit=True,
             mode="online",
         )
-
-    @property
-    def hparams(self) -> wandb_config.Config:
-        return self.run.config
-
-    def make_generator(self):
+        seed_everything(self.hparams.seed)
+        self.rng = np.random.default_rng(self.hparams.seed)
         self.generator = LQGGenerator(
             n_state=self.hparams.n_state,
             n_ctrl=self.hparams.n_ctrl,
@@ -313,6 +326,12 @@ class Experiment(tune.Trainable):
             controllable=True,
             rng=self.rng,
         )
+        self.make_modules()
+        self.make_trainer()
+
+    @property
+    def hparams(self) -> wandb_config.Config:
+        return self.run.config
 
     def make_modules(self):
         with nt.suppress_named_tensor_warning():
@@ -343,7 +362,7 @@ class Experiment(tune.Trainable):
         with self.run:
             self.log_env_info()
             self.build_dataset()
-            with utils.suppress_dataloader_warning():
+            with utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
                 self.trainer.fit(self.model, datamodule=self.datamodule)
                 final_eval = self.trainer.test(self.model, datamodule=self.datamodule)
 
@@ -408,17 +427,14 @@ def run_simple():
         "pred_horizon": 8,
         "trajectories": 5000,
         "model": {
-            "type": "mlp",
-            "kwargs": {
-                "hunits": (10,),
-                "activation": "ReLU",
-            },
+            "type": "gru",
+            "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10, 10)},
         },
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
             "val_grad_batch_size": 200,
-            "segment_len": 1,
+            "segment_len": 8,
         },
         "trainer": dict(
             max_epochs=100,

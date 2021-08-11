@@ -25,8 +25,9 @@ def suppress_named_tensor_warning():
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            message=".*Named tensors .+are an experimental feature.*",
-            module="torch.tensor",
+            message="Named tensors .+are an experimental feature",
+            category=UserWarning,
+            module="torch._tensor",
         )
         yield
 

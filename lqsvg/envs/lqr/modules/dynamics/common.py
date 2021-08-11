@@ -1,5 +1,5 @@
 """Shared implementations between init state and transition dynamics."""
-from typing import List, Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import nnrl.nn.distributions as ptd
 import torch
@@ -33,13 +33,17 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
         super().__init__()
         self.horizon = horizon
 
-    def sample(self, params: DistParams, sample_shape: List[int] = ()) -> SampleLogp:
+    def sample(
+        self, params: DistParams, sample_shape: Sequence[int] = ()
+    ) -> SampleLogp:
         loc, scale_tril, time = _unpack_params(params, sample_shape)
         sample = self._gen_sample(loc, scale_tril, time).detach()
         logp = self._logp(loc, scale_tril, time, sample)
         return sample, logp
 
-    def rsample(self, params: DistParams, sample_shape: List[int] = ()) -> SampleLogp:
+    def rsample(
+        self, params: DistParams, sample_shape: Sequence[int] = ()
+    ) -> SampleLogp:
         loc, scale_tril, time = _unpack_params(params, sample_shape)
         sample = self._gen_sample(loc, scale_tril, time)
         logp = self._logp(loc, scale_tril, time, sample)
@@ -127,14 +131,14 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
 
 
 def _unpack_params(
-    params: DistParams, sample_shape: List[int] = ()
+    params: DistParams, sample_shape: Sequence[int] = ()
 ) -> Tuple[Tensor, Tensor, IntTensor]:
     loc = params["loc"]
     scale_tril = params["scale_tril"]
     time = params["time"]
     sample_names = tuple(f"B{i+1}" for i, _ in enumerate(sample_shape))
     loc, scale_tril, time = (
-        x.expand(sample_shape + x.shape).refine_names(*sample_names, ...)
+        x.expand(torch.Size(sample_shape) + x.shape).refine_names(*sample_names, ...)
         for x in (loc, scale_tril, time)
     )
     return loc, scale_tril, time
