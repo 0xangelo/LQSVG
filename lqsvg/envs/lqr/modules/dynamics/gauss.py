@@ -1,8 +1,6 @@
 """Gaussian initial state dynamics as a PyTorch module."""
 from __future__ import annotations
 
-from typing import Sequence
-
 import nnrl.nn.distributions as ptd
 import torch
 from nnrl.nn.distributions.types import DistParams, SampleLogp
@@ -11,10 +9,8 @@ from torch import IntTensor, Tensor, nn
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.torch.nn.cholesky import CholeskyFactor
-
-from .common import TVMultivariateNormal
-
-SampleShape = Sequence[int]
+from lqsvg.torch.nn.distributions import TVMultivariateNormal
+from lqsvg.torch.types import SampleShape
 
 
 class InitStateModule(ptd.Distribution):

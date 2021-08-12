@@ -13,8 +13,7 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 from lqsvg.torch.nn.cholesky import CholeskyFactor
-
-from .common import TVMultivariateNormal
+from lqsvg.torch.nn.distributions import TVMultivariateNormal
 
 
 class LinearNormalMixin(abc.ABC):

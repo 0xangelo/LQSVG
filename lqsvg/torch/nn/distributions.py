@@ -96,27 +96,27 @@ def _transition(loc: Tensor, scale_tril: Tensor, time: IntTensor) -> Tensor:
 def _logp(
     loc: Tensor,
     scale_tril: Tensor,
-    time: Tensor,
+    cur_time: Tensor,
     value: Tensor,
     horizon: Optional[int] = None,
 ) -> Tensor:
     # Align input tensors
-    state, time_ = unpack_obs(value)
+    state, time = unpack_obs(value)
     loc, state = torch.broadcast_tensors(loc, state)
-    time, time_ = torch.broadcast_tensors(time, time_)
+    cur_time, time = torch.broadcast_tensors(cur_time, time)
 
     # Consider normal state transition
-    time, time_ = nt.vector_to_scalar(time, time_)
-    trans_logp = _trans_logp(loc, scale_tril, time, state, time_)
+    cur_time, time = nt.vector_to_scalar(cur_time, time)
+    trans_logp = _trans_logp(loc, scale_tril, cur_time, state, time)
     if not horizon:
         return trans_logp
 
     # If horizon is set, treat absorving state transitions
-    absorving_logp = _absorving_logp(loc, time, state, time_)
+    absorving_logp = _absorving_logp(loc, cur_time, state, time)
 
     # Filter results
     # We're in an absorving state if the current timestep is the horizon
-    return nt.where(time.eq(horizon), absorving_logp, trans_logp)
+    return nt.where(cur_time.eq(horizon), absorving_logp, trans_logp)
 
 
 def _absorving_logp(
