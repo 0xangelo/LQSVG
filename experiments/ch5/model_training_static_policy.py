@@ -264,7 +264,7 @@ def run_with_tune():
     ]
     config = {
         "learning_rate": 5e-4,
-        "seed": tune.grid_search(list(range(37, 42))),
+        "seed": tune.grid_search(list(range(47, 57))),
         "n_state": 4,
         "n_ctrl": 4,
         "horizon": 50,

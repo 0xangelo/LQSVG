@@ -1,6 +1,6 @@
 import pytest
 
-from lqsvg.envs.lqr.modules import InitStateDynamics
+from lqsvg.envs.lqr.modules import InitStateModule
 from lqsvg.torch.nn.initstate import InitStateModel
 
 
@@ -11,4 +11,4 @@ def module(n_state: int, seed: int) -> InitStateModel:
 
 def test_init(module: InitStateModel, n_state: int):
     assert module.n_state == n_state
-    assert isinstance(module, InitStateDynamics)
+    assert isinstance(module, InitStateModule)

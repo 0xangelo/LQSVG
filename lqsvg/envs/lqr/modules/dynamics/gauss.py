@@ -17,7 +17,7 @@ from .common import TVMultivariateNormal
 SampleShape = Sequence[int]
 
 
-class InitStateDynamics(ptd.Distribution):
+class InitStateModule(ptd.Distribution):
     """Initial state distribution as a multivariate Normal.
 
     All outputs are named Tensors.
@@ -54,11 +54,11 @@ class InitStateDynamics(ptd.Distribution):
     @classmethod
     def from_existing(cls, init: lqr.GaussInit):
         """Create init state dynamics from existing Gaussian distribution."""
-        loc, _ = init
-        n_state = loc.size("R")
+        # noinspection PyArgumentList
+        n_state = init.mu.size("R")
         return cls(n_state).copy_(init)
 
-    def copy_(self, init: lqr.GaussInit) -> InitStateDynamics:
+    def copy_(self, init: lqr.GaussInit) -> InitStateModule:
         """Update parameters to existing Gaussian initial state distribution.
 
         Args:
@@ -69,9 +69,8 @@ class InitStateDynamics(ptd.Distribution):
         Returns:
             self
         """
-        loc, sigma = init
-        self.loc.data.copy_(loc)
-        self.scale_tril.factorize_(sigma)
+        self.loc.data.copy_(init.mu)
+        self.scale_tril.factorize_(init.sig)
         return self
 
     def forward(self) -> DistParams:
@@ -80,17 +79,13 @@ class InitStateDynamics(ptd.Distribution):
         return {"loc": loc, "scale_tril": self.scale_tril(), "time": self.time}
 
     def sample(self, sample_shape: SampleShape = ()) -> SampleLogp:
-        params = self()
-        return self.dist.sample(params, sample_shape)
+        return self.dist.sample(self(), sample_shape)
 
     def rsample(self, sample_shape: SampleShape = ()) -> SampleLogp:
-        params = self()
-        return self.dist.rsample(params, sample_shape)
+        return self.dist.rsample(self(), sample_shape)
 
     def log_prob(self, value: Tensor) -> Tensor:
-        value = nt.vector(value)
-        params = self()
-        return self.dist.log_prob(value, params)
+        return self.dist.log_prob(nt.vector(value), self())
 
     def standard_form(self) -> lqr.GaussInit:
         # pylint:disable=missing-function-docstring

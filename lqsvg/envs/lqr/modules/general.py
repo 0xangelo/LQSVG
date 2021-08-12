@@ -8,7 +8,7 @@ from torch import Tensor, nn
 from lqsvg.envs import lqr
 
 from . import LinearDynamicsModule
-from .dynamics import InitStateDynamics, LinearDynamics
+from .dynamics import InitStateModule, LinearDynamics
 from .reward import QuadraticReward
 
 
@@ -24,7 +24,7 @@ class EnvModule(nn.Module):
         dims: tuple[int, int, int],
         trans: StochasticModel,
         reward: QuadraticReward,
-        init: InitStateDynamics,
+        init: InitStateModule,
     ):
         super().__init__()
         self.n_state, self.n_ctrl, self.horizon = dims
@@ -59,7 +59,7 @@ class LQGModule(EnvModule):
         dims: tuple[int, int, int],
         trans: LinearDynamics,
         reward: QuadraticReward,
-        init: InitStateDynamics,
+        init: InitStateModule,
     ):
         super().__init__(dims, trans, reward, init)
 
@@ -71,7 +71,7 @@ class LQGModule(EnvModule):
         dims = lqr.dims_from_dynamics(dynamics)
         trans = LinearDynamicsModule.from_existing(dynamics, stationary=False)
         reward = QuadraticReward.from_existing(cost)
-        init = InitStateDynamics.from_existing(init)
+        init = InitStateModule.from_existing(init)
         return cls(dims, trans, reward, init)
 
     def standard_form(self) -> tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:

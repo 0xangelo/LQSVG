@@ -9,7 +9,7 @@ from torch import Tensor, nn
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr import pack_obs, unpack_obs
-from lqsvg.envs.lqr.modules.dynamics.gauss import InitStateDynamics
+from lqsvg.envs.lqr.modules.dynamics.gauss import InitStateModule
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.nn.cholesky import CholeskyFactor
 
@@ -17,12 +17,12 @@ dim = standard_fixture((2, 4, 8), "Dim")
 
 
 @pytest.fixture
-def module_cls() -> Type[InitStateDynamics]:
-    return InitStateDynamics
+def module_cls() -> Type[InitStateModule]:
+    return InitStateModule
 
 
 @pytest.fixture
-def module(module_cls: Type[InitStateDynamics], dim: int) -> InitStateDynamics:
+def module(module_cls: Type[InitStateModule], dim: int) -> InitStateModule:
     return module_cls(dim)
 
 
@@ -45,7 +45,7 @@ def init(dim: int) -> lqr.GaussInit:
 
 
 class TestInitStateDynamics:
-    def test_init(self, module_cls: Type[InitStateDynamics], dim: int):
+    def test_init(self, module_cls: Type[InitStateModule], dim: int):
         module = module_cls(dim)
         params = list(module.parameters())
 
@@ -56,7 +56,7 @@ class TestInitStateDynamics:
         assert isinstance(module.scale_tril, CholeskyFactor)
 
     @pytest.mark.parametrize("sample_shape", [(), (1,), (2,), (2, 2)])
-    def test_rsample(self, module: InitStateDynamics, sample_shape: tuple[int, ...]):
+    def test_rsample(self, module: InitStateModule, sample_shape: tuple[int, ...]):
         obs, _ = module.rsample(sample_shape)
 
         assert obs.shape == sample_shape + (module.n_state + 1,)
@@ -68,7 +68,7 @@ class TestInitStateDynamics:
         assert all(list(p.grad is not None for p in params))
         assert not any(list(torch.allclose(p.grad, torch.zeros([])) for p in params))
 
-    def test_log_prob(self, module: InitStateDynamics, obs: Tensor):
+    def test_log_prob(self, module: InitStateModule, obs: Tensor):
         log_prob = module.log_prob(obs)
 
         assert log_prob.shape == obs.shape[:-1]
@@ -84,7 +84,7 @@ class TestInitStateDynamics:
         assert all(list(g is not None for g in grads))
         assert all(list(not torch.allclose(g, torch.zeros_like(g)) for g in grads))
 
-    def test_standard_form(self, module: InitStateDynamics):
+    def test_standard_form(self, module: InitStateModule):
         mu, sigma = module.standard_form()
         (mu.sum() + sigma.sum()).backward()
 
@@ -96,5 +96,5 @@ class TestInitStateDynamics:
         assert not torch.allclose(scale_tril.pre_diag.grad, torch.zeros([]))
 
     def test_from_existing(self, init: lqr.GaussInit):
-        module = InitStateDynamics.from_existing(init)
+        module = InitStateModule.from_existing(init)
         assert all(nt.allclose(a, b) for a, b in zip(init, module.standard_form()))

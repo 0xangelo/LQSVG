@@ -14,7 +14,7 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 
 from .generators import LQGGenerator
-from .modules import InitStateDynamics, LQGModule, QuadraticReward
+from .modules import InitStateModule, LQGModule, QuadraticReward
 from .modules.dynamics.linear import LinearDynamicsModule
 from .solvers import NamedLQGControl
 from .types import GaussInit, Linear, LinSDynamics, QuadCost, Quadratic
@@ -45,7 +45,7 @@ class TorchLQGMixin:
             dims=dims_from_dynamics(dynamics),
             trans=LinearDynamicsModule.from_existing(dynamics, stationary=False),
             reward=QuadraticReward.from_existing(cost),
-            init=InitStateDynamics.from_existing(init),
+            init=InitStateModule.from_existing(init),
         )
         # Ensure optimizers don't update the MDP
         self.module.requires_grad_(False)
@@ -159,7 +159,7 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
         return self._get_obs(self.curr_states)
 
     @torch.no_grad()
-    def reset_at(self, index: int) -> EnvObsType:
+    def reset_at(self, index: Optional[int] = None) -> EnvObsType:
         init_state, _ = self.module.init.sample()
         self._curr_states[index] = nt.unnamed(init_state)
         return init_state.numpy().astype(self.observation_space.dtype)

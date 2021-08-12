@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Optional
 
 from lqsvg.envs.lqr import make_gaussinit
-from lqsvg.envs.lqr.modules import InitStateDynamics
+from lqsvg.envs.lqr.modules import InitStateModule
 
 __all__ = ["InitStateModel"]
 
 
-class InitStateModel(InitStateDynamics):
+class InitStateModel(InitStateModule):
     """Gaussian initial state distribution model."""
 
     def __init__(self, n_state: int, seed: Optional[int] = None):
