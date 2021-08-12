@@ -37,12 +37,9 @@ class LinearNormalMixin(abc.ABC):
 
         # Compute the loc for normal transitions
         tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
-        trans_loc = nt.matrix_to_vector(F @ tau + nt.vector_to_matrix(f))
+        loc = nt.matrix_to_vector(F @ tau + nt.vector_to_matrix(f))
 
-        # Treat absorving states if necessary
-        terminal = time.eq(self.horizon)
-        loc = nt.where(terminal, state, trans_loc)
-        return {"loc": loc, "scale_tril": scale_tril, "time": time}
+        return {"loc": loc, "scale_tril": scale_tril, "time": time, "state": state}
 
     def _transition_factors(
         self, index: Optional[IntTensor] = None

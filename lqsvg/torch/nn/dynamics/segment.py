@@ -161,10 +161,12 @@ class MLPDynamicsModel(StochasticModel):
         # Convert scale vector to scale tril
         scale_tril = torch.diag_embed(mlp_params["scale"])
 
-        # Treat absorving states if necessary
-        terminal = time.eq(self.horizon)
-        loc = nt.where(terminal, state, mlp_params["loc"])
-        return {"loc": loc, "scale_tril": scale_tril, "time": time}
+        return {
+            "loc": mlp_params["loc"],
+            "scale_tril": scale_tril,
+            "time": time,
+            "state": state,
+        }
 
 
 class DiagScale(nn.Module):
@@ -312,13 +314,11 @@ class GRUGaussDynamics(nn.Module):
         loc = state + self.loc_head(residual)
         scale_tril = self.scale_tril_head(residual)
 
-        # Treat absorving states if necessary
-        terminal = time.eq(self.horizon)
-        loc = nt.where(terminal, state, loc)
         return {
             "loc": loc,
             "scale_tril": scale_tril,
             "time": time,
+            "state": state,
             "context": new_context,
         }
 

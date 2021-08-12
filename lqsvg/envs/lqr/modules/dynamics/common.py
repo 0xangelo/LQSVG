@@ -13,19 +13,21 @@ from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 class TVMultivariateNormal(ptd.ConditionalDistribution):
     """Time-varying multivariate Gaussian distribution.
 
-    This methods here expect named tensors as inputs and returns named tensors.
+    The methods here expect named tensors as inputs and returns named tensors.
 
-    Note:
-        The `time` tensor in the distribution parameters refers to the
-        timestep preceding the next sample. Therefore, if `time = X`, the
-        timestep component of the next sample will be `time + 1`.
+    The `time` tensor in the distribution parameters refers to the timestep
+    preceding the next sample. Therefore, for a given `time`, the timestep
+    component of the next sample will be `time + 1`.
 
-        For this reason, `time` is allowed to take values of -1, so we
-        can generate the first sample in a sample path, which starts with
-        a timestep of 0.
+    For this reason, `time` is allowed to take values of -1, so we can generate
+    the first sample in a sample path, which starts with a timestep of 0.
+
+    If `horizon` is set and the distribution parameters have `time == horizon`,
+    then this modules simulates an absorving state distribution: a dirac delta
+    at the current state.
     """
 
-    # pylint:disable=no-self-use,abstract-method
+    # pylint:disable=abstract-method
     horizon: Optional[int]
 
     def __init__(self, horizon: Optional[int] = None):
@@ -35,7 +37,7 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
     def sample(
         self, params: DistParams, sample_shape: Sequence[int] = ()
     ) -> SampleLogp:
-        loc, scale_tril, time = _unpack_params(params, sample_shape)
+        loc, scale_tril, time = _unpack_params(params, sample_shape, self.horizon)
         sample = _gen_sample(loc, scale_tril, time, self.horizon).detach()
         logp = _logp(loc, scale_tril, time, sample, self.horizon)
         return sample, logp
@@ -43,23 +45,27 @@ class TVMultivariateNormal(ptd.ConditionalDistribution):
     def rsample(
         self, params: DistParams, sample_shape: Sequence[int] = ()
     ) -> SampleLogp:
-        loc, scale_tril, time = _unpack_params(params, sample_shape)
+        loc, scale_tril, time = _unpack_params(params, sample_shape, self.horizon)
         sample = _gen_sample(loc, scale_tril, time, self.horizon)
         logp = _logp(loc, scale_tril, time, sample, self.horizon)
         return sample, logp
 
     def log_prob(self, value: Tensor, params: DistParams) -> Tensor:
-        loc, scale_tril, time = _unpack_params(params)
+        loc, scale_tril, time = _unpack_params(params, horizon=self.horizon)
         logp = _logp(loc, scale_tril, time, value, self.horizon)
         return logp
 
 
 def _unpack_params(
-    params: DistParams, sample_shape: Sequence[int] = ()
+    params: DistParams, sample_shape: Sequence[int] = (), horizon: Optional[int] = None
 ) -> Tuple[Tensor, Tensor, IntTensor]:
-    loc = params["loc"]
-    scale_tril = params["scale_tril"]
     time = params["time"]
+    if horizon is None:
+        loc = params["loc"]
+    else:
+        loc = nt.where(time.eq(horizon), params["state"], params["loc"])
+    scale_tril = params["scale_tril"]
+
     sample_names = tuple(f"B{i+1}" for i, _ in enumerate(sample_shape))
     loc, scale_tril, time = (
         x.expand(torch.Size(sample_shape) + x.shape).refine_names(*sample_names, ...)
