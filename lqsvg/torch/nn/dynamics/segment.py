@@ -19,7 +19,7 @@ from torch.nn.functional import softplus
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import spaces_from_dims, unpack_obs
 from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalMixin
+from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalParamsMixin
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
 
 __all__ = [
@@ -35,7 +35,7 @@ class LinearTransitionModel(LinearDynamicsModule):
     """Linear Gaussian transition model."""
 
 
-class LinearDiagNormalParams(LinearNormalMixin, nn.Module):
+class LinearDiagNormalParams(LinearNormalParamsMixin, nn.Module):
     """Linear state-action conditional diagonal Gaussian parameters."""
 
     n_state: int

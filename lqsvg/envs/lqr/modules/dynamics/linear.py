@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import abc
-from typing import Optional
+from typing import Tuple
 
 import torch
 from nnrl.nn.model import StochasticModel
@@ -16,7 +16,21 @@ from lqsvg.torch.nn.cholesky import CholeskyFactor
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
 
 
-class LinearNormalMixin(abc.ABC):
+def index_by_horizon(
+    *tensors: Tensor, index: IntTensor, horizon: int, stationary: bool
+) -> Tuple[Tensor, ...]:
+    """Like index_by but handling horizon limits and stationarity."""
+    tensors = nt.horizon(*tensors)
+    if stationary:
+        idx = torch.zeros_like(index)
+    else:
+        # Timesteps after termination use last parameters
+        idx = torch.clamp(index, max=horizon - 1).int()
+    tensors = tuple(nt.index_by(t, dim="H", index=idx) for t in tensors)
+    return tensors[0] if len(tensors) == 1 else tensors
+
+
+class LinearNormalParamsMixin(abc.ABC):
     """Common interface for linear Gaussian parameter modules."""
 
     # pylint:disable=invalid-name
@@ -31,27 +45,22 @@ class LinearNormalMixin(abc.ABC):
         state, time = unpack_obs(obs)
 
         # Get parameters for each timestep
+        F, f, scale_tril = nt.matrix(self.F), nt.vector(self.f), self.scale_tril()
         index = nt.vector_to_scalar(time)
-        F, f, scale_tril = self._transition_factors(index)
+        F, f, scale_tril = index_by_horizon(
+            F,
+            f,
+            scale_tril,
+            index=index,
+            horizon=self.horizon,
+            stationary=self.stationary,
+        )
 
         # Compute the loc for normal transitions
         tau = nt.vector_to_matrix(torch.cat([state, action], dim="R"))
         loc = nt.matrix_to_vector(F @ tau + nt.vector_to_matrix(f))
 
         return {"loc": loc, "scale_tril": scale_tril, "time": time, "state": state}
-
-    def _transition_factors(
-        self, index: Optional[IntTensor] = None
-    ) -> (Tensor, Tensor, Tensor):
-        F, f, L = nt.horizon(nt.matrix(self.F), nt.vector(self.f), self.scale_tril())
-        if index is not None:
-            if self.stationary:
-                idx = torch.zeros_like(index)
-            else:
-                # Timesteps after termination use last parameters
-                idx = torch.clamp(index, max=self.horizon - 1).int()
-            F, f, L = (nt.index_by(x, dim="H", index=idx) for x in (F, f, L))
-        return F, f, L
 
     @abc.abstractmethod
     def scale_tril(self) -> Tensor:
@@ -62,7 +71,7 @@ class LinearNormalMixin(abc.ABC):
 
 
 # noinspection PyPep8Naming
-class LinearNormalParams(LinearNormalMixin, nn.Module):
+class LinearNormalParams(LinearNormalParamsMixin, nn.Module):
     """Linear state-action conditional Gaussian parameters."""
 
     # pylint:disable=invalid-name
@@ -107,7 +116,9 @@ class LinearNormalParams(LinearNormalMixin, nn.Module):
 
     def as_linsdynamics(self) -> lqr.LinSDynamics:
         # pylint:disable=missing-function-docstring
-        F, f, scale_tril = self._transition_factors()
+        F, f, scale_tril = nt.horizon(
+            nt.matrix(self.F), nt.vector(self.f), nt.matrix(self.scale_tril())
+        )
         Sigma = scale_tril @ nt.transpose(scale_tril)
         return lqr.LinSDynamics(F, f, Sigma)
 
