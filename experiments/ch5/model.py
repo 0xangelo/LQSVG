@@ -4,6 +4,7 @@ from typing import Callable, Sequence, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
+from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb.sdk import wandb_config
@@ -63,11 +64,15 @@ def make_model(
 
 
 @torch.enable_grad()
-def _compute_grad_acc_on_batch(
-    estimator: Estimator, obs: Tensor, pred_horizon: int, target: lqr.Linear
-) -> Tensor:
-    _, svg = estimator(obs, pred_horizon)
-    return torch.as_tensor(gradient_accuracy([svg], target))
+def val_mse_and_grad_acc(
+    estimator: Estimator, obs: Tensor, pred_horizon: int, targets: (Tensor, lqr.Linear)
+) -> Tuple[Tensor, Tensor]:
+    """Computes metrics for evaluating gradient estimators."""
+    target_val, target_grad = targets
+    val, svg = estimator(obs, pred_horizon)
+    mse = torch.square(target_val - val)
+    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_grad))
+    return mse, grad_acc
 
 
 def _refine_batch(batch: Batch) -> Batch:
@@ -80,6 +85,7 @@ class LightningModel(pl.LightningModule):
     model: nn.Module
     seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
     estimator: Estimator
+    true_val: Tensor
     true_svg: lqr.Linear
 
     def __init__(
@@ -105,57 +111,56 @@ class LightningModel(pl.LightningModule):
             qval.requires_grad_(False)
         self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
         dynamics, cost, init = lqg.standard_form()
-        _, self.true_svg = analytic_svg(policy, init, dynamics, cost)
+        self.true_val, self.true_svg = analytic_svg(policy, init, dynamics, cost)
 
     # noinspection PyArgumentList
-    def forward(self, obs: Tensor, act: Tensor, new_obs: Tensor) -> Tensor:
-        """Log-likelihood of (batched) trajectory segment."""
+    def forward(self, batch: Batch) -> Tensor:
+        """Negative log-likelihood of (batched) trajectory segment."""
         # pylint:disable=arguments-differ
-        return self.seg_log_prob(obs, act, new_obs) / obs.size("H")
+        obs, act, new_obs = batch
+        return -self.seg_log_prob(obs, act, new_obs) / obs.size("H")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
-    def _compute_loss_on_batch(self, batch: Batch) -> Tensor:
-        obs, act, new_obs = batch
-        return -self(obs, act, new_obs).mean()
+    def on_train_start(self) -> None:
+        n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        self.log("trainable_parameters", n_params)
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
-        batch = _refine_batch(batch)
-        loss = self._compute_loss_on_batch(batch)
+        loss = self(_refine_batch(batch)).mean()
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="val")
+        metrics = self._compute_eval_metrics(batch, dataloader_idx)
+        self.log_dict({"val/" + k: v for k, v in metrics.items()})
 
     def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        self._compute_and_log_loss_or_grad_acc(batch, dataloader_idx, stage="test")
+        metrics = self._compute_eval_metrics(batch, dataloader_idx)
+        self.log_dict({"test/" + k: v for k, v in metrics.items()})
 
-    def _compute_and_log_loss_or_grad_acc(
-        self, batch: ValBatch, dataloader_idx: int, *, stage: str
-    ):
+    def _compute_eval_metrics(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
+        metrics = {}
         if dataloader_idx == 0:
             # Compute log-prob of traj segments
-            loss = self._compute_loss_on_batch(_refine_batch(batch))
-            self.log(stage + "/loss", loss)
+            loss = self(_refine_batch(batch)).mean()
+            metrics["loss"] = loss
         else:
             # Compute gradient acc using uniformly sampled states
             obs = batch[0].refine_names("B", "R")
-            if isinstance(self.hparams.pred_horizon, list):
-                for steps in self.hparams.pred_horizon:
-                    grad_acc = _compute_grad_acc_on_batch(
-                        self.estimator, obs, steps, self.true_svg
-                    )
-                    self.log(stage + f"/grad_acc_{steps}", grad_acc)
-            else:
-                grad_acc = _compute_grad_acc_on_batch(
-                    self.estimator, obs, self.hparams.pred_horizon, self.true_svg
+            horizons = self.hparams.pred_horizon
+            horizons = [horizons] if isinstance(horizons, int) else horizons
+            for horizon in horizons:
+                val_mse, grad_acc = val_mse_and_grad_acc(
+                    self.estimator, obs, horizon, (self.true_val, self.true_svg)
                 )
-                self.log(stage + "/grad_acc", grad_acc)
+                metrics[f"val_mse_{horizon}"] = val_mse
+                metrics[f"grad_acc_{horizon}"] = grad_acc
+        return metrics
