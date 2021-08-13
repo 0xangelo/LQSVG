@@ -147,7 +147,7 @@ def _trans_logp(
         # Logp only defined at next timestep
         time.eq(cur_time + 1),
         trans_logp,
-        torch.full(time.shape, fill_value=float("nan")),
+        torch.full_like(trans_logp, fill_value=float("nan")),
     )
     # We assume time is a named scalar tensor
     return trans_logp.refine_names(*time.names)
