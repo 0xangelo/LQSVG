@@ -1,5 +1,6 @@
 # pylint:disable=missing-docstring
 import logging
+import os.path
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -25,6 +26,9 @@ from lqsvg.experiment.data import trajectory_sampler
 from lqsvg.experiment.dynamics import markovian_state_sampler
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.policy import TVLinearPolicy
+
+RESULTS_DIR = "./results"
+WANDB_DIR = os.path.join(os.path.abspath(__file__), ".wandb")
 
 
 class TrajectorySegmentDataset(Dataset):
@@ -175,6 +179,7 @@ class Experiment(tune.Trainable):
     def setup(self, config: dict):
         self.run = wandb.init(
             name="LinearML",
+            dir=WANDB_DIR,
             config=config,
             project="LQG-SVG",
             entity="angelovtt",
@@ -286,7 +291,7 @@ def run_with_tune():
             "weights_summary": None,
         },
     }
-    tune.run(Experiment, config=config, num_samples=1, local_dir="./results")
+    tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
     ray.shutdown()
 
 
