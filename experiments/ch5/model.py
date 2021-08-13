@@ -1,6 +1,6 @@
 # pylint:disable=missing-docstring
 import functools
-from typing import Callable, Sequence, Tuple, Union
+from typing import Callable, Dict, Sequence, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
@@ -71,7 +71,7 @@ def val_mse_and_grad_acc(
     target_val, target_grad = targets
     val, svg = estimator(obs, pred_horizon)
     mse = torch.square(target_val - val)
-    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_grad))
+    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_grad)).to(val)
     return mse, grad_acc
 
 
@@ -81,7 +81,7 @@ def _refine_batch(batch: Batch) -> Batch:
 
 
 class LightningModel(pl.LightningModule):
-    # pylint:disable=too-many-ancestors
+    # pylint:disable=too-many-ancestors,too-many-instance-attributes
     model: nn.Module
     seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
     estimator: Estimator
@@ -113,6 +113,17 @@ class LightningModel(pl.LightningModule):
         dynamics, cost, init = lqg.standard_form()
         self.true_val, self.true_svg = analytic_svg(policy, init, dynamics, cost)
 
+        # Register modules to cast them to appropriate device
+        self._lqg = lqg
+        self._policy = policy
+        self._qval = qval
+
+    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
+        # Override original: set prog_bar=False to reduce clutter
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
+        )
+
     # noinspection PyArgumentList
     def forward(self, batch: Batch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
@@ -124,6 +135,9 @@ class LightningModel(pl.LightningModule):
         return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def on_train_start(self) -> None:
+        self.true_val = self.true_val.to(self.device)
+        self.true_svg = lqr.Linear(*(k.to(self.device) for k in self.true_svg))
+
         n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         self.log("trainable_parameters", n_params)
 
@@ -149,12 +163,16 @@ class LightningModel(pl.LightningModule):
     def _compute_eval_metrics(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
         metrics = {}
         if dataloader_idx == 0:
+            self.model.eval()
             # Compute log-prob of traj segments
             loss = self(_refine_batch(batch)).mean()
             metrics["loss"] = loss
         else:
+            # Avoid:
+            # RuntimeError: cudnn RNN backward can only be called in training mode
+            self.model.train()
             # Compute gradient acc using uniformly sampled states
-            obs = batch[0].refine_names("B", "R")
+            obs = batch[0].refine_names("B", "R").to(self.device)
             horizons = self.hparams.pred_horizon
             horizons = [horizons] if isinstance(horizons, int) else horizons
             for horizon in horizons:
