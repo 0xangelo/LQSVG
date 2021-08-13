@@ -81,7 +81,7 @@ def _refine_batch(batch: Batch) -> Batch:
 
 
 class LightningModel(pl.LightningModule):
-    # pylint:disable=too-many-ancestors,too-many-instance-attributes
+    # pylint:disable=too-many-ancestors
     model: nn.Module
     seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
     estimator: Estimator
@@ -114,9 +114,7 @@ class LightningModel(pl.LightningModule):
         self.true_val, self.true_svg = analytic_svg(policy, init, dynamics, cost)
 
         # Register modules to cast them to appropriate device
-        self._lqg = lqg
-        self._policy = policy
-        self._qval = qval
+        self._extra_modules = nn.ModuleList([lqg, policy, qval])
 
     def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
         # Override original: set prog_bar=False to reduce clutter

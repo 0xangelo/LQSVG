@@ -311,8 +311,8 @@ def run_simple():
             "segment_len": 8,
         },
         "trainer": dict(
-            max_epochs=100,
-            # fast_dev_run=True,
+            max_epochs=5,
+            fast_dev_run=True,
             track_grad_norm=2,
             # overfit_batches=10,
             weights_summary="full",
@@ -320,6 +320,7 @@ def run_simple():
             # limit_val_batches=10,
             # profiler="simple",
             val_check_interval=0.5,
+            gpus=1,
         ),
     }
     experiment = Experiment(config)
