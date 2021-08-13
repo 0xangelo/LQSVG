@@ -8,14 +8,13 @@ from typing import Union
 import numpy as np
 import ray
 import torch
-import torch.nn as nn
-import wandb
 from ray import tune
 from ray.tune.suggest.hyperopt import HyperOptSearch
-from torch import Tensor
+from torch import Tensor, nn
 from torch.optim import Optimizer
 
 import lqsvg.torch.named as nt
+import wandb
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.solvers import NamedLQGControl
@@ -28,7 +27,8 @@ from lqsvg.experiment.estimators import (
 )
 from lqsvg.experiment.utils import calver
 from lqsvg.np_util import RNG
-from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
+from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch.nn.value import QuadQValue
 
 
 # noinspection PyAbstractClass

@@ -7,12 +7,13 @@ from typing import Union
 import numpy as np
 import ray
 import torch
-import wandb
 from ray import tune
 from torch import Tensor
 from torch.optim import Optimizer
 
 import lqsvg.torch.named as nt
+import wandb
+from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.solvers import NamedLQGControl
@@ -25,7 +26,8 @@ from lqsvg.experiment.estimators import (
 )
 from lqsvg.experiment.utils import calver, linear_feedback_norm
 from lqsvg.np_util import RNG
-from lqsvg.policy.modules import QuadQValue, TVLinearPolicy
+from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch.nn.value import QuadQValue
 
 
 # noinspection PyAbstractClass
@@ -142,7 +144,7 @@ class Experiment(tune.Trainable):
 
     def postprocess_svg(self):
         if self.run.config.normalize_svg:
-            svg = tuple(g.grad for g in self.policy.standard_form())
+            svg = lqr.Linear(*(g.grad for g in self.policy.standard_form()))
             svg_norm = linear_feedback_norm(svg)
             for par in self.policy.parameters():
                 par.grad.data.div_(svg_norm)
