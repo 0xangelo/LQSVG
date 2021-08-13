@@ -117,6 +117,7 @@ node_modules/
 
 # W&B
 wandb/
+.wandb/
 artifacts/
 checkpoints/
 
