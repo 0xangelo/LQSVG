@@ -4,14 +4,27 @@ import functools
 import logging
 import warnings
 from contextlib import contextmanager
+from typing import Iterable
 
 import numpy as np
+import pandas as pd
 import torch
+import wandb
 from ray.rllib import SampleBatch
 from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+
+
+def tagged_experiments_dataframe(tags: Iterable[str]) -> pd.DataFrame:
+    """Retrieve data from experiments with given tags as a dataframe."""
+    api = wandb.Api()
+    runs = api.runs(
+        "angelovtt/LQG-SVG", filters={"$and": [{"tags": tag} for tag in tags]}
+    )
+    dfs = (run.history() for run in runs)
+    return pd.concat(dfs, ignore_index=True)
 
 
 def suppress_lightning_info_logging():
