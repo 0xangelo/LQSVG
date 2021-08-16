@@ -1,5 +1,5 @@
 """Common type definitions."""
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Iterable, NamedTuple, Optional, Sequence, Tuple
 
 from nnrl.nn.distributions.types import SampleLogp
 from torch import Tensor
@@ -22,3 +22,12 @@ QValueFn = Callable[[State, Action], Tensor]
 TrajectorySampler = Callable[
     [int, Sequence[int]], Tuple[Tensor, Tensor, Tensor, Tensor]
 ]
+
+
+# Utilities
+class Directory(NamedTuple):
+    """Named equivalent of tuples returned by os.walk."""
+
+    name: str
+    subdirs: Iterable[str]
+    files: Iterable[str]
