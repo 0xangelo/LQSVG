@@ -140,7 +140,7 @@ class LightningModel(pl.LightningModule):
         self.true_val = self.true_val.to(self.device)
         self.true_svg = lqr.Linear(*(k.to(self.device) for k in self.true_svg))
 
-        n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        n_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         self.log("trainable_parameters", n_params)
 
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
