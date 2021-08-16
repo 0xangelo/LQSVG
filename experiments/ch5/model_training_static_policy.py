@@ -9,7 +9,9 @@ import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
-from model import Batch, LightningModel
+import wandb
+from data import TrajectorySegmentDataset
+from model import LightningModel
 from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
 from torch import Tensor
@@ -18,7 +20,6 @@ from wandb.sdk import wandb_config
 
 import lqsvg.envs.lqr.utils as lqg_util
 import lqsvg.torch.named as nt
-import wandb
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils
@@ -27,35 +28,8 @@ from lqsvg.experiment.dynamics import markovian_state_sampler
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.policy import TVLinearPolicy
 
-RESULTS_DIR = "./results"
-WANDB_DIR = os.path.join(os.path.abspath(__file__), ".wandb")
-
-
-class TrajectorySegmentDataset(Dataset):
-    # noinspection PyArgumentList
-    def __init__(self, obs: Tensor, act: Tensor, new_obs: Tensor, segment_len: int):
-        # Pytorch Lightning deepcopies the dataloader when using overfit_batches=True
-        # Deepcopying is incompatible with named tensors for some reason
-        self.tensors = nt.unnamed(
-            *(x.align_to("B", "H", ...) for x in (obs, act, new_obs))
-        )
-        self.segment_len = segment_len
-        horizon: int = obs.size("H")
-        trajs: int = obs.size("B")
-        self.segs_per_traj = horizon - segment_len + 1
-        self._len = trajs * self.segs_per_traj
-
-    def __getitem__(self, index) -> Batch:
-        traj_idx = index // self.segs_per_traj
-        timestep_start = index % self.segs_per_traj
-        # noinspection PyTypeChecker
-        return tuple(
-            t[traj_idx, timestep_start : timestep_start + self.segment_len]
-            for t in self.tensors
-        )
-
-    def __len__(self) -> int:
-        return self._len
+RESULTS_DIR = os.path.abspath("./results")
+WANDB_DIR = RESULTS_DIR
 
 
 @dataclass
@@ -178,7 +152,7 @@ class Experiment(tune.Trainable):
 
     def setup(self, config: dict):
         self.run = wandb.init(
-            name="LinearML",
+            name="MLComp",
             dir=WANDB_DIR,
             config=config,
             project="LQG-SVG",
@@ -268,15 +242,16 @@ def run_with_tune():
         {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
     ]
     config = {
-        "learning_rate": 5e-4,
-        "seed": tune.grid_search(list(range(47, 57))),
-        "n_state": 4,
-        "n_ctrl": 4,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "seed": tune.grid_search(list(range(42, 62))),
+        "n_state": 8,
+        "n_ctrl": 8,
         "horizon": 50,
         "pred_horizon": [2, 4, 6, 8],
-        "trajectories": 1000,
+        "trajectories": 2000,
         "model": tune.grid_search(models),
-        "zero_q": tune.grid_search([True, False]),
+        "zero_q": False,
         "datamodule": {
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
@@ -289,6 +264,7 @@ def run_with_tune():
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
             "weights_summary": None,
+            # "gpus": 1,
         },
     }
     tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
@@ -297,7 +273,8 @@ def run_with_tune():
 
 def run_simple():
     config = {
-        "learning_rate": 5e-4,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
         "seed": 42,
         "n_state": 2,
         "n_ctrl": 2,

@@ -130,7 +130,11 @@ class LightningModel(pl.LightningModule):
         return -self.seg_log_prob(obs, act, new_obs) / obs.size("H")
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
+        return torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
 
     def on_train_start(self) -> None:
         self.true_val = self.true_val.to(self.device)
