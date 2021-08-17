@@ -145,10 +145,11 @@ class LightningModel(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
-    def on_train_start(self) -> None:
+    def on_post_move_to_device(self) -> None:
         self.true_val = self.true_val.to(self.device)
         self.true_svg = lqr.Linear(*(k.to(self.device) for k in self.true_svg))
 
+    def on_train_start(self) -> None:
         n_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         self.log("trainable_parameters", n_params)
 
