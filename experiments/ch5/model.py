@@ -145,7 +145,7 @@ class LightningModel(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
-    def on_fit_start(self) -> None:
+    def on_train_start(self) -> None:
         self.true_val = self.true_val.to(self.device)
         self.true_svg = lqr.Linear(*(k.to(self.device) for k in self.true_svg))
 
