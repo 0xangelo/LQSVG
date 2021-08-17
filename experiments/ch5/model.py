@@ -4,6 +4,7 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
+from nnrl.nn.critic import VValue
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
@@ -21,7 +22,7 @@ from lqsvg.torch.nn.dynamics.segment import (
     log_prob_fn,
 )
 from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.value import QuadQValue, ZeroQValue
+from lqsvg.torch.nn.value import QuadQValue, QuadVValue, ZeroQValue
 
 Batch = Tuple[Tensor, Tensor, Tensor]
 ValBatch = Union[Batch, Sequence[Tensor]]
@@ -63,16 +64,20 @@ def make_model(
     return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
 
 
-@torch.enable_grad()
 def val_mse_and_grad_acc(
-    estimator: Estimator, obs: Tensor, pred_horizon: int, targets: (Tensor, lqr.Linear)
+    val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
 ) -> Tuple[Tensor, Tensor]:
-    """Computes metrics for evaluating gradient estimators."""
-    target_val, target_grad = targets
-    val, svg = estimator(obs, pred_horizon)
+    """Computes metrics for estimated gradients."""
     mse = torch.square(target_val - val)
-    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_grad)).to(val)
+    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_svg)).to(val)
     return mse, grad_acc
+
+
+@torch.no_grad()
+def batch_val_mse(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
+    """MSE between the surrogate value and the average V-value function."""
+    batch_val = vval(obs)
+    return torch.square(batch_val - val)
 
 
 def _refine_batch(batch: Batch) -> Batch:
@@ -102,17 +107,21 @@ class LightningModel(pl.LightningModule):
         if self.hparams.zero_q:
             qval = ZeroQValue()
         else:
-            qval = QuadQValue(lqg.n_state + lqg.n_ctrl, lqg.horizon)
-            qval.match_policy_(
+            qval = QuadQValue.from_policy(
                 policy.standard_form(),
                 lqg.trans.standard_form(),
                 lqg.reward.standard_form(),
-            )
-            qval.requires_grad_(False)
+            ).requires_grad_(False)
         self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
         dynamics, cost, init = lqg.standard_form()
         self.true_val, self.true_svg = analytic_svg(policy, init, dynamics, cost)
 
+        # For batch MSE
+        self._vval = QuadVValue.from_policy(
+            policy.standard_form(),
+            lqg.trans.standard_form(),
+            lqg.reward.standard_form(),
+        ).requires_grad_(False)
         # Register modules to cast them to appropriate device
         self._extra_modules = nn.ModuleList([lqg, policy, qval])
 
@@ -178,9 +187,14 @@ class LightningModel(pl.LightningModule):
             horizons = self.hparams.pred_horizon
             horizons = [horizons] if isinstance(horizons, int) else horizons
             for horizon in horizons:
+                with torch.enable_grad():
+                    val, svg = self.estimator(obs, horizon)
                 val_mse, grad_acc = val_mse_and_grad_acc(
-                    self.estimator, obs, horizon, (self.true_val, self.true_svg)
+                    val, svg, self.true_val, self.true_svg
                 )
-                metrics[f"val_mse_{horizon}"] = val_mse
-                metrics[f"grad_acc_{horizon}"] = grad_acc
+                metrics[f"{horizon}/val_mse"] = val_mse
+                metrics[f"{horizon}/grad_acc"] = grad_acc
+                metrics[f"{horizon}/batch_val_mse"] = batch_val_mse(
+                    val, obs, self._vval
+                )
         return metrics
