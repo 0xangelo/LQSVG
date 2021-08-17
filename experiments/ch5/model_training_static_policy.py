@@ -172,14 +172,14 @@ class Experiment(tune.Trainable):
             controllable=True,
             rng=self.rng,
         )
-        self.make_modules()
-        self.make_trainer()
+        self._make_modules()
+        self._make_trainer()
 
     @property
     def hparams(self) -> wandb_config.Config:
         return self.run.config
 
-    def make_modules(self):
+    def _make_modules(self):
         with nt.suppress_named_tensor_warning():
             dynamics, cost, init = self.generator()
         lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
@@ -191,7 +191,7 @@ class Experiment(tune.Trainable):
             DataSpec(train_frac=0.9, **self.hparams.datamodule)
         )
 
-    def make_trainer(self):
+    def _make_trainer(self):
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
@@ -206,15 +206,16 @@ class Experiment(tune.Trainable):
 
     def step(self) -> dict:
         with self.run:
-            self.log_env_info()
-            self.build_dataset()
+            self._log_env_info()
+            self._build_dataset()
             with utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
+                self.trainer.validate(self.model, datamodule=self.datamodule)
                 self.trainer.fit(self.model, datamodule=self.datamodule)
                 final_eval = self.trainer.test(self.model, datamodule=self.datamodule)
 
         return {tune.result.DONE: True, **final_eval[0]}
 
-    def log_env_info(self):
+    def _log_env_info(self):
         dynamics = self.lqg.trans.standard_form()
         eigvals = lqg_util.stationary_eigvals(dynamics)
         tests = {
@@ -224,7 +225,7 @@ class Experiment(tune.Trainable):
         self.run.summary.update(tests)
         self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
-    def build_dataset(self):
+    def _build_dataset(self):
         self.datamodule.build(
             self.lqg, self.policy, trajectories=self.hparams.trajectories
         )
@@ -264,6 +265,7 @@ def run_with_tune():
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
             "weights_summary": None,
+            "val_check_interval": 0.5,
             # "gpus": 1,
         },
     }
