@@ -1,4 +1,5 @@
 # pylint:disable=missing-docstring
+import functools
 import logging
 import os.path
 from dataclasses import dataclass
@@ -34,11 +35,12 @@ WANDB_DIR = RESULTS_DIR
 
 @dataclass
 class DataSpec:
-    train_frac: float
+    trajectories: int
     train_batch_size: int
     val_loss_batch_size: int
     val_grad_batch_size: int
     segment_len: int
+    train_frac: float = 0.9
 
     def __post_init__(self):
         assert self.train_frac < 1.0
@@ -56,23 +58,24 @@ class DataModule(pl.LightningDataModule):
     val_seg_dataset: Dataset
     val_state_dataset: Dataset
 
-    def __init__(self, spec: DataSpec):
+    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec):
         super().__init__()
         self.spec = spec
-
-    def build(self, lqg: LQGModule, policy: TVLinearPolicy, trajectories: int):
         assert self.spec.segment_len <= lqg.horizon, "Invalid trajectory segment length"
-        # noinspection PyTypeChecker
+
         sample_fn = trajectory_sampler(
             policy,
             lqg.init.sample,
             markovian_state_sampler(lqg.trans, lqg.trans.sample),
             lqg.reward,
         )
+        self.sample_fn = functools.partial(sample_fn, horizon=lqg.horizon)
+
+    def prepare_data(self) -> None:
         with torch.no_grad():
-            obs, act, _, _ = sample_fn(lqg.horizon, [trajectories])
+            obs, act, _, _ = self.sample_fn(sample_shape=[self.spec.trajectories])
         obs, act = (x.rename(B1="B") for x in (obs, act))
-        decision_steps = torch.arange(lqg.horizon).int()
+        decision_steps = torch.arange(obs.size("H") - 1).int()
         self.tensors = (
             nt.index_select(obs, "H", decision_steps),
             act,
@@ -82,8 +85,7 @@ class DataModule(pl.LightningDataModule):
         assert all(t.size("B") == obs.size("B") for t in self.tensors)
 
     def setup(self, stage: Optional[str] = None):
-        # noinspection PyArgumentList
-        n_trajs = self.tensors[0].size("B")
+        n_trajs = self.spec.trajectories
         train_traj_idxs, val_traj_idxs = torch.split(
             torch.randperm(n_trajs),
             split_size_or_sections=self.spec.train_val_sizes(n_trajs),
@@ -187,9 +189,7 @@ class Experiment(tune.Trainable):
         policy.stabilize_(dynamics, rng=self.rng)
         self.lqg, self.policy = lqg, policy
         self.model = LightningModel(lqg, policy, self.hparams)
-        self.datamodule = DataModule(
-            DataSpec(train_frac=0.9, **self.hparams.datamodule)
-        )
+        self.datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
 
     def _make_trainer(self):
         logger = pl.loggers.WandbLogger(
@@ -207,7 +207,6 @@ class Experiment(tune.Trainable):
     def step(self) -> dict:
         with self.run:
             self._log_env_info()
-            self._build_dataset()
             with utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
                 self.trainer.validate(self.model, datamodule=self.datamodule)
                 self.trainer.fit(self.model, datamodule=self.datamodule)
@@ -225,35 +224,28 @@ class Experiment(tune.Trainable):
         self.run.summary.update(tests)
         self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
-    def _build_dataset(self):
-        self.datamodule.build(
-            self.lqg, self.policy, trajectories=self.hparams.trajectories
-        )
-
-    def cleanup(self):
-        self.run.finish()
-
 
 def run_with_tune():
     ray.init(logging_level=logging.WARNING)
 
     models = [
-        {"type": "linear"},
-        {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
+        # {"type": "linear"},
+        # {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
         {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
+        {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
     ]
     config = {
-        "learning_rate": 1e-3,
-        "weight_decay": 1e-4,
-        "seed": tune.grid_search(list(range(42, 62))),
+        "learning_rate": tune.loguniform(1e-5, 1e-2),
+        "weight_decay": tune.loguniform(1e-6, 1e-4),
+        "seed": None,
         "n_state": 8,
         "n_ctrl": 8,
         "horizon": 50,
-        "pred_horizon": [2, 4, 6, 8],
-        "trajectories": 2000,
+        "pred_horizon": [8],
         "model": tune.grid_search(models),
         "zero_q": False,
         "datamodule": {
+            "trajectories": 2000,
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
             "val_grad_batch_size": 128,
@@ -265,11 +257,11 @@ def run_with_tune():
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
             "weights_summary": None,
-            "val_check_interval": 0.5,
+            # "val_check_interval": 0.5,
             # "gpus": 1,
         },
     }
-    tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
+    tune.run(Experiment, config=config, num_samples=200, local_dir=RESULTS_DIR)
     ray.shutdown()
 
 
@@ -282,13 +274,13 @@ def run_simple():
         "n_ctrl": 2,
         "horizon": 100,
         "pred_horizon": 8,
-        "trajectories": 5000,
         "model": {
             "type": "gru",
             "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10, 10)},
         },
         "zero_q": False,
         "datamodule": {
+            "trajectories": 2000,
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
             "val_grad_batch_size": 200,
@@ -304,7 +296,7 @@ def run_simple():
             # limit_val_batches=10,
             # profiler="simple",
             val_check_interval=0.5,
-            gpus=1,
+            # gpus=1,
         ),
     }
     experiment = Experiment(config)
