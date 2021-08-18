@@ -257,6 +257,7 @@ def run_with_tune():
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
             "weights_summary": None,
+            "track_grad_norm": 2,
             # "val_check_interval": 0.5,
             # "gpus": 1,
         },
@@ -267,12 +268,12 @@ def run_with_tune():
 
 def run_simple():
     config = {
-        "learning_rate": 1e-3,
-        "weight_decay": 1e-4,
+        "learning_rate": 1e-4,
+        "weight_decay": 1e-5,
         "seed": 42,
-        "n_state": 2,
-        "n_ctrl": 2,
-        "horizon": 100,
+        "n_state": 8,
+        "n_ctrl": 8,
+        "horizon": 50,
         "pred_horizon": 8,
         "model": {
             "type": "gru",
