@@ -90,8 +90,6 @@ class LightningModel(pl.LightningModule):
     model: nn.Module
     seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
     estimator: Estimator
-    true_val: Tensor
-    true_svg: lqr.Linear
 
     def __init__(
         self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
@@ -114,7 +112,11 @@ class LightningModel(pl.LightningModule):
             ).requires_grad_(False)
         self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
         dynamics, cost, init = lqg.standard_form()
-        self.true_val, self.true_svg = analytic_svg(policy, init, dynamics, cost)
+        true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
+        # Register targets as buffers so they are moved to device
+        self.register_buffer("true_val", true_val)
+        self.register_buffer("true_svg_K", true_svg.K)
+        self.register_buffer("true_svg_k", true_svg.k)
 
         # For batch MSE
         self._vval = QuadVValue.from_policy(
@@ -144,10 +146,6 @@ class LightningModel(pl.LightningModule):
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
-
-    def on_post_move_to_device(self) -> None:
-        self.true_val = self.true_val.to(self.device)
-        self.true_svg = lqr.Linear(*(k.to(self.device) for k in self.true_svg))
 
     def on_train_start(self) -> None:
         n_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -184,14 +182,15 @@ class LightningModel(pl.LightningModule):
             # RuntimeError: cudnn RNN backward can only be called in training mode
             self.model.train()
             # Compute gradient acc using uniformly sampled states
-            obs = batch[0].refine_names("B", "R").to(self.device)
+            obs = batch[0].refine_names("B", "R")
             horizons = self.hparams.pred_horizon
             horizons = [horizons] if isinstance(horizons, int) else horizons
             for horizon in horizons:
                 with torch.enable_grad():
                     val, svg = self.estimator(obs, horizon)
+                true_svg = lqr.Linear(self.true_svg_K, self.true_svg_k)
                 val_mse, grad_acc = val_mse_and_grad_acc(
-                    val, svg, self.true_val, self.true_svg
+                    val, svg, self.true_val, true_svg
                 )
                 metrics[f"{horizon}/val_mse"] = val_mse
                 metrics[f"{horizon}/grad_acc"] = grad_acc
