@@ -85,10 +85,37 @@ def _refine_batch(batch: Batch) -> Batch:
     return tuple(x.refine_names("B", "H", "R") for x in batch)
 
 
+def wrap_log_prob(
+    log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
+) -> Callable[[Batch], Tensor]:
+    def wrapped(batch: Batch) -> Tensor:
+        return log_prob(*batch)
+
+    return wrapped
+
+
+def empirical_kl(
+    source_logp: Callable[[Batch], Tensor], other_logp: Callable[[Batch], Tensor]
+) -> Callable[[Batch], Tensor]:
+    """Returns a function of samples to empirical KL divergence.
+
+    Args:
+        source_logp: likelihood function of distribution from which samples are
+            collected
+        other_logp: likelihood function of another distribution
+    """
+
+    def kld(batch: Batch) -> Tensor:
+        return torch.mean(source_logp(batch) - other_logp(batch))
+
+    return kld
+
+
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
     model: nn.Module
     seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
+    kl_with_dynamics: Callable[[Batch], Tensor]
     estimator: Estimator
 
     def __init__(
@@ -100,6 +127,10 @@ class LightningModel(pl.LightningModule):
         # NN modules
         self.model = make_model(lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams)
         self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
+        self.kl_with_dynamics = empirical_kl(
+            wrap_log_prob(log_prob_fn(lqg.trans, lqg.trans.dist)),
+            wrap_log_prob(self.seg_log_prob),
+        )
 
         # Gradients
         if self.hparams.zero_q:
@@ -174,9 +205,11 @@ class LightningModel(pl.LightningModule):
         metrics = {}
         if dataloader_idx == 0:
             self.model.eval()
+            batch = _refine_batch(batch)
             # Compute log-prob of traj segments
-            loss = self(_refine_batch(batch)).mean()
-            metrics["loss"] = loss
+            metrics["loss"] = self(batch).mean()
+            # Compute KL with true dynamics
+            metrics["empirical_kl"] = self.kl_with_dynamics(batch)
         else:
             # Avoid:
             # RuntimeError: cudnn RNN backward can only be called in training mode
