@@ -3,7 +3,7 @@ import functools
 import logging
 import os.path
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import click
 import numpy as np
@@ -134,11 +134,33 @@ class DataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
 
-def extra_tags(config: dict) -> List[str]:
-    extra = []
+def extra_tags(config: dict) -> Tuple[str, ...]:
+    extra = ()
     if config["n_state"] > config["n_ctrl"]:
-        extra += ["underactuated"]
+        extra += ("underactuated",)
     return extra
+
+
+def wandb_init(
+    name: str,
+    config: dict,
+    project="LQG-SVG",
+    entity="angelovtt",
+    tags: Sequence[str] = (),
+    reinit=True,
+    **kwargs,
+) -> wandb.sdk.wandb_run.Run:
+    # pylint:disable=too-many-arguments
+    return wandb.init(
+        name=name,
+        config=config,
+        project=project,
+        entity=entity,
+        dir=WANDB_DIR,
+        tags=("ch5", utils.calver()) + extra_tags(config) + tuple(tags),
+        reinit=reinit,
+        **kwargs,
+    )
 
 
 class Experiment(tune.Trainable):
@@ -153,16 +175,8 @@ class Experiment(tune.Trainable):
     trainer: pl.Trainer
 
     def setup(self, config: dict):
-        self.run = wandb.init(
-            name="MLComp",
-            dir=WANDB_DIR,
-            config=config,
-            project="LQG-SVG",
-            entity="angelovtt",
-            tags=["ch5", utils.calver()] + extra_tags(config),
-            reinit=True,
-            mode="online",
-        )
+        wandb_kwargs = config.pop("wandb")
+        self.run = wandb_init(config=config, **wandb_kwargs)
         seed_everything(self.hparams.seed)
         self.rng = np.random.default_rng(self.hparams.seed)
         self.generator = LQGGenerator(
@@ -225,7 +239,7 @@ class Experiment(tune.Trainable):
         self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
 
-def run_with_tune():
+def run_with_tune(name: str = "ModelSearch"):
     ray.init(logging_level=logging.WARNING)
 
     models = [
@@ -235,6 +249,7 @@ def run_with_tune():
         {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
     ]
     config = {
+        "wandb": {"name": name},
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "seed": None,
@@ -268,6 +283,7 @@ def run_with_tune():
 
 def run_simple():
     config = {
+        "wandb": {"name": "Debug", "mode": "offline"},
         "learning_rate": 1e-4,
         "weight_decay": 1e-5,
         "seed": 42,
@@ -297,7 +313,7 @@ def run_simple():
             # limit_val_batches=10,
             # profiler="simple",
             val_check_interval=0.5,
-            # gpus=1,
+            gpus=1,
         ),
     }
     experiment = Experiment(config)
@@ -305,12 +321,13 @@ def run_simple():
 
 
 @click.command()
+@click.option("--name", type=str)
 @click.option("--debug/--no-debug", default=False)
-def main(debug: bool):
+def main(name: str, debug: bool):
     if debug:
         run_simple()
     else:
-        run_with_tune()
+        run_with_tune(name)
 
 
 if __name__ == "__main__":
