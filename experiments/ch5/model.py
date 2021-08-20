@@ -156,21 +156,22 @@ class LightningModel(pl.LightningModule):
             lqg.reward.standard_form(),
         ).requires_grad_(False)
         # Register modules to cast them to appropriate device
-        self._extra_modules = nn.ModuleList([lqg, policy, qval])
+        self.add_module("_lqg", lqg)
+        self.add_module("_policy", policy)
+        self.add_module("_qval", qval)
 
-    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
-        # Override original: set prog_bar=False to reduce clutter
-        self.log_dict(
-            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
-        )
-
-    # noinspection PyArgumentList
     def forward(self, batch: Batch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
         # pylint:disable=arguments-differ
         obs, act, new_obs = batch
+        # noinspection PyArgumentList
         return -self.seg_log_prob(obs, act, new_obs) / obs.size("H")
 
+    def num_parameters(self) -> int:
+        """Returns the number of trainable parameters"""
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
+    # noinspection PyArgumentList
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.model.parameters(),
@@ -178,16 +179,18 @@ class LightningModel(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
-    def on_train_start(self) -> None:
-        n_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        self.log("trainable_parameters", n_params)
-
     def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
         loss = self(_refine_batch(batch)).mean()
         self.log("train/loss", loss)
         return loss
+
+    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
+        # Override original: set prog_bar=False to reduce clutter
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
+        )
 
     def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ

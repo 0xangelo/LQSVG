@@ -221,6 +221,9 @@ class Experiment(tune.Trainable):
     def step(self) -> dict:
         with self.run:
             self._log_env_info()
+            self.run.summary.update(
+                {"trainable_parameters": self.model.num_parameters()}
+            )
             with utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
                 self.trainer.validate(self.model, datamodule=self.datamodule)
                 self.trainer.fit(self.model, datamodule=self.datamodule)
@@ -242,32 +245,32 @@ class Experiment(tune.Trainable):
 def run_with_tune(name: str = "ModelSearch"):
     ray.init(logging_level=logging.WARNING)
 
-    models = [
-        # {"type": "linear"},
-        # {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
-        {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
-        {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
-    ]
+    # models = [
+    #     {"type": "linear"},
+    #     {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
+    #     {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
+    #     {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
+    # ]
     config = {
         "wandb": {"name": name},
-        "learning_rate": tune.loguniform(1e-5, 1e-2),
-        "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "seed": None,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "seed": tune.grid_search(list(range(123, 133))),
         "n_state": 8,
         "n_ctrl": 8,
         "horizon": 50,
         "pred_horizon": [8],
-        "model": tune.grid_search(models),
-        "zero_q": False,
+        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
+        "zero_q": tune.grid_search([True, False]),
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
-            "val_grad_batch_size": 128,
+            "val_grad_batch_size": 256,
             "segment_len": 4,
         },
         "trainer": {
-            "max_epochs": 20,
+            "max_epochs": 100,
             # don't show progress bar for model training
             "progress_bar_refresh_rate": 0,
             # don't print summary before training
@@ -277,7 +280,7 @@ def run_with_tune(name: str = "ModelSearch"):
             # "gpus": 1,
         },
     }
-    tune.run(Experiment, config=config, num_samples=200, local_dir=RESULTS_DIR)
+    tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
     ray.shutdown()
 
 
