@@ -1,12 +1,12 @@
 """Stochastic Value Gradient estimation utilities."""
 from __future__ import annotations
 
-from typing import Callable, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 import torch
 from nnrl.nn.critic import QValue
 from nnrl.nn.model import StochasticModel
-from torch import Tensor, nn
+from torch import Tensor, autograd, nn
 
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
@@ -99,13 +99,44 @@ def analytic_value(
     return value
 
 
-def policy_svg(policy: TVLinearPolicy, value: Tensor) -> lqr.Linear:
-    """Computes the policy SVG from the estimated return."""
+def policy_svg(
+    policy: TVLinearPolicy,
+    value: Tensor,
+    retain_graph: Optional[bool] = None,
+    create_graph: bool = False,
+    allow_unused: bool = False,
+) -> lqr.Linear:
+    """Computes the policy SVG from the estimated return.
+
+    Args:
+        policy: The time-varying linear policy module
+        value: Scalar tensor representing the policy's value
+        retain_graph (bool, optional): If ``False``, the graph used to compute the grad
+            will be freed. Note that in nearly all cases setting this option to ``True``
+            is not needed and often can be worked around in a much more efficient
+            way. Defaults to the value of ``create_graph``.
+        create_graph (bool, optional): If ``True``, graph of the derivative will
+            be constructed, allowing to compute higher order derivative products.
+            Default: ``False``.
+        allow_unused (bool, optional): If ``False``, specifying inputs that were not
+            used when computing outputs (and therefore their grad is always zero)
+            is an error. Defaults to ``False``.
+
+    Returns:
+        A named tuple with attributes
+        - K: The value gradient w.r.t. the dynamic gain
+        - k: The value gradient w.r.t. the static gain
+    """
     # pylint:disable=invalid-name
-    policy.zero_grad(set_to_none=True)
-    value.backward()
-    K, k = policy.standard_form()
-    return lqr.Linear(K.grad.clone(), k.grad.clone())
+    grad_K, grad_k = autograd.grad(
+        value,
+        (policy.K, policy.k),
+        retain_graph=retain_graph,
+        create_graph=create_graph,
+        only_inputs=True,  # Avoid side-effects by computing policy gradients only
+        allow_unused=allow_unused,
+    )
+    return lqr.Linear(grad_K, grad_k)
 
 
 def analytic_svg(

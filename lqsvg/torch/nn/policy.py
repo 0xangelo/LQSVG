@@ -97,7 +97,7 @@ class TVLinearFeedback(nn.Module):
         """Return current parameters as linear parameters."""
         K, k = nt.horizon(nt.matrix(self.K), nt.vector(self.k))
         K.grad, k.grad = self.K.grad, self.k.grad
-        return K, k
+        return lqr.Linear(K, k)
 
 
 class TVLinearPolicy(DeterministicPolicy):
