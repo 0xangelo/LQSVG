@@ -195,7 +195,7 @@ def make_lindynamics(
     horizon: int,
     stationary: bool = False,
     n_batch: Optional[int] = None,
-    passive_eigval_range: Optional[tuple[float, float]] = None,
+    passive_eigval_range: Optional[tuple[float, float]] = (0.0, 1.0),
     controllable: bool = False,
     bias: bool = True,
     rng: RNG = None,
@@ -479,10 +479,10 @@ def make_lqr_linear_navigation(
     c = np.concatenate([-2.0 * goal, np.zeros((ctrl_size,))], axis=0)
     c = utils.np_expand_horizon(c, horizon)
 
-    bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
+    bounds = Box(-torch.ones(ctrl_size), torch.ones(ctrl_size))
     # Avoid tensor writing to un-writable np.array
     F, f, C, c = map(lambda x: as_float_tensor(x.copy()), (F, f, C, c))
-    dynamics, cost = refine_lqr((F, f), (C, c))
+    dynamics, cost = refine_lqr(LinDynamics(F, f), QuadCost(C, c))
     return dynamics, cost, bounds
 
 
@@ -511,7 +511,7 @@ def box_ddp_random_lqr(
     dynamics = _box_ddp_random_dynamics(state_size, ctrl_size, timestep, horizon)
     cost = _box_ddp_random_cost(state_size, ctrl_size, timestep, ctrl_coeff, horizon)
     dynamics, cost = refine_lqr(dynamics, cost)
-    bounds: Box = (-torch.ones(ctrl_size), torch.ones(ctrl_size))
+    bounds = Box(-torch.ones(ctrl_size), torch.ones(ctrl_size))
     return dynamics, cost, bounds
 
 
