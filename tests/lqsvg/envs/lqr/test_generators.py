@@ -33,7 +33,6 @@ stat_ctrb = standard_fixture(
 transition_bias = standard_fixture((True, False), "TransBias")
 sample_covariance = standard_fixture((True, False), "SampleCov")
 cost_linear = standard_fixture((True, False), "CostLinear")
-cost_cross = standard_fixture((True, False), "CostCross")
 n_batch = standard_fixture((None, 1, 4), "NBatch")
 
 

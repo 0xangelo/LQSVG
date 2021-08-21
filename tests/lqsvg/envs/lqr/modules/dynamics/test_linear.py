@@ -54,12 +54,6 @@ def new_obs(obs: Tensor) -> Tensor:
 
 
 @pytest.fixture
-def mix_obs(obs: Tensor, last_obs: Tensor) -> Tensor:
-    mask = torch.bernoulli(torch.full_like(obs, fill_value=0.5)).bool()
-    return torch.where(mask, obs, last_obs)
-
-
-@pytest.fixture
 def act(
     n_ctrl: int, batch_shape: tuple[int, ...], batch_names: tuple[str, ...]
 ) -> Tensor:
