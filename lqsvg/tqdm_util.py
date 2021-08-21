@@ -1,8 +1,7 @@
 # pylint:disable=all
+import numpy as np
 from ray.rllib import SampleBatch
 from tqdm.auto import tqdm
-
-from .utils import num_complete_episodes
 
 
 def collect_with_progress(worker, total_trajs, prog: bool = True) -> SampleBatch:
@@ -18,3 +17,13 @@ def collect_with_progress(worker, total_trajs, prog: bool = True) -> SampleBatch
             pbar.update(eps - old_eps)
 
     return sample_batch
+
+
+def num_complete_episodes(samples: SampleBatch) -> int:
+    """Return the number of complete episodes in a SampleBatch."""
+    num_eps = len(np.unique(samples[SampleBatch.EPS_ID]))
+    num_dones = np.sum(samples[SampleBatch.DONES]).item()
+    assert (
+        num_dones <= num_eps
+    ), f"More done flags than episodes: dones={num_dones}, episodes={num_eps}"
+    return num_dones

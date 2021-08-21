@@ -1,25 +1,27 @@
 """Utilities for data collection in LQG envs."""
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
+import numpy as np
 import torch
+from nnrl.nn.distributions.types import SampleLogp
+from nnrl.types import TensorDict
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
 from torch.utils.data import Dataset, random_split
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.torch import named as nt
-
-from .tqdm_util import collect_with_progress
-from .types import (
+from lqsvg.tqdm_util import collect_with_progress
+from lqsvg.types import (
     DeterministicPolicy,
     InitStateFn,
+    RecurrentDynamics,
     RewardFunction,
     StateDynamics,
     TrajectorySampler,
 )
-from .utils import group_batch_episodes
 
 
 def split_dataset(
@@ -38,6 +40,35 @@ def split_dataset(
         dataset, (train_samples, val_samples, test_samples)
     )
     return train_data, val_data, test_data
+
+
+def markovian_state_sampler(
+    params_fn: Callable[[Tensor, Tensor], TensorDict],
+    sampler_fn: Callable[[TensorDict], SampleLogp],
+) -> StateDynamics:
+    """Combine state-action conditional params and conditional state dist."""
+
+    def sampler(obs: Tensor, act: Tensor) -> SampleLogp:
+        params = params_fn(obs, act)
+        return sampler_fn(params)
+
+    return sampler
+
+
+def recurrent_state_sampler(
+    params_fn: Callable[[Tensor, Tensor, Tensor], TensorDict],
+    sampler_fn: Callable[[TensorDict], SampleLogp],
+) -> RecurrentDynamics:
+    """Combine contextual dist params and conditional state dist."""
+
+    def sampler(
+        obs: Tensor, act: Tensor, ctx: Optional[Tensor]
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        params = params_fn(obs, act, ctx)
+        sample, logp = sampler_fn(params)
+        return sample, logp, params["context"]
+
+    return sampler
 
 
 def trajectory_sampler(
@@ -120,3 +151,25 @@ def collect_trajs_from_worker(
     assert total_ts == total_trajs * worker.env.horizon, total_ts
 
     return trajs
+
+
+def group_batch_episodes(samples: SampleBatch) -> SampleBatch:
+    """Return the sample batch with rows grouped by episode id.
+
+    Moreover, rows are sorted by timestep.
+
+    Warning:
+        Modifies the sample batch in-place
+    """
+    # Assume "t" is the timestep key in the sample batch
+    sorted_timestep_idxs = np.argsort(samples["t"])
+    for key, val in samples.items():
+        samples[key] = val[sorted_timestep_idxs]
+
+    # Stable sort is important so that we don't alter the order
+    # of timesteps
+    sorted_episode_idxs = np.argsort(samples[SampleBatch.EPS_ID], kind="stable")
+    for key, val in samples.items():
+        samples[key] = val[sorted_episode_idxs]
+
+    return samples

@@ -7,24 +7,19 @@ from typing import Union
 import numpy as np
 import ray
 import torch
+import wandb
 from ray import tune
 from torch import Tensor
 from torch.optim import Optimizer
 
 import lqsvg.torch.named as nt
-import wandb
+from lqsvg.analysis import linear_feedback_norm
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.solvers import NamedLQGControl
-from lqsvg.experiment.estimators import (
-    DPG,
-    MAAC,
-    AnalyticSVG,
-    ExpectedValue,
-    MonteCarloSVG,
-)
-from lqsvg.experiment.utils import calver, linear_feedback_norm
+from lqsvg.estimators import DPG, MAAC, AnalyticSVG, ExpectedValue, MonteCarloSVG
+from lqsvg.experiment.utils import calver
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.value import QuadQValue

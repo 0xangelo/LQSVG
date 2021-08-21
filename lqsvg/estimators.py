@@ -8,20 +8,19 @@ from nnrl.nn.critic import QValue
 from nnrl.nn.model import StochasticModel
 from torch import Tensor, autograd, nn
 
+from lqsvg.data import markovian_state_sampler, trajectory_sampler
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.envs.lqr.modules.general import EnvModule
-from lqsvg.experiment.data import trajectory_sampler
-from lqsvg.experiment.dynamics import markovian_state_sampler
-from lqsvg.experiment.types import (
+from lqsvg.torch import named as nt
+from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.types import (
     DeterministicPolicy,
     QValueFn,
     RecurrentDynamics,
     RewardFunction,
     StateDynamics,
 )
-from lqsvg.torch import named as nt
-from lqsvg.torch.nn.policy import TVLinearPolicy
 
 # Model-based estimator
 MBEstimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]

@@ -8,27 +8,23 @@ import numpy as np
 import torch
 from torch import Tensor
 
-import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
+from lqsvg.estimators import PolicyLoss
 from lqsvg.np_util import RNG, random_unit_vector
+from lqsvg.torch import named as nt
 from lqsvg.torch.utils import as_float_tensor, vector_to_tensors
-
-from . import utils
-from .estimators import PolicyLoss
 
 
 def gradient_accuracy(svgs: Iterable[lqr.Linear], target: lqr.Linear) -> Tensor:
     """Compute the average cosine similarity with the target gradient."""
-    cossims = [utils.linear_feedback_cossim(g, target) for g in svgs]
+    cossims = [linear_feedback_cossim(g, target) for g in svgs]
     return torch.stack(cossims).mean()
 
 
 def empirical_variance(svgs: Iterable[lqr.Linear]) -> Tensor:
     """Compute the average pairwise cosine similarity between gradient samples."""
     # pylint:disable=invalid-name
-    cossims = [
-        utils.linear_feedback_cossim(a, b) for a, b in itertools.combinations(svgs, 2)
-    ]
+    cossims = [linear_feedback_cossim(a, b) for a, b in itertools.combinations(svgs, 2)]
     return torch.stack(cossims).mean()
 
 
@@ -114,3 +110,62 @@ def delta_to_return(
         return ret.numpy()
 
     return f_delta
+
+
+def linear_feedback_cossim(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tensor:
+    """Cosine similarity between the parameters of linear (affine) functions.
+
+    Args:
+        linear_a: tuple of affine function parameters
+        linear_b: tuple of affine function parameters
+
+    Returns:
+        Tensor representing the (scalar) cosine similarity.
+    """
+    # pylint:disable=invalid-name
+    Ka, ka = linear_a
+    Kb, kb = linear_b
+    dot_product = torch.sum(Ka * Kb) + torch.sum(ka * kb)
+    norm_prod = linear_feedback_norm(linear_a) * linear_feedback_norm(linear_b)
+    return dot_product / norm_prod
+
+
+def linear_feedback_norm(linear: lqr.Linear) -> Tensor:
+    """Norm of the parameters of a linear (affine) function.
+
+    Uses the default norms for vectors and matrices chosen by PyTorch:
+    frobenius for matrices and L2 for vectors.
+
+    Equivalent to the norm of the flattened parameter vector.
+
+    Args:
+        linear: tuple of affine function parameters (weight matrix and bias
+        column vector)
+
+    Returns:
+        Norm of the affine function's parameters
+    """
+    # pylint:disable=invalid-name
+    K, k = linear
+    K_norm = torch.linalg.norm(nt.unnamed(K), dim=(-2, -1))
+    k_norm = torch.linalg.norm(nt.unnamed(k), dim=-1)
+    # Following PyTorch's clip_grad_norm_ implementation
+    # Reduce by horizon
+    total_norm = torch.linalg.norm(torch.cat((K_norm, k_norm), dim=0), dim=0)
+    return total_norm
+
+
+def linear_feedback_distance(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tensor:
+    """Distance between the parameters of linear (affine) functions.
+
+    Args:
+        linear_a: tuple of affine function parameters
+        linear_b: tuple of affine function parameters
+
+    Returns:
+        Norm of the difference between the parameters
+    """
+    # pylint:disable=invalid-name
+    Ka, ka = linear_a
+    Kb, kb = linear_b
+    return linear_feedback_norm(lqr.Linear(Ka - Kb, ka - kb))

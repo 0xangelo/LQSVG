@@ -5,13 +5,13 @@ from typing import Callable
 import numpy as np
 import pytest
 import torch
-import torch.nn as nn
 from numpy.random import Generator
+from torch import nn
 
 import lqsvg.torch.named as nt
+from lqsvg.analysis import delta_to_return, optimization_surface
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.experiment.analysis import delta_to_return, optimization_surface
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.utils import tensors_to_vector
 

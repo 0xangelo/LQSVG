@@ -14,11 +14,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from wandb.sdk import wandb_config, wandb_run
 from wandb_util import env_info, wandb_init
 
+from lqsvg.data import markovian_state_sampler, trajectory_sampler
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils
-from lqsvg.experiment.data import trajectory_sampler
-from lqsvg.experiment.dynamics import markovian_state_sampler
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn.policy import TVLinearPolicy
 

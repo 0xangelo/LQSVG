@@ -5,31 +5,19 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 import pytorch_lightning as pl
 import torch
 from nnrl.nn.actor import DeterministicPolicy
-from nnrl.nn.critic import (
-    ClippedQValue,
-    HardValue,
-    MLPQValue,
-    QValue,
-    QValueEnsemble,
-    VValue,
-)
+from nnrl.nn.critic import ClippedQValue, HardValue, MLPQValue, QValueEnsemble, VValue
 from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb.sdk import wandb_config
 
+from lqsvg.analysis import gradient_accuracy
+from lqsvg.data import markovian_state_sampler, recurrent_state_sampler
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
-from lqsvg.experiment.analysis import gradient_accuracy
-from lqsvg.experiment.dynamics import markovian_state_sampler, recurrent_state_sampler
-from lqsvg.experiment.estimators import (
-    MBEstimator,
-    analytic_svg,
-    maac_estimator,
-    mfdpg_estimator,
-)
+from lqsvg.estimators import MBEstimator, analytic_svg, maac_estimator, mfdpg_estimator
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -265,18 +253,18 @@ class LightningModel(pl.LightningModule):
 
 def make_value(
     policy: TVLinearPolicy, hparams: AttributeDict
-) -> Tuple[QValue, QValue, VValue]:
+) -> Tuple[QValueEnsemble, QValueEnsemble, VValue]:
     """Creates modules for Streamlined Off-Policy TD learning."""
     n_state, n_ctrl, horizon = dims_from_policy(policy.standard_form())
     obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
     spec = MLPQValue.spec_cls(units=hparams.hunits, activation="ReLU")
     qvals = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    qval = ClippedQValue(QValueEnsemble(qvals))
+    qval = QValueEnsemble(qvals)
 
     # Loss
     target_policy = DeterministicPolicy.add_gaussian_noise(policy, noise_stddev=0.3)
     qvals_ = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    target_qval = ClippedQValue(QValueEnsemble(qvals_)).requires_grad_(False)
+    target_qval = QValueEnsemble(qvals_).requires_grad_(False)
     target_vval = HardValue(target_policy, target_qval)
     return qval, target_qval, target_vval
 
@@ -292,9 +280,9 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         self.hparams.update(hparams)
 
         # NN modules
-        self.qval, self.target_qval, self.target_vval = make_value(policy, self.hparams)
+        self.qvals, self.targ_qvals, self.target_vval = make_value(policy, self.hparams)
         # Estimator
-        self.estimator = mfdpg_estimator(self.policy, self.qval)
+        self.estimator = mfdpg_estimator(self.policy, ClippedQValue(self.qvals))
 
         # Groud-truth
         dynamics, cost, init = lqg.standard_form()
@@ -317,15 +305,17 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         obs, act, rew, new_obs = batch
         with torch.no_grad():
             target = rew + self.target_vval(new_obs)
-        return nn.MSELoss()(self.qval(obs, act), target)
+        loss_fn = nn.MSELoss()
+        values = self.qvals(obs, act)
+        return torch.stack([loss_fn(v, target) for v in values]).sum()
 
     def num_parameters(self) -> int:
         """Returns the number of trainable parameters"""
-        return sum(p.numel() for p in self.qval.parameters() if p.requires_grad)
+        return sum(p.numel() for p in self.qvals.parameters() if p.requires_grad)
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            self.qval.parameters(),
+            self.qvals.parameters(),
             lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
@@ -341,7 +331,7 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
 
     def on_train_batch_end(self, *args, **kwargs):
         # pylint:disable=arguments-differ,unused-argument
-        update_polyak(self.qval, self.target_qval, self.hparams.polyak)
+        update_polyak(self.qvals, self.targ_qvals, self.hparams.polyak)
 
     def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
         # pylint:disable=arguments-differ
@@ -355,7 +345,7 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
 
     def _evaluate_on(self, batch: TDBatch) -> TensorDict:
         obs, act, rew, new_obs = batch
-        td_error = relative_error(rew + self.target_vval(new_obs), self.qval(obs, act))
+        td_error = relative_error(rew + self.target_vval(new_obs), self.qvals(obs, act))
         with torch.enable_grad():
             val, svg = self.estimator(obs)
         return {
