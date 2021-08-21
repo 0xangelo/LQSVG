@@ -130,7 +130,7 @@ class TVLinearPolicy(DeterministicPolicy):
         self.action_linear.copy_(perturb_policy(policy))
 
     @torch.no_grad()
-    def stabilize_(self, dynamics: lqr.LinSDynamics, rng: RNG = None):
+    def stabilize_(self, dynamics: lqr.LinSDynamics, rng: RNG = None) -> TVLinearPolicy:
         """Initialize self to make the closed-loop system stable.
 
         Computes a dynamic gain (matrix) that places the eigenvalues of the system in
@@ -141,6 +141,9 @@ class TVLinearPolicy(DeterministicPolicy):
             dynamics: the linear dynamical system
             rng: random number generator state
 
+        Returns:
+            This module
+
         Warning:
             This is only defined for stationary systems
 
@@ -148,6 +151,7 @@ class TVLinearPolicy(DeterministicPolicy):
             AssertionError: if the dynamics are non-stationary
         """
         self.action_linear.copy_(stabilizing_policy(dynamics, rng=rng))
+        return self
 
     def standard_form(self) -> lqr.Linear:
         """Return self as linear function parameters."""
