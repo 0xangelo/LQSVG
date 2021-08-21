@@ -13,7 +13,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.envs.lqr.utils import pack_obs
-from lqsvg.estimators import DPG, MAAC, MonteCarloSVG
+from lqsvg.estimator import DPG, MAAC, MonteCarloSVG
 from lqsvg.torch.nn.dynamics.segment import LinearTransitionModel
 from lqsvg.torch.nn.initstate import InitStateModel
 from lqsvg.torch.nn.policy import TVLinearPolicy

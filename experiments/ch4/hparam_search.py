@@ -18,7 +18,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.solvers import NamedLQGControl
-from lqsvg.estimators import DPG, MAAC, AnalyticSVG, ExpectedValue, MonteCarloSVG
+from lqsvg.estimator import DPG, MAAC, AnalyticSVG, ExpectedValue, MonteCarloSVG
 from lqsvg.experiment.utils import calver
 from lqsvg.np_util import RNG
 from lqsvg.torch.nn.policy import TVLinearPolicy

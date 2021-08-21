@@ -17,7 +17,7 @@ from lqsvg.data import markovian_state_sampler, recurrent_state_sampler
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
-from lqsvg.estimators import MBEstimator, analytic_svg, maac_estimator, mfdpg_estimator
+from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator, mfdpg_estimator
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,

@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 
 from lqsvg.envs import lqr
-from lqsvg.estimators import PolicyLoss
+from lqsvg.estimator import PolicyLoss
 from lqsvg.np_util import RNG, random_unit_vector
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import as_float_tensor, vector_to_tensors
