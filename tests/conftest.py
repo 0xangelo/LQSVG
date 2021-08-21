@@ -27,15 +27,6 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True, scope="session")
-def init_ray():
-    import ray
-
-    ray.init(local_mode=True, include_dashboard=False)
-    yield
-    ray.shutdown()
-
-
-@pytest.fixture(autouse=True, scope="session")
 def disable_gym_logger_warnings():
     import logging
 
