@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import abc
+import math
 from typing import Tuple
 
 import torch
@@ -10,7 +11,6 @@ from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 from lqsvg.torch.nn.cholesky import CholeskyFactor
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
@@ -94,11 +94,12 @@ class LinearNormalParams(LinearNormalParamsMixin, nn.Module):
 
     def reset_parameters(self):
         """Default parameter initialization."""
-        linear = make_lindynamics(
-            self.n_state, self.n_ctrl, self.horizon, stationary=self.stationary
-        )
-        dynamics = make_linsdynamics(linear, stationary=self.stationary)
-        self.copy_(dynamics)
+        nn.init.xavier_uniform_(self.F)
+        # noinspection PyArgumentList
+        fan_in = self.n_state + self.n_ctrl
+        bound = 1 / math.sqrt(fan_in)
+        nn.init.uniform_(self.f, -bound, bound)
+
         self.cov_cholesky.reset_parameters()
 
     def scale_tril(self) -> Tensor:
