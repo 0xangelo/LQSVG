@@ -275,12 +275,14 @@ def generate_passive(
             state_size, eigval_range=eigval_range, sample_shape=sample_shape, rng=rng
         )
     else:
+        warnings.warn("Using no eigval range may lead to complex eigvals")
         mat = utils.random_normal_matrix(
             state_size, state_size, sample_shape=sample_shape, rng=rng
         )
         eigval, eigvec = np.linalg.eig(mat)
-        if np.iscomplex(eigval).any() or np.iscomplex(eigvec).any():
-            warnings.warn("Complex value found in passive dynamics' eigvals or eigvecs")
+
+    if np.iscomplex(eigval).any() or np.iscomplex(eigvec).any():
+        warnings.warn("Complex value found in passive dynamics' eigvals or eigvecs")
     return mat, eigval, eigvec
 
 

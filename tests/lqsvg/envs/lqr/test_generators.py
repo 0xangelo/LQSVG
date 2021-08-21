@@ -324,7 +324,7 @@ def test_make_lindynamics(
 
 
 def test_null_eigval_range_warns(seed: int):
-    with pytest.warns(UserWarning, match="Complex value found"):
+    with pytest.warns(UserWarning, match="Using no eigval range"):
         make_lindynamics(2, 2, 10, passive_eigval_range=None, rng=seed)
 
 

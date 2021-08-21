@@ -41,7 +41,14 @@ def stationary(request) -> bool:
 def lqg_generator(
     n_state: int, n_ctrl: int, horizon: int, stationary: bool, seed: int
 ) -> LQGGenerator:
-    return LQGGenerator(n_state, n_ctrl, horizon, stationary=stationary, rng=seed)
+    return LQGGenerator(
+        n_state,
+        n_ctrl,
+        horizon,
+        stationary=stationary,
+        passive_eigval_range=(0.9, 1.1),
+        rng=seed,
+    )
 
 
 @pytest.fixture(scope="module", params=((1,), (4,)), ids=("Obs1Dim", "Obs4Dim"))
