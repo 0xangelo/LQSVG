@@ -1,10 +1,12 @@
 """Utilities for measuring gradient quality and optimization landscapes."""
 from __future__ import annotations
 
-from typing import Callable
+import itertools
+from typing import Callable, Iterable
 
 import numpy as np
 import torch
+from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
@@ -15,21 +17,19 @@ from . import utils
 from .estimators import PolicyLoss
 
 
-def gradient_accuracy(svg_samples: list[lqr.Linear], target: lqr.Linear) -> float:
+def gradient_accuracy(svgs: Iterable[lqr.Linear], target: lqr.Linear) -> Tensor:
     """Compute the average cosine similarity with the target gradient."""
-    cossims = [utils.linear_feedback_cossim(g, target) for g in svg_samples]
-    return torch.stack(cossims).mean().item()
+    cossims = [utils.linear_feedback_cossim(g, target) for g in svgs]
+    return torch.stack(cossims).mean()
 
 
-def empirical_variance(svg_samples: list[lqr.Linear]) -> float:
+def empirical_variance(svgs: Iterable[lqr.Linear]) -> Tensor:
     """Compute the average pairwise cosine similarity between gradient samples."""
     # pylint:disable=invalid-name
-    cossims = []
-    for i, gi in enumerate(svg_samples):
-        for gj in svg_samples[i + 1 :]:
-            cossims += [utils.linear_feedback_cossim(gi, gj)]
-
-    return torch.stack(cossims).mean().item()
+    cossims = [
+        utils.linear_feedback_cossim(a, b) for a, b in itertools.combinations(svgs, 2)
+    ]
+    return torch.stack(cossims).mean()
 
 
 def optimization_surface(
@@ -86,7 +86,7 @@ def delta_to_return(
     cost: lqr.QuadCost,
     init: lqr.GaussInit,
 ) -> Callable[[np.ndarray], np.ndarray]:
-    """Create function mapping policy parameter deltas to true LQG returns.
+    """Creates function mapping policy parameter deltas to true LQG returns.
 
     Args:
         policy: the reference linear policy
@@ -106,6 +106,7 @@ def delta_to_return(
     @torch.no_grad()
     def f_delta(delta: np.ndarray) -> np.ndarray:
         vector = nt.vector(as_float_tensor(delta))
+        # pylint:disable=unbalanced-tuple-unpacking
         delta_K, delta_k = vector_to_tensors(vector, policy)
         K, k = K_0 + delta_K, k_0 + delta_k
 
