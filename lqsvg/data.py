@@ -10,10 +10,10 @@ from nnrl.types import TensorDict
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
 from torch.utils.data import Dataset, random_split
+from tqdm.auto import tqdm
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.torch import named as nt
-from lqsvg.tqdm_util import collect_with_progress
 from lqsvg.types import (
     DeterministicPolicy,
     InitStateFn,
@@ -173,3 +173,29 @@ def group_batch_episodes(samples: SampleBatch) -> SampleBatch:
         samples[key] = val[sorted_episode_idxs]
 
     return samples
+
+
+def num_complete_episodes(samples: SampleBatch) -> int:
+    """Return the number of complete episodes in a SampleBatch."""
+    num_eps = len(np.unique(samples[SampleBatch.EPS_ID]))
+    num_dones = np.sum(samples[SampleBatch.DONES]).item()
+    assert (
+        num_dones <= num_eps
+    ), f"More done flags than episodes: dones={num_dones}, episodes={num_eps}"
+    return num_dones
+
+
+def collect_with_progress(worker, total_trajs, prog: bool = True) -> SampleBatch:
+    """Collect sample batches with progress monitoring."""
+    with tqdm(
+        total=total_trajs, desc="Collecting", unit="traj", disable=not prog
+    ) as pbar:
+        sample_batch: SampleBatch = worker.sample()
+        eps = num_complete_episodes(sample_batch)
+        while eps < total_trajs:
+            old_eps = eps
+            sample_batch = sample_batch.concat(worker.sample())
+            eps = num_complete_episodes(sample_batch)
+            pbar.update(eps - old_eps)
+
+    return sample_batch
