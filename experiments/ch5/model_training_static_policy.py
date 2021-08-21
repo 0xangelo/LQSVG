@@ -11,7 +11,6 @@ import pytorch_lightning as pl
 import ray
 import torch
 import wandb.sdk
-from data import TrajectorySegmentDataset, train_val_sizes
 from model import LightningModel
 from ray import tune
 from torch import Tensor
@@ -19,7 +18,12 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb_util import env_info, wandb_init
 
 import lqsvg.torch.named as nt
-from lqsvg.data import markovian_state_sampler, trajectory_sampler
+from lqsvg.data import (
+    TensorSeqDataset,
+    markovian_state_sampler,
+    train_val_sizes,
+    trajectory_sampler,
+)
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils
@@ -79,11 +83,11 @@ class DataModule(pl.LightningDataModule):
             tuple(nt.index_select(t, "B", idxs) for t in self.tensors)
             for idxs in (train_traj_idxs, val_traj_idxs)
         )
-        self.train_dataset = TrajectorySegmentDataset(
-            *train_trajs, segment_len=self.spec.segment_len
+        self.train_dataset = TensorSeqDataset(
+            *train_trajs, seq_len=self.spec.segment_len
         )
-        self.val_seg_dataset = TrajectorySegmentDataset(
-            *val_trajs, segment_len=self.spec.segment_len
+        self.val_seg_dataset = TensorSeqDataset(
+            *val_trajs, seq_len=self.spec.segment_len
         )
         val_obs = val_trajs[0]
         self.val_state_dataset = TensorDataset(

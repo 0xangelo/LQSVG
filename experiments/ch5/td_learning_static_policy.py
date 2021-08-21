@@ -6,7 +6,6 @@ from typing import Optional, Tuple
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from data import train_val_sizes
 from model import LightningQValue
 from ray import tune
 from torch import Tensor
@@ -14,7 +13,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from wandb.sdk import wandb_config, wandb_run
 from wandb_util import env_info, wandb_init
 
-from lqsvg.data import markovian_state_sampler, trajectory_sampler
+from lqsvg.data import markovian_state_sampler, train_val_sizes, trajectory_sampler
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils

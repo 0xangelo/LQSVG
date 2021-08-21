@@ -120,6 +120,51 @@ def trajectory_sampler(
     return sample_trajectory
 
 
+def train_val_sizes(total: int, train_frac: float) -> Tuple[int, int]:
+    """Compute train and validation dataset sizes from total size."""
+    train_samples = int(total * train_frac)
+    val_samples = total - train_samples
+    return train_samples, val_samples
+
+
+class TensorSeqDataset(Dataset[Tuple[Tensor, ...]]):
+    """Dataset wrapping sequence tensors.
+
+    Args:
+        *tensors: tensors that have the same size of the first and second
+            dimensions.
+        seq_len: length of sub-sequences to sample from tensors
+    """
+
+    # noinspection PyArgumentList
+    def __init__(self, *tensors: Tensor, seq_len: int):
+        tensors = tuple(t.align_to("B", "H", ...) for t in tensors)
+        trajs: int = tensors[0].size("B")
+        horizon: int = tensors[0].size("H")
+        assert all(
+            t.size("B") == trajs and t.size("H") == horizon for t in tensors
+        ), "Size mismatch between tensors"
+
+        # Pytorch Lightning deepcopies the dataloader when using overfit_batches=True
+        # Deepcopying is incompatible with named tensors for some reason
+        self.tensors = nt.unnamed(*tensors)
+        self.seq_len = seq_len
+        self.seqs_per_traj = horizon - self.seq_len - 1
+        self._len = trajs * self.seqs_per_traj
+
+    def __getitem__(self, index: int) -> Tuple[Tensor, ...]:
+        traj_idx = index // self.seqs_per_traj
+        timestep_start = index % self.seqs_per_traj
+        # noinspection PyTypeChecker
+        return tuple(
+            t[traj_idx, timestep_start : timestep_start + self.seq_len]
+            for t in self.tensors
+        )
+
+    def __len__(self) -> int:
+        return self._len
+
+
 ###############################################################################
 # RLlib
 ###############################################################################
