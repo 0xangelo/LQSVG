@@ -255,13 +255,14 @@ def run_with_tune(name: str = "ModelSearch"):
         "wandb": {"name": name},
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
-        "seed": tune.grid_search(list(range(123, 133))),
-        "n_state": 8,
-        "n_ctrl": 8,
+        # "seed": tune.grid_search(list(range(123, 133))),
+        "seed": 123,
+        "n_state": 2,
+        "n_ctrl": 2,
         "horizon": 50,
-        "pred_horizon": [8],
+        "pred_horizon": [0, 2, 4, 8],
         "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
-        "zero_q": tune.grid_search([True, False]),
+        "zero_q": False,
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -270,16 +271,18 @@ def run_with_tune(name: str = "ModelSearch"):
             "segment_len": 4,
         },
         "trainer": {
-            "max_epochs": 100,
+            "max_epochs": 1000,
             # don't show progress bar for model training
-            "progress_bar_refresh_rate": 0,
+            # "progress_bar_refresh_rate": 0,
             # don't print summary before training
-            "weights_summary": None,
+            # "weights_summary": None,
+            "weights_summary": "full",
             "track_grad_norm": 2,
             # "val_check_interval": 0.5,
             # "gpus": 1,
         },
     }
+    Experiment(config).train()
     tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
     ray.shutdown()
 
@@ -287,24 +290,21 @@ def run_with_tune(name: str = "ModelSearch"):
 def run_simple():
     config = {
         "wandb": {"name": "Debug", "mode": "offline"},
-        "learning_rate": 1e-4,
-        "weight_decay": 1e-5,
-        "seed": 42,
-        "n_state": 8,
-        "n_ctrl": 8,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "seed": 123,
+        "n_state": 2,
+        "n_ctrl": 2,
         "horizon": 50,
-        "pred_horizon": 8,
-        "model": {
-            "type": "gru",
-            "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10, 10)},
-        },
+        "pred_horizon": [0, 2, 4, 8],
+        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "zero_q": False,
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
-            "val_grad_batch_size": 200,
-            "segment_len": 8,
+            "val_grad_batch_size": 256,
+            "segment_len": 4,
         },
         "trainer": dict(
             max_epochs=5,

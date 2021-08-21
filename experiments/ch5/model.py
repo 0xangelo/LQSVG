@@ -4,13 +4,22 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
-from nnrl.nn.critic import VValue
+from nnrl.nn.actor import DeterministicPolicy
+from nnrl.nn.critic import (
+    ClippedQValue,
+    HardValue,
+    MLPQValue,
+    QValue,
+    QValueEnsemble,
+    VValue,
+)
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb.sdk import wandb_config
 
 from lqsvg.envs import lqr
+from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.dynamics import markovian_state_sampler, recurrent_state_sampler
@@ -26,6 +35,7 @@ from lqsvg.torch.nn.value import QuadQValue, QuadVValue, ZeroQValue
 
 Batch = Tuple[Tensor, Tensor, Tensor]
 ValBatch = Union[Batch, Sequence[Tensor]]
+TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
 Estimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
 
 
@@ -64,20 +74,27 @@ def make_model(
     return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
 
 
-def val_mse_and_grad_acc(
+def relative_error(target_val: Tensor, pred_val: Tensor) -> Tensor:
+    """Returns the relative value error.
+
+    Ref: https://en.wikipedia.org/wiki/Approximation_error
+    """
+    return torch.abs(1 - pred_val / target_val)
+
+
+def val_err_and_grad_acc(
     val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
 ) -> Tuple[Tensor, Tensor]:
     """Computes metrics for estimated gradients."""
-    mse = torch.square(target_val - val)
+    val_err = relative_error(target_val, val)
     grad_acc = torch.as_tensor(gradient_accuracy([svg], target_svg)).to(val)
-    return mse, grad_acc
+    return val_err, grad_acc
 
 
 @torch.no_grad()
-def batch_val_mse(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
-    """MSE between the surrogate value and the average V-value function."""
-    batch_val = vval(obs)
-    return torch.square(batch_val - val)
+def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
+    """Returns the error between the surrogate value and the state value."""
+    return relative_error(vval(obs).mean(), val)
 
 
 def _refine_batch(batch: Batch) -> Batch:
@@ -122,6 +139,9 @@ class LightningModel(pl.LightningModule):
         self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
     ):
         super().__init__()
+        # Register modules to cast them to appropriate device
+        self.add_module("_lqg", lqg)
+        self.add_module("_policy", policy)
         self.hparams.update(hparams)
 
         # NN modules
@@ -132,7 +152,7 @@ class LightningModel(pl.LightningModule):
             wrap_log_prob(self.seg_log_prob),
         )
 
-        # Gradients
+        # Estimators
         if self.hparams.zero_q:
             qval = ZeroQValue()
         else:
@@ -142,6 +162,9 @@ class LightningModel(pl.LightningModule):
                 lqg.reward.standard_form(),
             ).requires_grad_(False)
         self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
+        self.add_module("_qval", qval)
+
+        # Ground-truth
         dynamics, cost, init = lqg.standard_form()
         true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
         # Register targets as buffers so they are moved to device
@@ -149,16 +172,12 @@ class LightningModel(pl.LightningModule):
         self.register_buffer("true_svg_K", true_svg.K)
         self.register_buffer("true_svg_k", true_svg.k)
 
-        # For batch MSE
+        # For VValue error
         self._vval = QuadVValue.from_policy(
             policy.standard_form(),
             lqg.trans.standard_form(),
             lqg.reward.standard_form(),
         ).requires_grad_(False)
-        # Register modules to cast them to appropriate device
-        self.add_module("_lqg", lqg)
-        self.add_module("_policy", policy)
-        self.add_module("_qval", qval)
 
     def forward(self, batch: Batch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
@@ -195,42 +214,134 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._compute_eval_metrics(batch, dataloader_idx)
+        metrics = self._evaluation_step(batch, dataloader_idx)
         self.log_dict({"val/" + k: v for k, v in metrics.items()})
 
     def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._compute_eval_metrics(batch, dataloader_idx)
+        metrics = self._evaluation_step(batch, dataloader_idx)
         self.log_dict({"test/" + k: v for k, v in metrics.items()})
 
-    def _compute_eval_metrics(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
-        metrics = {}
+    def _evaluation_step(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
         if dataloader_idx == 0:
-            self.model.eval()
-            batch = _refine_batch(batch)
-            # Compute log-prob of traj segments
-            metrics["loss"] = self(batch).mean()
-            # Compute KL with true dynamics
-            metrics["empirical_kl"] = self.kl_with_dynamics(batch)
-        else:
-            # Avoid:
-            # RuntimeError: cudnn RNN backward can only be called in training mode
-            self.model.train()
-            # Compute gradient acc using uniformly sampled states
-            obs = batch[0].refine_names("B", "R")
-            horizons = self.hparams.pred_horizon
-            horizons = [horizons] if isinstance(horizons, int) else horizons
-            for horizon in horizons:
-                with torch.enable_grad():
-                    val, svg = self.estimator(obs, horizon)
-                true_svg = lqr.Linear(self.true_svg_K, self.true_svg_k)
-                val_mse, grad_acc = val_mse_and_grad_acc(
-                    val, svg, self.true_val, true_svg
-                )
-                metrics[f"{horizon}/val_mse"] = val_mse
-                metrics[f"{horizon}/grad_acc"] = grad_acc
-                metrics[f"{horizon}/batch_val_mse"] = batch_val_mse(
-                    val, obs, self._vval
-                )
+            return self._eval_on_traj_seg(batch)
+
+        return self._eval_on_uniform_states(batch[0])
+
+    def _eval_on_traj_seg(self, batch: Batch) -> TensorDict:
+        metrics = {}
+        self.model.eval()
+        batch = _refine_batch(batch)
+        # Compute log-prob of traj segments
+        metrics["loss"] = self(batch).mean()
+        # Compute KL with true dynamics
+        metrics["empirical_kl"] = self.kl_with_dynamics(batch)
         return metrics
+
+    def _eval_on_uniform_states(self, obs: Tensor) -> TensorDict:
+        metrics = {}
+        # Avoid:
+        # RuntimeError: cudnn RNN backward can only be called in training mode
+        self.model.train()
+        obs = obs.refine_names("B", "R")
+        horizons = self.hparams.pred_horizon
+        horizons = [horizons] if isinstance(horizons, int) else horizons
+        for horizon in horizons:
+            with torch.enable_grad():
+                val, svg = self.estimator(obs, horizon)
+            true_svg = lqr.Linear(self.true_svg_K, self.true_svg_k)
+            value_err, grad_acc = val_err_and_grad_acc(
+                val, svg, self.true_val, true_svg
+            )
+            metrics[f"{horizon}/relative_value_err"] = value_err
+            metrics[f"{horizon}/grad_acc"] = grad_acc
+            metrics[f"{horizon}/relative_vval_err"] = vvalue_err(val, obs, self._vval)
+        return metrics
+
+
+def make_value(
+    policy: TVLinearPolicy, hparams: AttributeDict
+) -> Tuple[QValue, QValue, VValue]:
+    """Creates modules for Streamlined Off-Policy TD learning."""
+    n_state, n_ctrl, horizon = dims_from_policy(policy.standard_form())
+    obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
+    spec = MLPQValue.spec_cls(units=hparams.hunits, activation="ReLU")
+    qvals = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
+    qval = ClippedQValue(QValueEnsemble(qvals))
+
+    # Loss
+    target_policy = DeterministicPolicy.add_gaussian_noise(policy, noise_stddev=0.3)
+    qvals_ = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
+    target_qval = ClippedQValue(QValueEnsemble(qvals_)).requires_grad_(False)
+    target_vval = HardValue(target_policy, target_qval)
+    return qval, target_qval, target_vval
+
+
+class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
+    def __init__(
+        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
+    ):
+        super().__init__()
+        # Register modules to cast them to appropriate device
+        self.add_module("_lqg", lqg)
+        self.policy = policy
+        self.hparams.update(hparams)
+
+        # NN modules
+        self.qval, self.target_qval, self.target_vval = make_value(policy, self.hparams)
+
+        # Groud-truth
+        dynamics, cost, init = lqg.standard_form()
+        true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
+        # Register targets as buffers so they are moved to device
+        self.register_buffer("true_val", true_val)
+        self.register_buffer("true_svg_K", true_svg.K)
+        self.register_buffer("true_svg_k", true_svg.k)
+
+    def forward(self, batch: TDBatch) -> Tensor:
+        """Returns the temporal difference error induced by the value function."""
+        # pylint:disable=arguments-differ
+        obs, act, rew, new_obs = batch
+        return nn.MSELoss()(self.qval(obs, act), rew + self.target_vval(new_obs))
+
+    def num_parameters(self) -> int:
+        """Returns the number of trainable parameters"""
+        return sum(p.numel() for p in self.qval.parameters() if p.requires_grad)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(
+            self.qval.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
+
+    def training_step(self, batch: TDBatch, batch_idx: int) -> Tensor:
+        # pylint:disable=arguments-differ
+        del batch_idx
+        loss = self(batch)
+        self.log("train/loss", loss)
+        return loss
+
+    def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
+        # pylint:disable=arguments-differ
+        del batch_idx
+        metrics = self._evaluation_step(batch)
+        self.log_dict({"val/" + k: v for k, v in metrics.items()})
+
+    def test_step(self, batch: TDBatch, batch_idx: int) -> None:
+        # pylint:disable=arguments-differ
+        del batch_idx
+        metrics = self._evaluation_step(batch)
+        self.log_dict({"val/" + k: v for k, v in metrics.items()})
+
+    def _evaluation_step(self, batch: TDBatch) -> TensorDict:
+        obs, act, rew, new_obs = batch
+        td_error = relative_error(rew + self.target_vval(new_obs), self.qval(obs, act))
+        return {"relative_td_error": td_error}
+
+    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
+        # Override original: set prog_bar=False to reduce clutter
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
+        )
