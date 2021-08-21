@@ -3,34 +3,30 @@ import functools
 import logging
 import os.path
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 import click
 import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
-import wandb
-from data import TrajectorySegmentDataset
+import wandb.sdk
+from data import TrajectorySegmentDataset, train_val_sizes
 from model import LightningModel
-from pytorch_lightning.utilities.seed import seed_everything
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from wandb.sdk import wandb_config
+from wandb_util import env_info, wandb_init
 
-import lqsvg.envs.lqr.utils as lqg_util
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
-from lqsvg.experiment import utils
+from lqsvg.experiment import utils as exp_utils
 from lqsvg.experiment.data import trajectory_sampler
 from lqsvg.experiment.dynamics import markovian_state_sampler
-from lqsvg.np_util import RNG
 from lqsvg.torch.nn.policy import TVLinearPolicy
 
 RESULTS_DIR = os.path.abspath("./results")
-WANDB_DIR = RESULTS_DIR
 
 
 @dataclass
@@ -44,12 +40,6 @@ class DataSpec:
 
     def __post_init__(self):
         assert self.train_frac < 1.0
-
-    def train_val_sizes(self, total: int) -> Tuple[int, int]:
-        """Compute train and validation dataset sizes from total size."""
-        train_samples = int(total * self.train_frac)
-        val_samples = total - train_samples
-        return train_samples, val_samples
 
 
 class DataModule(pl.LightningDataModule):
@@ -74,13 +64,8 @@ class DataModule(pl.LightningDataModule):
     def prepare_data(self) -> None:
         with torch.no_grad():
             obs, act, _, _ = self.sample_fn(sample_shape=[self.spec.trajectories])
-        obs, act = (x.rename(B1="B") for x in (obs, act))
-        decision_steps = torch.arange(obs.size("H") - 1).int()
-        self.tensors = (
-            nt.index_select(obs, "H", decision_steps),
-            act,
-            nt.index_select(obs, "H", decision_steps + 1),
-        )
+        obs, act = (x.rename(B1="B").align_to("H", ...) for x in (obs, act))
+        self.tensors = (obs[:-1], act, obs[1:])
         # noinspection PyArgumentList
         assert all(t.size("B") == obs.size("B") for t in self.tensors)
 
@@ -88,7 +73,7 @@ class DataModule(pl.LightningDataModule):
         n_trajs = self.spec.trajectories
         train_traj_idxs, val_traj_idxs = torch.split(
             torch.randperm(n_trajs),
-            split_size_or_sections=self.spec.train_val_sizes(n_trajs),
+            split_size_or_sections=train_val_sizes(n_trajs, self.spec.train_frac),
         )
         # noinspection PyTypeChecker
         train_trajs, val_trajs = (
@@ -134,82 +119,49 @@ class DataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
 
-def extra_tags(config: dict) -> Tuple[str, ...]:
-    extra = ()
-    if config["n_state"] > config["n_ctrl"]:
-        extra += ("underactuated",)
-    return extra
+def make_modules(
+    generator: LQGGenerator, hparams: wandb.sdk.wandb_config.Config
+) -> Tuple[LQGModule, TVLinearPolicy, LightningModel]:
+    with nt.suppress_named_tensor_warning():
+        dynamics, cost, init = generator()
 
-
-def wandb_init(
-    name: str,
-    config: dict,
-    project="LQG-SVG",
-    entity="angelovtt",
-    tags: Sequence[str] = (),
-    reinit=True,
-    **kwargs,
-) -> wandb.sdk.wandb_run.Run:
-    # pylint:disable=too-many-arguments
-    return wandb.init(
-        name=name,
-        config=config,
-        project=project,
-        entity=entity,
-        dir=WANDB_DIR,
-        tags=("ch5", utils.calver()) + extra_tags(config) + tuple(tags),
-        reinit=reinit,
-        **kwargs,
+    lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
+    policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
+        dynamics, rng=generator.rng
     )
+    model = LightningModel(lqg, policy, hparams)
+    return lqg, policy, model
 
 
 class Experiment(tune.Trainable):
     # pylint:disable=abstract-method,too-many-instance-attributes
     run: wandb.sdk.wandb_run.Run
-    rng: RNG
-    generator: LQGGenerator
-    lqg: LQGModule
-    policy: TVLinearPolicy
-    model: LightningModel
-    datamodule: DataModule
-    trainer: pl.Trainer
 
     def setup(self, config: dict):
         wandb_kwargs = config.pop("wandb")
         self.run = wandb_init(config=config, **wandb_kwargs)
-        seed_everything(self.hparams.seed)
-        self.rng = np.random.default_rng(self.hparams.seed)
-        self.generator = LQGGenerator(
+        pl.seed_everything(self.hparams.seed)
+
+    @property
+    def hparams(self) -> wandb.sdk.wandb_config.Config:
+        return self.run.config
+
+    def step(self) -> dict:
+        generator = LQGGenerator(
             n_state=self.hparams.n_state,
             n_ctrl=self.hparams.n_ctrl,
             horizon=self.hparams.horizon,
             stationary=True,
             passive_eigval_range=(0.5, 1.5),
             controllable=True,
-            rng=self.rng,
+            rng=np.random.default_rng(self.hparams.seed),
         )
-        self._make_modules()
-        self._make_trainer()
-
-    @property
-    def hparams(self) -> wandb_config.Config:
-        return self.run.config
-
-    def _make_modules(self):
-        with nt.suppress_named_tensor_warning():
-            dynamics, cost, init = self.generator()
-        lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
-        policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon)
-        policy.stabilize_(dynamics, rng=self.rng)
-        self.lqg, self.policy = lqg, policy
-        self.model = LightningModel(lqg, policy, self.hparams)
-        self.datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
-
-    def _make_trainer(self):
+        lqg, policy, model = make_modules(generator, self.hparams)
+        datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
-        self.trainer = pl.Trainer(
+        trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
             callbacks=[pl.callbacks.EarlyStopping("val/loss/dataloader_idx_0")],
@@ -218,28 +170,15 @@ class Experiment(tune.Trainable):
             **self.hparams.trainer,
         )
 
-    def step(self) -> dict:
-        with self.run:
-            self._log_env_info()
-            self.run.summary.update(
-                {"trainable_parameters": self.model.num_parameters()}
-            )
-            with utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
-                self.trainer.validate(self.model, datamodule=self.datamodule)
-                self.trainer.fit(self.model, datamodule=self.datamodule)
-                final_eval = self.trainer.test(self.model, datamodule=self.datamodule)
+        with self.run as run:
+            run.summary.update(env_info(lqg))
+            run.summary.update({"trainable_parameters": model.num_parameters()})
+            with exp_utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
+                trainer.validate(model, datamodule=datamodule)
+                trainer.fit(model, datamodule=datamodule)
+                final_eval = trainer.test(model, datamodule=datamodule)
 
         return {tune.result.DONE: True, **final_eval[0]}
-
-    def _log_env_info(self):
-        dynamics = self.lqg.trans.standard_form()
-        eigvals = lqg_util.stationary_eigvals(dynamics)
-        tests = {
-            "stability": lqg_util.isstable(eigvals=eigvals),
-            "controllability": lqg_util.iscontrollable(dynamics),
-        }
-        self.run.summary.update(tests)
-        self.run.summary.update({"passive_eigvals": wandb.Histogram(eigvals)})
 
 
 def run_with_tune(name: str = "ModelSearch"):

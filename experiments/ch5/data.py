@@ -1,9 +1,18 @@
 # pylint:disable=missing-docstring
+from typing import Tuple
+
 from torch import Tensor
 from torch.utils.data import Dataset
 
 from experiments.ch5.model import Batch
 from lqsvg.torch import named as nt
+
+
+def train_val_sizes(total: int, train_frac: float) -> Tuple[int, int]:
+    """Compute train and validation dataset sizes from total size."""
+    train_samples = int(total * train_frac)
+    val_samples = total - train_samples
+    return train_samples, val_samples
 
 
 class TrajectorySegmentDataset(Dataset):
