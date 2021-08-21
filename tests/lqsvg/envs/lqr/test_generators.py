@@ -26,9 +26,7 @@ from lqsvg.testing.fixture import standard_fixture
 
 GeneratorFn = Callable[..., LQGGenerator]
 
-passive_eigval_range = standard_fixture(
-    [None, (0.0, 1.0), (0.5, 1.5)], "PassiveEigvals"
-)
+passive_eigval_range = standard_fixture([(0.0, 1.0), (0.5, 1.5)], "PassiveEigvals")
 stat_ctrb = standard_fixture(
     [(True, False), (True, True), (False, False)], "Stationary/Controllable"
 )
@@ -191,23 +189,23 @@ def check_dynamics(
 
 
 def check_dynamics_covariance(
-    W: Tensor, n_state: int, horizon: int, stationary: int, sample_covariance: bool
+    cov: Tensor, n_state: int, horizon: int, stationary: int, sample_covariance: bool
 ):
-    assert_horizon_len(W, horizon)
-    assert_row_size(W, n_state)
-    assert_col_size(W, n_state)
+    assert_horizon_len(cov, horizon)
+    assert_row_size(cov, n_state)
+    assert_col_size(cov, n_state)
 
-    assert nt.allclose(W, nt.transpose(W))
-    eigval, _ = torch.linalg.eigh(nt.unnamed(W))
+    assert nt.allclose(cov, nt.transpose(cov))
+    eigval, _ = torch.linalg.eigh(nt.unnamed(cov))
     assert eigval.gt(0).all()
 
-    assert sample_covariance != nt.allclose(W, nt.matrix(torch.eye(n_state)))
+    assert sample_covariance != nt.allclose(cov, nt.matrix(torch.eye(n_state)))
 
     # noinspection PyTypeChecker
     assert (
         horizon == 1
         or not sample_covariance
-        or stationary == nt.allclose(W, W.select("H", 0))
+        or stationary == nt.allclose(cov, cov.select("H", 0))
     )
 
 
@@ -323,6 +321,11 @@ def test_make_lindynamics(
         transition_bias=transition_bias,
         sample_covariance=False,
     )
+
+
+def test_null_eigval_range_warns(seed: int):
+    with pytest.warns(UserWarning, match="Complex value found"):
+        make_lindynamics(2, 2, 10, passive_eigval_range=None, rng=seed)
 
 
 @pytest.fixture()

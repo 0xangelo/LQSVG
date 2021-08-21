@@ -2,6 +2,7 @@
 # pylint:disable=invalid-name,unsubscriptable-object
 from __future__ import annotations
 
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional, Union
@@ -278,6 +279,8 @@ def generate_passive(
             state_size, state_size, sample_shape=sample_shape, rng=rng
         )
         eigval, eigvec = np.linalg.eig(mat)
+        if np.iscomplex(eigval).any() or np.iscomplex(eigvec).any():
+            warnings.warn("Complex value found in passive dynamics' eigvals or eigvecs")
     return mat, eigval, eigvec
 
 

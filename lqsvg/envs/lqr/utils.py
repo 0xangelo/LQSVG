@@ -438,14 +438,14 @@ def random_spd_matrix(
 def random_matrix_from_eigs(
     eigvals: np.ndarray, rng: RNG = None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Generate random matrix with specified eigenvalues.
+    """Generates random matrix with specified eigenvalues.
 
-    Supports batched inputs. Assumes `eigvals` is a named vector tensor.
+    Supports batched inputs. Assumes `eigvals` is a vector array.
     Based on::
         https://blogs.sas.com/content/iml/2012/03/30/geneate-a-random-matrix-with-specified-eigenvalues.html
 
     Args:
-        eigvals: (batched) tensor with desired eigenvalues.
+        eigvals: (batched) array with desired eigenvalues.
         rng: random number generator seed
 
     Returns:
@@ -468,7 +468,7 @@ def random_matrix_from_eigs(
 def sample_eigvals(
     num: int, abs_low: float, abs_high: float, size: tuple[int, ...], rng: RNG
 ) -> np.ndarray:
-    """Sample values with absolutes uniformly distributed in (`low`, `high`).
+    """Samples values with absolutes uniformly distributed in (`low`, `high`).
 
     This function uses `np.linspace` and `Generator.choice` to sample
     eigenvalues with multiplicity 1.
