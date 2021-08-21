@@ -4,7 +4,7 @@ from typing import Tuple
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from experiments.ch5.model import Batch
+from experiments.ch5.model import SegBatch
 from lqsvg.torch import named as nt
 
 
@@ -29,7 +29,7 @@ class TrajectorySegmentDataset(Dataset):
         self.segs_per_traj = horizon - segment_len + 1
         self._len = trajs * self.segs_per_traj
 
-    def __getitem__(self, index) -> Batch:
+    def __getitem__(self, index) -> SegBatch:
         traj_idx = index // self.segs_per_traj
         timestep_start = index % self.segs_per_traj
         # noinspection PyTypeChecker

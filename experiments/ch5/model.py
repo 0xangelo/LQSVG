@@ -13,6 +13,7 @@ from nnrl.nn.critic import (
     QValueEnsemble,
     VValue,
 )
+from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
@@ -23,7 +24,12 @@ from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.experiment.analysis import gradient_accuracy
 from lqsvg.experiment.dynamics import markovian_state_sampler, recurrent_state_sampler
-from lqsvg.experiment.estimators import analytic_svg, maac_estimator
+from lqsvg.experiment.estimators import (
+    MBEstimator,
+    analytic_svg,
+    maac_estimator,
+    mfdpg_estimator,
+)
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -33,16 +39,15 @@ from lqsvg.torch.nn.dynamics.segment import (
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.value import QuadQValue, QuadVValue, ZeroQValue
 
-Batch = Tuple[Tensor, Tensor, Tensor]
-ValBatch = Union[Batch, Sequence[Tensor]]
+SegBatch = Tuple[Tensor, Tensor, Tensor]
+ValBatch = Union[SegBatch, Sequence[Tensor]]
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
-Estimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
 
 
 @functools.singledispatch
 def make_estimator(
     model: nn.Module, policy: TVLinearPolicy, reward: QuadraticReward, qval: QuadQValue
-) -> Estimator:
+) -> MBEstimator:
     return maac_estimator(
         policy, markovian_state_sampler(model, model.rsample), reward, qval
     )
@@ -54,7 +59,7 @@ def _(
     policy: TVLinearPolicy,
     reward: QuadraticReward,
     qval: QuadQValue,
-) -> Estimator:
+) -> MBEstimator:
     return maac_estimator(
         policy,
         recurrent_state_sampler(model, model.dist.rsample),
@@ -87,7 +92,7 @@ def val_err_and_grad_acc(
 ) -> Tuple[Tensor, Tensor]:
     """Computes metrics for estimated gradients."""
     val_err = relative_error(target_val, val)
-    grad_acc = torch.as_tensor(gradient_accuracy([svg], target_svg)).to(val)
+    grad_acc = gradient_accuracy([svg], target_svg)
     return val_err, grad_acc
 
 
@@ -97,23 +102,23 @@ def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
     return relative_error(vval(obs).mean(), val)
 
 
-def _refine_batch(batch: Batch) -> Batch:
+def refine_segbatch(batch: SegBatch) -> SegBatch:
     # noinspection PyTypeChecker
     return tuple(x.refine_names("B", "H", "R") for x in batch)
 
 
 def wrap_log_prob(
     log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
-) -> Callable[[Batch], Tensor]:
-    def wrapped(batch: Batch) -> Tensor:
+) -> Callable[[SegBatch], Tensor]:
+    def wrapped(batch: SegBatch) -> Tensor:
         return log_prob(*batch)
 
     return wrapped
 
 
 def empirical_kl(
-    source_logp: Callable[[Batch], Tensor], other_logp: Callable[[Batch], Tensor]
-) -> Callable[[Batch], Tensor]:
+    source_logp: Callable[[SegBatch], Tensor], other_logp: Callable[[SegBatch], Tensor]
+) -> Callable[[SegBatch], Tensor]:
     """Returns a function of samples to empirical KL divergence.
 
     Args:
@@ -122,19 +127,19 @@ def empirical_kl(
         other_logp: likelihood function of another distribution
     """
 
-    def kld(batch: Batch) -> Tensor:
+    def kld(batch: SegBatch) -> Tensor:
         return torch.mean(source_logp(batch) - other_logp(batch))
 
     return kld
 
 
+def with_prefix(prefix: str, dictionary: dict) -> dict:
+    """Returns a dictionary copy with prefixed keys."""
+    return {prefix + k: v for k, v in dictionary.items()}
+
+
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
-    model: nn.Module
-    seg_log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
-    kl_with_dynamics: Callable[[Batch], Tensor]
-    estimator: Estimator
-
     def __init__(
         self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
     ):
@@ -179,7 +184,7 @@ class LightningModel(pl.LightningModule):
             lqg.reward.standard_form(),
         ).requires_grad_(False)
 
-    def forward(self, batch: Batch) -> Tensor:
+    def forward(self, batch: SegBatch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
         # pylint:disable=arguments-differ
         obs, act, new_obs = batch
@@ -198,41 +203,33 @@ class LightningModel(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
-    def training_step(self, batch: Batch, batch_idx: int) -> Tensor:
+    def training_step(self, batch: SegBatch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
-        loss = self(_refine_batch(batch)).mean()
+        loss = self(refine_segbatch(batch)).mean()
         self.log("train/loss", loss)
         return loss
-
-    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
-        # Override original: set prog_bar=False to reduce clutter
-        self.log_dict(
-            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
-        )
 
     def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._evaluation_step(batch, dataloader_idx)
-        self.log_dict({"val/" + k: v for k, v in metrics.items()})
+        self.log_dict(with_prefix("val/", self._evaluate_on(batch, dataloader_idx)))
 
     def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._evaluation_step(batch, dataloader_idx)
-        self.log_dict({"test/" + k: v for k, v in metrics.items()})
+        self.log_dict(with_prefix("test/", self._evaluate_on(batch, dataloader_idx)))
 
-    def _evaluation_step(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
+    def _evaluate_on(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
         if dataloader_idx == 0:
             return self._eval_on_traj_seg(batch)
 
         return self._eval_on_uniform_states(batch[0])
 
-    def _eval_on_traj_seg(self, batch: Batch) -> TensorDict:
+    def _eval_on_traj_seg(self, batch: SegBatch) -> TensorDict:
         metrics = {}
         self.model.eval()
-        batch = _refine_batch(batch)
+        batch = refine_segbatch(batch)
         # Compute log-prob of traj segments
         metrics["loss"] = self(batch).mean()
         # Compute KL with true dynamics
@@ -258,6 +255,12 @@ class LightningModel(pl.LightningModule):
             metrics[f"{horizon}/grad_acc"] = grad_acc
             metrics[f"{horizon}/relative_vval_err"] = vvalue_err(val, obs, self._vval)
         return metrics
+
+    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
+        # Override original: set prog_bar=False to reduce clutter
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
+        )
 
 
 def make_value(
@@ -290,6 +293,8 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
 
         # NN modules
         self.qval, self.target_qval, self.target_vval = make_value(policy, self.hparams)
+        # Estimator
+        self.estimator = mfdpg_estimator(self.policy, self.qval)
 
         # Groud-truth
         dynamics, cost, init = lqg.standard_form()
@@ -299,11 +304,20 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         self.register_buffer("true_svg_K", true_svg.K)
         self.register_buffer("true_svg_k", true_svg.k)
 
+        # For VValue error
+        self._vval = QuadVValue.from_policy(
+            policy.standard_form(),
+            lqg.trans.standard_form(),
+            lqg.reward.standard_form(),
+        ).requires_grad_(False)
+
     def forward(self, batch: TDBatch) -> Tensor:
         """Returns the temporal difference error induced by the value function."""
         # pylint:disable=arguments-differ
         obs, act, rew, new_obs = batch
-        return nn.MSELoss()(self.qval(obs, act), rew + self.target_vval(new_obs))
+        with torch.no_grad():
+            target = rew + self.target_vval(new_obs)
+        return nn.MSELoss()(self.qval(obs, act), target)
 
     def num_parameters(self) -> int:
         """Returns the number of trainable parameters"""
@@ -321,24 +335,36 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         del batch_idx
         loss = self(batch)
         self.log("train/loss", loss)
+        with torch.no_grad():
+            self.log_dict(with_prefix("train/", self._evaluate_on(batch)))
         return loss
+
+    def on_train_batch_end(self, *args, **kwargs):
+        # pylint:disable=arguments-differ,unused-argument
+        update_polyak(self.qval, self.target_qval, self.hparams.polyak)
 
     def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._evaluation_step(batch)
-        self.log_dict({"val/" + k: v for k, v in metrics.items()})
+        self.log_dict(with_prefix("val/", self._evaluate_on(batch)))
 
     def test_step(self, batch: TDBatch, batch_idx: int) -> None:
         # pylint:disable=arguments-differ
         del batch_idx
-        metrics = self._evaluation_step(batch)
-        self.log_dict({"val/" + k: v for k, v in metrics.items()})
+        self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
 
-    def _evaluation_step(self, batch: TDBatch) -> TensorDict:
+    def _evaluate_on(self, batch: TDBatch) -> TensorDict:
         obs, act, rew, new_obs = batch
         td_error = relative_error(rew + self.target_vval(new_obs), self.qval(obs, act))
-        return {"relative_td_error": td_error}
+        with torch.enable_grad():
+            val, svg = self.estimator(obs)
+        return {
+            "relative_td_error": td_error,
+            "relative_vval_err": vvalue_err(val, obs, self._vval),
+            "grad_acc": gradient_accuracy(
+                [svg], lqr.Linear(self.true_svg_K, self.true_svg_k)
+            ),
+        }
 
     def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
         # Override original: set prog_bar=False to reduce clutter
