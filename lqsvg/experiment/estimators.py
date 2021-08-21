@@ -23,6 +23,12 @@ from lqsvg.experiment.types import (
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn.policy import TVLinearPolicy
 
+# Model-based estimator
+MBEstimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
+
+# Model-free estimator
+MFEstimator = Callable[[Tensor], Tuple[Tensor, lqr.Linear]]
+
 ###############################################################################
 # Functional
 ###############################################################################
@@ -160,6 +166,57 @@ def analytic_svg(
     return value, svg
 
 
+def mfdpg_surrogate(
+    policy: DeterministicPolicy, qvalue: QValueFn
+) -> Callable[[Tensor], Tensor]:
+    """Returns the surrogate objective function for model-free DPG.
+
+    Args:
+        policy: differentiable function of policy parameters and states to
+            actions
+        qvalue: differentiable function of states and actions to expected
+            returns
+
+    Returns:
+        A callable mapping a batch of states to the estimated surrogate
+        objective
+    """
+
+    def surrogate(obs: Tensor) -> Tensor:
+        return qvalue(obs, policy(obs)).mean()
+
+    return surrogate
+
+
+def model_free_estimator(
+    policy: TVLinearPolicy, surrogate: Callable[[Tensor], Tensor]
+) -> MFEstimator:
+    """Model-free value gradient estimator.
+
+    Args:
+        policy: linear feedback policy module
+        surrogate: function mapping states to surrogate objective for
+            differentiation
+
+    Returns:
+        Callable from starting state samples to average surrogate objective
+        (as a tensor) and its gradients w.r.t. each policy parameter
+    """
+
+    def estimator(obs: Tensor) -> Tuple[Tensor, lqr.Linear]:
+        surr = surrogate(obs)
+        svg = policy_svg(policy, surr)
+        return surr, svg
+
+    return estimator
+
+
+def mfdpg_estimator(policy: TVLinearPolicy, qvalue: QValueFn) -> MFEstimator:
+    """Returns the model-free DPG estimator for a given policy and Q-value."""
+    surrogate = mfdpg_surrogate(policy, qvalue)
+    return model_free_estimator(policy, surrogate)
+
+
 def dpg_surrogate(
     policy: DeterministicPolicy,
     frozen_policy: DeterministicPolicy,
@@ -167,7 +224,7 @@ def dpg_surrogate(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tensor]:
-    """Surrogate objective function of the DPG estimator.
+    """Returns the surrogate value fucntion for DPG.
 
     Args:
         policy: differentiable function of policy parameters and states to
@@ -180,8 +237,8 @@ def dpg_surrogate(
             returns
 
     Returns:
-        A callable mapping a batch of states to the estimated surrogate
-        objective
+        A callable mapping a state batch and prediction horizon to the
+        estimated surrogate value
     """
 
     def surrogate(obs: Tensor, n_steps: int = 0) -> Tensor:
@@ -203,7 +260,7 @@ def dpg_surrogate(
 def nstep_estimator(
     policy: TVLinearPolicy, surrogate: Callable[[Tensor, int], Tensor]
 ) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
-    """Monte carlo value gradient estimator.
+    """Returns a model-based lookahead value gradient estimator.
 
     Args:
         policy: linear feedback policy module
@@ -211,9 +268,8 @@ def nstep_estimator(
             objective for differentiation
 
     Returns:
-        Callable from starting state samples and number of steps to average
-        surrogate objective (as a tensor) and its gradients w.r.t. each policy
-        parameter
+        Callable from starting state samples and prediction horizon to
+        surrogate value and its gradients w.r.t. each policy parameter
     """
 
     def estimator(obs: Tensor, steps: int) -> Tuple[Tensor, lqr.Linear]:
@@ -230,7 +286,7 @@ def dpg_estimator(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
-    """Value gradient estimator based on the DPG theorem.
+    """Returns the model-based DPG estimator.
 
     Args:
         policy: linear feedback policy module
@@ -240,8 +296,7 @@ def dpg_estimator(
             returns
 
     Returns:
-        A callable mapping a batch of states to the estimated surrogate
-        objective
+        The model-based lookahed version of the DPG estimator
     """
     surrogate = dpg_surrogate(policy, policy.frozen, dynamics, reward_fn, qvalue)
     return nstep_estimator(policy, surrogate)
@@ -253,7 +308,7 @@ def maac_markovian(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tensor]:
-    """Surrogate objective function of the MAAC estimator.
+    """Returns the surrogate value function for MAAC with markovian model.
 
     Args:
         dynamics: reparameterized markovian state transition sampler
@@ -264,8 +319,8 @@ def maac_markovian(
             returns
 
     Returns:
-        Callable from starting state samples and number of steps to average
-        surrogate objective
+        A callable mapping a state batch and prediction horizon to the
+        estimated surrogate value
     """
 
     def surrogate(obs: Tensor, n_steps: int) -> Tensor:
@@ -288,7 +343,7 @@ def maac_recurrent(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tensor]:
-    """MAAC estimator surrogate objective with recurrent dynamics.
+    """Returns the surrogate value function for MAAC with recurrent model.
 
     Args:
         dynamics: reparameterized recurrent state transition sampler
@@ -299,8 +354,8 @@ def maac_recurrent(
             returns
 
     Returns:
-        Callable from starting state samples and number of steps to average
-        surrogate objective
+        A callable mapping a state batch and prediction horizon to the
+        estimated surrogate value
     """
 
     def surrogate(obs: Tensor, n_steps: int) -> Tensor:
@@ -325,7 +380,7 @@ def maac_estimator(
     qvalue: QValueFn,
     recurrent: bool = False,
 ) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
-    """Value gradient estimator based on the DPG theorem.
+    """Returns the value gradient estimator from MAAC.
 
     Args:
         policy: linear feedback policy module
@@ -336,8 +391,7 @@ def maac_estimator(
         recurrent: whether the dynamics model is recurrent
 
     Returns:
-        A callable mapping a batch of states to the estimated surrogate
-        objective
+        A model-based n-step SVG estimator
     """
     surrogate_fn = maac_recurrent if recurrent else maac_markovian
     surrogate = surrogate_fn(dynamics, policy, reward_fn, qvalue)
