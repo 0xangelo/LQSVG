@@ -38,7 +38,7 @@ class DataSpec:
     train_batch_size: int
     val_loss_batch_size: int
     val_grad_batch_size: int
-    segment_len: int
+    seq_len: int
     train_frac: float = 0.9
 
     def __post_init__(self):
@@ -48,13 +48,13 @@ class DataSpec:
 class DataModule(pl.LightningDataModule):
     tensors: Tuple[Tensor, Tensor, Tensor]
     train_dataset: Dataset
-    val_seg_dataset: Dataset
+    val_seq_dataset: Dataset
     val_state_dataset: Dataset
 
     def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec):
         super().__init__()
         self.spec = spec
-        assert self.spec.segment_len <= lqg.horizon, "Invalid trajectory segment length"
+        assert self.spec.seq_len <= lqg.horizon, "Invalid trajectory segment length"
 
         sample_fn = trajectory_sampler(
             policy,
@@ -67,10 +67,9 @@ class DataModule(pl.LightningDataModule):
     def prepare_data(self) -> None:
         with torch.no_grad():
             obs, act, _, _ = self.sample_fn(sample_shape=[self.spec.trajectories])
-        obs, act = (x.rename(B1="B").align_to("H", ...) for x in (obs, act))
+        obs = obs.rename(B1="B").align_to("H", "B", ...)
+        act = act.rename(B1="B").align_to("H", "B", ...)
         self.tensors = (obs[:-1], act, obs[1:])
-        # noinspection PyArgumentList
-        assert all(t.size("B") == obs.size("B") for t in self.tensors)
 
     def setup(self, stage: Optional[str] = None):
         n_trajs = self.spec.trajectories
@@ -83,12 +82,8 @@ class DataModule(pl.LightningDataModule):
             tuple(nt.index_select(t, "B", idxs) for t in self.tensors)
             for idxs in (train_traj_idxs, val_traj_idxs)
         )
-        self.train_dataset = TensorSeqDataset(
-            *train_trajs, seq_len=self.spec.segment_len
-        )
-        self.val_seg_dataset = TensorSeqDataset(
-            *val_trajs, seq_len=self.spec.segment_len
-        )
+        self.train_dataset = TensorSeqDataset(*train_trajs, seq_len=self.spec.seq_len)
+        self.val_seq_dataset = TensorSeqDataset(*val_trajs, seq_len=self.spec.seq_len)
         val_obs = val_trajs[0]
         self.val_state_dataset = TensorDataset(
             nt.unnamed(val_obs.flatten(["H", "B"], "B"))
@@ -105,7 +100,7 @@ class DataModule(pl.LightningDataModule):
         # pylint:disable=arguments-differ
         # For loss evaluation
         seg_loader = DataLoader(
-            self.val_seg_dataset,
+            self.val_seq_dataset,
             shuffle=False,
             batch_size=self.spec.val_loss_batch_size,
         )
@@ -184,12 +179,12 @@ class Experiment(tune.Trainable):
 def run_with_tune(name: str = "ModelSearch"):
     ray.init(logging_level=logging.WARNING)
 
-    # models = [
-    #     {"type": "linear"},
-    #     {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
-    #     {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
-    #     {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
-    # ]
+    models = [
+        {"type": "linear"},
+        {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
+        # {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
+        # {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
+    ]
     config = {
         "wandb": {"name": name},
         "learning_rate": 1e-3,
@@ -204,7 +199,7 @@ def run_with_tune(name: str = "ModelSearch"):
         },
         "pred_horizon": [0, 2, 4, 8],
         "zero_q": False,
-        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
+        "model": tune.grid_search(models),
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -212,19 +207,13 @@ def run_with_tune(name: str = "ModelSearch"):
             "val_grad_batch_size": 256,
             "segment_len": 4,
         },
-        "trainer": {
-            "max_epochs": 1000,
-            # don't show progress bar for model training
-            # "progress_bar_refresh_rate": 0,
-            # don't print summary before training
-            # "weights_summary": None,
-            "weights_summary": "full",
-            "track_grad_norm": 2,
-            # "val_check_interval": 0.5,
-            # "gpus": 1,
-        },
+        "trainer": dict(
+            max_epochs=1000,
+            progress_bar_refresh_rate=0,  # don't show model training progress bar
+            weights_summary=None,  # don't print summary before training
+            track_grad_norm=2,
+        ),
     }
-    Experiment(config).train()
     tune.run(Experiment, config=config, num_samples=1, local_dir=RESULTS_DIR)
     ray.shutdown()
 
