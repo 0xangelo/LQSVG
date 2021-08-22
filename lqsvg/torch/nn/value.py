@@ -9,6 +9,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic
 from lqsvg.envs.lqr.solvers import NamedLQGPrediction
 from lqsvg.envs.lqr.utils import dims_from_policy, unpack_obs
+from lqsvg.np_util import RNG
 from lqsvg.torch.random import spd_matrix, unit_vector
 
 __all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue", "ZeroQValue"]
@@ -92,7 +93,7 @@ class QuadVValue(VValue, QuadraticMixin):
     n_state: int
     horizon: int
 
-    def __init__(self, n_state: int, horizon: int):
+    def __init__(self, n_state: int, horizon: int, rng: RNG = None):
         super().__init__()
         self.n_state = n_state
         self.horizon = horizon
@@ -100,13 +101,13 @@ class QuadVValue(VValue, QuadraticMixin):
         self.quad = nn.Parameter(Tensor(horizon + 1, n_state, n_state))
         self.linear = nn.Parameter(Tensor(horizon + 1, n_state))
         self.const = nn.Parameter(Tensor(horizon + 1))
-        self.reset_parameters()
+        self.reset_parameters(rng)
 
-    def reset_parameters(self):
+    def reset_parameters(self, rng: RNG = None):
         """Standard parameter initialization."""
         n_state, horizon = self.n_state, self.horizon
-        self.quad.data.copy_(spd_matrix(size=n_state, horizon=horizon + 1))
-        self.linear.data.copy_(unit_vector(size=n_state, horizon=horizon + 1))
+        self.quad.data.copy_(spd_matrix(size=n_state, horizon=horizon + 1, rng=rng))
+        self.linear.data.copy_(unit_vector(size=n_state, horizon=horizon + 1, rng=rng))
         nn.init.uniform_(self.const, -1, 1)
 
     def match_policy_(
@@ -173,7 +174,7 @@ class QuadQValue(QValue, QuadraticMixin):
     n_tau: int
     horizon: int
 
-    def __init__(self, n_tau: int, horizon: int):
+    def __init__(self, n_tau: int, horizon: int, rng: RNG = None):
         super().__init__()
         self.n_tau = n_tau
         self.horizon = horizon
@@ -181,13 +182,13 @@ class QuadQValue(QValue, QuadraticMixin):
         self.quad = nn.Parameter(Tensor(horizon, n_tau, n_tau))
         self.linear = nn.Parameter(Tensor(horizon, n_tau))
         self.const = nn.Parameter(Tensor(horizon))
-        self.reset_parameters()
+        self.reset_parameters(rng)
 
-    def reset_parameters(self):
+    def reset_parameters(self, rng: RNG = None):
         """Standard parameter initialization."""
         n_tau, horizon = self.n_tau, self.horizon
-        self.quad.data.copy_(spd_matrix(size=n_tau, horizon=horizon))
-        self.linear.data.copy_(unit_vector(size=n_tau, horizon=horizon))
+        self.quad.data.copy_(spd_matrix(size=n_tau, horizon=horizon, rng=rng))
+        self.linear.data.copy_(unit_vector(size=n_tau, horizon=horizon, rng=rng))
         nn.init.uniform_(self.const, -1, 1)
 
     @classmethod
