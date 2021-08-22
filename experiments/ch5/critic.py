@@ -49,8 +49,9 @@ def make_value(
         qvals = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
         qvals_ = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
     elif kind == "quad":
-        qvals = [QuadQValue(n_state + n_ctrl, horizon) for _ in range(2)]
-        qvals_ = [QuadQValue(n_state + n_ctrl, horizon) for _ in range(2)]
+        rng = hparams.seed
+        qvals = [QuadQValue(n_state + n_ctrl, horizon, rng) for _ in range(2)]
+        qvals_ = [QuadQValue(n_state + n_ctrl, horizon, rng) for _ in range(2)]
     else:
         raise ValueError(f"Unknown type {kind}")
     qvals = QValueEnsemble(qvals)
