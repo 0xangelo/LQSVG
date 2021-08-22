@@ -151,13 +151,10 @@ class Experiment(tune.Trainable):
 
     def step(self) -> dict:
         generator = LQGGenerator(
-            n_state=self.hparams.n_state,
-            n_ctrl=self.hparams.n_ctrl,
-            horizon=self.hparams.horizon,
             stationary=True,
-            passive_eigval_range=(0.5, 1.5),
             controllable=True,
             rng=np.random.default_rng(self.hparams.seed),
+            **self.hparams.env_config,
         )
         lqg, policy, model = make_modules(generator, self.hparams)
         datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
@@ -199,12 +196,15 @@ def run_with_tune(name: str = "ModelSearch"):
         "weight_decay": 1e-4,
         # "seed": tune.grid_search(list(range(123, 133))),
         "seed": 123,
-        "n_state": 2,
-        "n_ctrl": 2,
-        "horizon": 50,
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+            "horizon": 50,
+            "passive_eigval_range": (0.9, 1.1),
+        },
         "pred_horizon": [0, 2, 4, 8],
-        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "zero_q": False,
+        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -235,12 +235,15 @@ def run_simple():
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
         "seed": 123,
-        "n_state": 2,
-        "n_ctrl": 2,
-        "horizon": 50,
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+            "horizon": 50,
+            "passive_eigval_range": (0.9, 1.1),
+        },
         "pred_horizon": [0, 2, 4, 8],
-        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "zero_q": False,
+        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,

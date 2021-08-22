@@ -27,7 +27,7 @@ def make_modules(
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
-    lqg = LQGModule.from_existing(dynamics, cost, init)
+    lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
         dynamics, rng=generator.rng
     )
@@ -113,13 +113,10 @@ class Experiment(tune.Trainable):
 
     def step(self) -> dict:
         generator = LQGGenerator(
-            n_state=self.hparams.n_state,
-            n_ctrl=self.hparams.n_ctrl,
-            horizon=self.hparams.horizon,
             stationary=True,
-            passive_eigval_range=(0.5, 1.5),
             controllable=True,
             rng=np.random.default_rng(self.hparams.seed),
+            **self.hparams.env_config,
         )
         lqg, policy, qvalue = make_modules(generator, self.hparams)
         datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
@@ -147,7 +144,33 @@ class Experiment(tune.Trainable):
 
 
 def main():
-    pass
+    config = {
+        "wandb": {"name": "TDLearning", "mode": "online"},
+        "learning_rate": 1e-3,
+        "weight_decay": 0,
+        "polyak": 0.995,
+        "seed": 123,
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+            "horizon": 50,
+            "passive_eigval_range": (0.9, 1.1),
+        },
+        "model": {"hunits": (32, 32)},
+        "datamodule": {
+            "trajectories": 2000,
+            "train_batch_size": 128,
+            "val_batch_size": 128,
+        },
+        "trainer": dict(
+            max_epochs=20,
+            # fast_dev_run=True,
+            track_grad_norm=2,
+            weights_summary="full",
+            val_check_interval=0.5,
+        ),
+    }
+    Experiment(config).train()
 
 
 if __name__ == "__main__":

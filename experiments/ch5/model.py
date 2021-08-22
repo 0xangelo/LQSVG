@@ -5,7 +5,7 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 import pytorch_lightning as pl
 import torch
 from nnrl.nn.actor import DeterministicPolicy
-from nnrl.nn.critic import ClippedQValue, HardValue, MLPQValue, QValueEnsemble, VValue
+from nnrl.nn.critic import HardValue, MLPQValue, QValue, QValueEnsemble, VValue
 from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
@@ -18,6 +18,7 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
 from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator, mfdpg_estimator
+from lqsvg.torch import named as nt
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -251,22 +252,41 @@ class LightningModel(pl.LightningModule):
         )
 
 
+class ClippedQValue(QValue):
+    """Q-value computed as the minimum among Q-values in an ensemble."""
+
+    def __init__(self, q_values: QValueEnsemble):
+        super().__init__()
+        self.q_values = q_values
+
+    def forward(self, obs: Tensor, action: Tensor) -> Tensor:
+        values = self.q_values(obs, action)
+        mininum, _ = torch.stack(nt.unnamed(*values), dim=0).min(dim=0)
+        return mininum.refine_names(*values[0].names)
+
+
 def make_value(
     policy: TVLinearPolicy, hparams: AttributeDict
 ) -> Tuple[QValueEnsemble, QValueEnsemble, VValue]:
     """Creates modules for Streamlined Off-Policy TD learning."""
     n_state, n_ctrl, horizon = dims_from_policy(policy.standard_form())
     obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
-    spec = MLPQValue.spec_cls(units=hparams.hunits, activation="ReLU")
+    spec = MLPQValue.spec_cls(units=hparams.model["hunits"], activation="ReLU")
     qvals = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    qval = QValueEnsemble(qvals)
+    qvals = QValueEnsemble(qvals)
 
     # Loss
     target_policy = DeterministicPolicy.add_gaussian_noise(policy, noise_stddev=0.3)
     qvals_ = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    target_qval = QValueEnsemble(qvals_).requires_grad_(False)
-    target_vval = HardValue(target_policy, target_qval)
-    return qval, target_qval, target_vval
+    target_qvals = QValueEnsemble(qvals_).requires_grad_(False)
+    target_vval = HardValue(target_policy, ClippedQValue(target_qvals))
+    return qvals, target_qvals, target_vval
+
+
+def refine_tdbatch(batch: TDBatch) -> TDBatch:
+    obs, act, rew, new_obs = (t.refine_names("B", ...) for t in batch)
+    obs, act, new_obs = nt.vector(obs, act, new_obs)
+    return obs, act, rew, new_obs
 
 
 class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
@@ -304,9 +324,9 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         # pylint:disable=arguments-differ
         obs, act, rew, new_obs = batch
         with torch.no_grad():
-            target = rew + self.target_vval(new_obs)
+            target = nt.unnamed(rew + self.target_vval(new_obs))
         loss_fn = nn.MSELoss()
-        values = self.qvals(obs, act)
+        values = nt.unnamed(*self.qvals(obs, act))
         return torch.stack([loss_fn(v, target) for v in values]).sum()
 
     def num_parameters(self) -> int:
@@ -323,6 +343,7 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
     def training_step(self, batch: TDBatch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
+        batch = refine_tdbatch(batch)
         loss = self(batch)
         self.log("train/loss", loss)
         with torch.no_grad():
@@ -336,16 +357,19 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
     def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
         # pylint:disable=arguments-differ
         del batch_idx
+        batch = refine_tdbatch(batch)
         self.log_dict(with_prefix("val/", self._evaluate_on(batch)))
 
     def test_step(self, batch: TDBatch, batch_idx: int) -> None:
         # pylint:disable=arguments-differ
         del batch_idx
+        batch = refine_tdbatch(batch)
         self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
 
     def _evaluate_on(self, batch: TDBatch) -> TensorDict:
         obs, act, rew, new_obs = batch
-        td_error = relative_error(rew + self.target_vval(new_obs), self.qvals(obs, act))
+        prediction = self.qvals.clipped(nt.unnamed(*self.qvals(obs, act)))
+        td_error = relative_error(rew + self.target_vval(new_obs), prediction).mean()
         with torch.enable_grad():
             val, svg = self.estimator(obs)
         return {
