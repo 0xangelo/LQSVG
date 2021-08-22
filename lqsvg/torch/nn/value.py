@@ -9,7 +9,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic
 from lqsvg.envs.lqr.solvers import NamedLQGPrediction
 from lqsvg.envs.lqr.utils import dims_from_policy, unpack_obs
-from lqsvg.torch.random import random_normal_vector, random_spd_matrix
+from lqsvg.torch.random import random_spd_matrix, unit_vector
 
 __all__ = ["QuadraticMixin", "QuadQValue", "QuadVValue", "ZeroQValue"]
 
@@ -106,7 +106,7 @@ class QuadVValue(VValue, QuadraticMixin):
         """Standard parameter initialization."""
         n_state, horizon = self.n_state, self.horizon
         self.quad.data.copy_(random_spd_matrix(size=n_state, horizon=horizon + 1))
-        self.linear.data.copy_(random_normal_vector(size=n_state, horizon=horizon + 1))
+        self.linear.data.copy_(unit_vector(size=n_state, horizon=horizon + 1))
         nn.init.uniform_(self.const, -1, 1)
 
     def match_policy_(
@@ -187,7 +187,7 @@ class QuadQValue(QValue, QuadraticMixin):
         """Standard parameter initialization."""
         n_tau, horizon = self.n_tau, self.horizon
         self.quad.data.copy_(random_spd_matrix(size=n_tau, horizon=horizon))
-        self.linear.data.copy_(random_normal_vector(size=n_tau, horizon=horizon))
+        self.linear.data.copy_(unit_vector(size=n_tau, horizon=horizon))
         nn.init.uniform_(self.const, -1, 1)
 
     @classmethod
