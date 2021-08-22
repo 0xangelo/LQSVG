@@ -9,7 +9,7 @@ import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics, make_quadcost
 from lqsvg.torch.nn.value import QuadQValue, QuadraticMixin, QuadVValue
-from lqsvg.torch.random import random_normal_vector, random_spd_matrix
+from lqsvg.torch.random import normal_vector, spd_matrix
 
 
 def check_quadratic_parameters(module: QuadraticMixin, quadratic: Quadratic):
@@ -83,9 +83,9 @@ class TestQuadVValue:
 
     @pytest.fixture()
     def params(self, n_state: int, horizon: int, seed: int) -> Quadratic:
-        V = random_spd_matrix(size=n_state, horizon=horizon + 1, rng=seed)
-        v = random_normal_vector(size=n_state, horizon=horizon + 1, rng=seed)
-        c = random_normal_vector(size=1, horizon=horizon + 1, rng=seed).squeeze("R")
+        V = spd_matrix(size=n_state, horizon=horizon + 1, rng=seed)
+        v = normal_vector(size=n_state, horizon=horizon + 1, rng=seed)
+        c = normal_vector(size=1, horizon=horizon + 1, rng=seed).squeeze("R")
         return V, v, c
 
     def test_copy_(self, vvalue: QuadVValue, params: Quadratic):
@@ -171,9 +171,9 @@ class TestQuadQValue:
     @pytest.fixture()
     def params(self, n_state: int, n_ctrl: int, horizon: int, seed: int) -> Quadratic:
         n_tau = n_state + n_ctrl
-        Q = random_spd_matrix(size=n_tau, horizon=horizon, rng=seed)
-        q = random_normal_vector(size=n_tau, horizon=horizon, rng=seed)
-        c = random_normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
+        Q = spd_matrix(size=n_tau, horizon=horizon, rng=seed)
+        q = normal_vector(size=n_tau, horizon=horizon, rng=seed)
+        c = normal_vector(size=1, horizon=horizon, rng=seed).squeeze("R")
         return Q, q, c
 
     def test_copy_(self, qvalue: QuadQValue, params: Quadratic):

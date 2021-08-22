@@ -7,7 +7,7 @@ from torch import IntTensor, Tensor, nn
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import unpack_obs
-from lqsvg.torch.random import random_normal_vector, random_spd_matrix
+from lqsvg.torch.random import normal_vector, spd_matrix
 
 
 class QuadraticReward(nn.Module):
@@ -30,8 +30,8 @@ class QuadraticReward(nn.Module):
 
     def reset_parameters(self):
         """Default parameter initialization."""
-        self.C.data.copy_(random_spd_matrix(self.n_tau, horizon=self.horizon))
-        self.c.data.copy_(random_normal_vector(self.n_tau, horizon=self.horizon))
+        self.C.data.copy_(spd_matrix(self.n_tau, horizon=self.horizon))
+        self.c.data.copy_(normal_vector(self.n_tau, horizon=self.horizon))
 
     @classmethod
     def from_existing(cls, cost: lqr.QuadCost) -> QuadraticReward:

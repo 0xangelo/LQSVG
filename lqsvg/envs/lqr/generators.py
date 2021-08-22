@@ -21,9 +21,9 @@ from lqsvg.np_util import (
 )
 from lqsvg.torch.random import (
     minimal_sample_shape,
-    random_normal_matrix,
-    random_normal_vector,
-    random_spd_matrix,
+    normal_matrix,
+    normal_vector,
+    spd_matrix,
 )
 from lqsvg.torch.utils import as_float_tensor, expand_and_refine
 
@@ -280,9 +280,7 @@ def generate_passive(
         )
     else:
         warnings.warn("Using no eigval range may lead to complex eigvals")
-        mat = random_normal_matrix(
-            state_size, state_size, sample_shape=sample_shape, rng=rng
-        )
+        mat = normal_matrix(state_size, state_size, sample_shape=sample_shape, rng=rng)
         eigval, eigvec = np.linalg.eig(mat)
 
     if np.iscomplex(eigval).any() or np.iscomplex(eigvec).any():
@@ -358,7 +356,7 @@ def make_linsdynamics(
     state_size, _, horizon = utils.dims_from_dynamics(dynamics)
 
     if sample_covariance:
-        W = random_spd_matrix(
+        W = spd_matrix(
             state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
         )
     else:
@@ -399,7 +397,7 @@ def make_quadcost(
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
 
-    C = random_spd_matrix(n_tau, **kwargs)
+    C = spd_matrix(n_tau, **kwargs)
     C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
     C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
     C_as, C_aa = nt.split(C_a, [state_size, ctrl_size], dim="R")
@@ -412,7 +410,7 @@ def make_quadcost(
     C = torch.cat((C_s, C_a), dim="C")
 
     if linear:
-        c = random_normal_vector(n_tau, **kwargs)
+        c = normal_vector(n_tau, **kwargs)
     else:
         c = expand_and_refine(
             nt.vector(torch.zeros(n_tau)), 1, horizon=horizon, n_batch=n_batch

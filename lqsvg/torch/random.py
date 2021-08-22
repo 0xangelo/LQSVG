@@ -72,7 +72,7 @@ def minimal_sample_shape(
     return horizon_shape + batch_shape
 
 
-def random_normal_vector(
+def normal_vector(
     size: int,
     horizon: int,
     stationary: bool = False,
@@ -92,7 +92,7 @@ def random_normal_vector(
     return vec
 
 
-def random_normal_matrix(
+def normal_matrix(
     row_size: int, col_size: int, sample_shape: Tuple[int, ...] = (), rng: RNG = None
 ) -> np.ndarray:
     """Matrix with standard Normal i.i.d. entries."""
@@ -100,7 +100,7 @@ def random_normal_matrix(
     return rng.normal(size=sample_shape + (row_size, col_size))
 
 
-def random_uniform_matrix(
+def uniform_matrix(
     row_size: int,
     col_size: int,
     horizon: int,
@@ -122,7 +122,7 @@ def random_uniform_matrix(
     return mat
 
 
-def random_spd_matrix(
+def spd_matrix(
     size: int,
     horizon: int,
     stationary: bool = False,
