@@ -13,6 +13,8 @@ from dataclasses_json import DataClassJsonMixin
 from torch import Tensor
 
 import lqsvg.torch.named as nt
+import lqsvg.torch.random
+import lqsvg.torch.utils
 from lqsvg.np_util import (
     RNG,
     make_spd_matrix,
@@ -236,10 +238,10 @@ def make_lindynamics(
         Fs, ctrl_size, eigvec=eigvec, controllable=controllable, rng=rng
     )
 
-    Fs = utils.expand_and_refine(
+    Fs = lqsvg.torch.utils.expand_and_refine(
         nt.matrix(as_float_tensor(Fs)), 2, horizon=horizon, n_batch=n_batch
     )
-    Fa = utils.expand_and_refine(
+    Fa = lqsvg.torch.utils.expand_and_refine(
         nt.matrix(as_float_tensor(Fa)), 2, horizon=horizon, n_batch=n_batch
     )
     F = torch.cat((Fs, Fa), dim="C")
@@ -247,13 +249,15 @@ def make_lindynamics(
     if bias:
         f = random_unit_vector(
             state_size,
-            sample_shape=utils.minimal_sample_shape(horizon, stationary, n_batch),
+            sample_shape=lqsvg.torch.random.minimal_sample_shape(
+                horizon, stationary, n_batch
+            ),
             rng=rng,
         )
     else:
         f = np.zeros(state_size)
     f = nt.vector(as_float_tensor(f))
-    f = utils.expand_and_refine(f, 1, horizon=horizon, n_batch=n_batch)
+    f = lqsvg.torch.utils.expand_and_refine(f, 1, horizon=horizon, n_batch=n_batch)
     return LinDynamics(F, f)
 
 
@@ -267,7 +271,7 @@ def generate_passive(
 ) -> (np.ndarray, np.ndarray, np.ndarray):
     """Generate the unnactuated part of a linear dynamical system."""
     # pylint:disable=too-many-arguments
-    sample_shape = utils.minimal_sample_shape(
+    sample_shape = lqsvg.torch.random.minimal_sample_shape(
         horizon, stationary=stationary, n_batch=n_batch
     )
     if eigval_range:
@@ -276,7 +280,7 @@ def generate_passive(
         )
     else:
         warnings.warn("Using no eigval range may lead to complex eigvals")
-        mat = utils.random_normal_matrix(
+        mat = lqsvg.torch.random.random_normal_matrix(
             state_size, state_size, sample_shape=sample_shape, rng=rng
         )
         eigval, eigvec = np.linalg.eig(mat)
@@ -354,11 +358,11 @@ def make_linsdynamics(
     state_size, _, horizon = utils.dims_from_dynamics(dynamics)
 
     if sample_covariance:
-        W = utils.random_spd_matrix(
+        W = lqsvg.torch.random.random_spd_matrix(
             state_size, horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng
         )
     else:
-        W = utils.expand_and_refine(
+        W = lqsvg.torch.utils.expand_and_refine(
             nt.matrix(torch.eye(state_size)), 2, horizon=horizon, n_batch=n_batch
         )
 
@@ -395,7 +399,7 @@ def make_quadcost(
 
     kwargs = dict(horizon=horizon, stationary=stationary, n_batch=n_batch, rng=rng)
 
-    C = utils.random_spd_matrix(n_tau, **kwargs)
+    C = lqsvg.torch.random.random_spd_matrix(n_tau, **kwargs)
     C_s, C_a = nt.split(C, [state_size, ctrl_size], dim="C")
     C_ss, C_sa = nt.split(C_s, [state_size, ctrl_size], dim="R")
     C_as, C_aa = nt.split(C_a, [state_size, ctrl_size], dim="R")
@@ -408,9 +412,9 @@ def make_quadcost(
     C = torch.cat((C_s, C_a), dim="C")
 
     if linear:
-        c = utils.random_normal_vector(n_tau, **kwargs)
+        c = lqsvg.torch.random.random_normal_vector(n_tau, **kwargs)
     else:
-        c = utils.expand_and_refine(
+        c = lqsvg.torch.utils.expand_and_refine(
             nt.vector(torch.zeros(n_tau)), 1, horizon=horizon, n_batch=n_batch
         )
     return QuadCost(C, c)
@@ -444,8 +448,8 @@ def make_gaussinit(
         sig = torch.eye(state_size)
 
     return GaussInit(
-        mu=utils.expand_and_refine(nt.vector(mu), 1, n_batch=n_batch),
-        sig=utils.expand_and_refine(nt.matrix(sig), 2, n_batch=n_batch),
+        mu=lqsvg.torch.utils.expand_and_refine(nt.vector(mu), 1, n_batch=n_batch),
+        sig=lqsvg.torch.utils.expand_and_refine(nt.matrix(sig), 2, n_batch=n_batch),
     )
 
 

@@ -1,46 +1,13 @@
 # pylint:disable=missing-module-docstring
 from __future__ import annotations
 
-import contextlib
-from typing import Iterable, Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import torch
-from torch import Generator, Tensor
+from torch import Tensor
 
-from lqsvg import np_util
 from lqsvg.torch import named as nt
-
-
-@contextlib.contextmanager
-def default_generator_seed(seed: int):
-    """Temporarily set PyTorch's random seed."""
-    state: torch.ByteTensor = torch.get_rng_state()
-    try:
-        torch.manual_seed(seed)
-        yield
-    finally:
-        torch.set_rng_state(state)
-
-
-def default_rng(seed: Union[None, int, Generator] = None) -> Generator:
-    """Mirrors numpy's `default_rng` to produce RNGs for Pytorch.
-
-    Args:
-        seed: a seed to initialize the generator. If passed a Generator, will
-        return it unaltered. Otherwise, creates a new one. If passed an
-        integer, will use it as the manual seed for the created generator.
-
-    Returns:
-        A PyTorch Generator instance
-    """
-    if isinstance(seed, Generator):
-        return seed
-
-    rng = Generator()
-    if isinstance(seed, int):
-        rng.manual_seed(seed)
-    return rng
 
 
 def as_float_tensor(array: np.ndarray) -> Tensor:
@@ -50,21 +17,6 @@ def as_float_tensor(array: np.ndarray) -> Tensor:
     not a float32.
     """
     return torch.as_tensor(array, dtype=torch.float32)
-
-
-def make_spd_matrix(
-    n_dim: int,
-    sample_shape: tuple[int, ...],
-    dtype: Optional[torch.dtype] = torch.float32,
-    device: Optional[torch.device] = None,
-    rng: np_util.RNG = None,
-) -> Tensor:
-    """PyTorch version of random symmetric positive-definite matrix generation."""
-    return torch.as_tensor(
-        np_util.make_spd_matrix(n_dim, sample_shape=sample_shape, rng=rng),
-        dtype=dtype,
-        device=device,
-    )
 
 
 def softplusinv(tensor: Tensor, *, beta: float = 1.0) -> Tensor:
@@ -103,3 +55,31 @@ def vector_to_tensors(vector: Tensor, tensors: Iterable[Tensor]) -> Iterable[Ten
         split += [vector[offset : offset + t.numel()].view_as(t).refine_names(*t.names)]
         offset += t.numel()
     return split
+
+
+def expand_and_refine(
+    tensor: Tensor,
+    base_dim: int,
+    horizon: Optional[int] = None,
+    n_batch: Optional[int] = None,
+) -> Tensor:
+    """Expand and refine tensor names with horizon and batch size information."""
+    assert (
+        n_batch is None or n_batch > 0
+    ), f"Batch size must be null or positive, got {n_batch}"
+    assert (
+        tensor.dim() >= base_dim
+    ), f"Tensor must have at least {base_dim} dimensions, got {tensor.dim()}"
+
+    shape = (
+        (() if horizon is None else (horizon,))
+        + (() if n_batch is None else (n_batch,))
+        + tensor.shape[-base_dim:]
+    )
+    names = (
+        (() if horizon is None else ("H",))
+        + (() if n_batch is None else ("B",))
+        + (...,)
+    )
+    tensor = tensor.expand(*shape).refine_names(*names)
+    return tensor

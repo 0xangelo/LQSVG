@@ -13,13 +13,13 @@ from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
 from lqsvg.envs.lqr.utils import (
     ctrb,
-    minimal_sample_shape,
     random_mat_with_eigval_range,
     random_matrix_from_eigs,
     wrap_sample_shape_to_size,
 )
 from lqsvg.np_util import RNG
 from lqsvg.testing.fixture import standard_fixture
+from lqsvg.torch.random import minimal_sample_shape
 
 from .utils import scalar_to_matrix, sort_eigfactors, vector_to_matrix
 

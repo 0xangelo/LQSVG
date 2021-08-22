@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
-from torch import IntTensor, Tensor
+from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix, unpack_obs
+from lqsvg.envs.lqr.utils import unpack_obs
+from lqsvg.torch.random import random_normal_vector, random_spd_matrix
 
 
 class QuadraticReward(nn.Module):

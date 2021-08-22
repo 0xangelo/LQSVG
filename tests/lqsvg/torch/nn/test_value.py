@@ -8,8 +8,8 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import Linear, LinSDynamics, QuadCost, Quadratic
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics, make_quadcost
-from lqsvg.envs.lqr.utils import random_normal_vector, random_spd_matrix
 from lqsvg.torch.nn.value import QuadQValue, QuadraticMixin, QuadVValue
+from lqsvg.torch.random import random_normal_vector, random_spd_matrix
 
 
 def check_quadratic_parameters(module: QuadraticMixin, quadratic: Quadratic):

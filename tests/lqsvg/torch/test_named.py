@@ -5,7 +5,7 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import make_spd_matrix
+from lqsvg.torch.random import make_spd_matrix
 
 n_row = standard_fixture((1, 2, 4), "Rows")
 

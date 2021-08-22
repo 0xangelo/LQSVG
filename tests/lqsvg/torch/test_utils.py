@@ -9,12 +9,10 @@ from torch import Tensor
 
 import lqsvg.torch.named as nt
 from lqsvg.testing.fixture import standard_fixture
+from lqsvg.torch.random import default_generator_seed, default_rng, make_spd_matrix
 from lqsvg.torch.utils import (
     assemble_cholesky,
-    default_generator_seed,
-    default_rng,
     disassemble_cholesky,
-    make_spd_matrix,
     softplusinv,
     tensors_to_vector,
     vector_to_tensors,

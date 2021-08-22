@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from lqsvg.testing.fixture import standard_fixture
-from lqsvg.torch.utils import default_generator_seed
+from lqsvg.torch.random import default_generator_seed
 
 batch_shape = standard_fixture([(), (1,), (4,), (2, 2)], "BatchShape")
 

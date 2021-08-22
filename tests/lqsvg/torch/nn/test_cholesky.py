@@ -6,7 +6,7 @@ from torch import nn
 
 import lqsvg.torch.named as nt
 from lqsvg.torch.nn.cholesky import CholeskyFactor, SPDMatrix
-from lqsvg.torch.utils import make_spd_matrix
+from lqsvg.torch.random import make_spd_matrix
 
 
 class TestCholeskyFactor:

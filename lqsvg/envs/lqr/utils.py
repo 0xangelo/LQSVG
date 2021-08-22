@@ -1,7 +1,7 @@
 # pylint:disable=missing-module-docstring,unsubscriptable-object
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -10,8 +10,7 @@ from scipy.stats import ortho_group
 from torch import IntTensor, Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.np_util import RNG, make_spd_matrix, np_expand
-from lqsvg.torch.utils import as_float_tensor
+from lqsvg.np_util import RNG, np_expand
 
 from .types import AnyDynamics, LinDynamics, Linear, LinSDynamics, QuadCost
 
@@ -22,21 +21,16 @@ __all__ = [
     "dims_from_spaces",
     "dims_from_policy",
     "dynamics_factors",
-    "expand_and_refine",
     "isstationary",
     "isstable",
     "iscontrollable",
     "isstabilizable",
     "is_pbh_ctrb",
     "make_controllable",
-    "minimal_sample_shape",
     "np_expand_horizon",
     "pack_obs",
-    "random_normal_vector",
+    "wrap_sample_shape_to_size",
     "random_matrix_from_eigs",
-    "random_spd_matrix",
-    "random_uniform_matrix",
-    "random_normal_matrix",
     "random_mat_with_eigval_range",
     "sample_eigvals",
     "spaces_from_dims",
@@ -296,10 +290,9 @@ def make_controllable(dynamics: AnyDynamics) -> AnyDynamics:
 ###############################################################################
 
 
-# noinspection PyUnresolvedReferences
 def wrap_sample_shape_to_size(
-    sampler: callable[[int], np.ndarray], dim: int
-) -> callable[[tuple[int, ...], int], np.ndarray]:
+    sampler: Callable[[int], np.ndarray], dim: int
+) -> Callable[[tuple[int, ...]], np.ndarray]:
     """Converts a sampler by size to a sampler by shape.
 
     Computes the total size of the sample shape, calls the sampler with this
@@ -316,123 +309,11 @@ def wrap_sample_shape_to_size(
     """
 
     def wrapped(sample_shape: tuple[int, ...]) -> np.ndarray:
-        sample_size = np.prod(sample_shape, dtype=int)
-        arr = sampler(sample_size)
+        arr = sampler(int(np.prod(sample_shape)))
         base = arr.shape[-dim:] if dim > 0 else ()
         return np.reshape(arr, sample_shape + base)
 
     return wrapped
-
-
-def expand_and_refine(
-    tensor: Tensor,
-    base_dim: int,
-    horizon: Optional[int] = None,
-    n_batch: Optional[int] = None,
-) -> Tensor:
-    """Expand and refine tensor names with horizon and batch size information."""
-    assert (
-        n_batch is None or n_batch > 0
-    ), f"Batch size must be null or positive, got {n_batch}"
-    assert (
-        tensor.dim() >= base_dim
-    ), f"Tensor must have at least {base_dim} dimensions, got {tensor.dim()}"
-
-    shape = (
-        (() if horizon is None else (horizon,))
-        + (() if n_batch is None else (n_batch,))
-        + tensor.shape[-base_dim:]
-    )
-    names = (
-        (() if horizon is None else ("H",))
-        + (() if n_batch is None else ("B",))
-        + (...,)
-    )
-    tensor = tensor.expand(*shape).refine_names(*names)
-    return tensor
-
-
-def minimal_sample_shape(
-    horizon: int, stationary: bool = False, n_batch: Optional[int] = None
-) -> tuple[int, ...]:
-    """Minimal sample shape from horizon, stationarity, and batch size.
-
-    This works in tandem with expand_and_refine to standardize horizon and
-    batch dimensions.
-    """
-    horizon_shape = () if stationary else (horizon,)
-    batch_shape = () if n_batch is None else (n_batch,)
-    return horizon_shape + batch_shape
-
-
-def random_normal_vector(
-    size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    # pylint:disable=missing-function-docstring
-    rng = np.random.default_rng(rng)
-
-    vec_shape = (size,)
-    shape = (
-        minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
-        + vec_shape
-    )
-    vec = nt.vector(as_float_tensor(rng.normal(size=shape)))
-    vec = expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
-    return vec
-
-
-def random_normal_matrix(
-    row_size: int, col_size: int, sample_shape: tuple[int, ...] = (), rng: RNG = None
-) -> np.ndarray:
-    """Matrix with standard Normal i.i.d. entries."""
-    rng = np.random.default_rng(rng)
-    return rng.normal(size=sample_shape + (row_size, col_size))
-
-
-def random_uniform_matrix(
-    row_size: int,
-    col_size: int,
-    horizon: int,
-    stationary: bool = False,
-    low: float = 0.0,
-    high: float = 1.0,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    """Matrix with Uniform i.i.d. entries."""
-    # pylint:disable=too-many-arguments
-    mat_shape = (row_size, col_size)
-    shape = (
-        minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
-        + mat_shape
-    )
-    mat = nt.matrix(as_float_tensor(rng.uniform(low=low, high=high, size=shape)))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
-
-
-def random_spd_matrix(
-    size: int,
-    horizon: int,
-    stationary: bool = False,
-    n_batch: Optional[int] = None,
-    rng: RNG = None,
-) -> Tensor:
-    # pylint:disable=missing-function-docstring
-    mat = make_spd_matrix(
-        size,
-        sample_shape=minimal_sample_shape(
-            horizon, stationary=stationary, n_batch=n_batch
-        ),
-        rng=rng,
-    )
-    mat = nt.matrix(as_float_tensor(mat))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
 
 
 def random_matrix_from_eigs(

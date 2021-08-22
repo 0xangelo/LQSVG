@@ -11,7 +11,7 @@ from torch import Tensor
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import std_id
 from lqsvg.torch import named as nt
-from lqsvg.torch.utils import default_generator_seed
+from lqsvg.torch.random import default_generator_seed
 
 
 @pytest.fixture(params=(2, 3), ids=std_id("NState"))

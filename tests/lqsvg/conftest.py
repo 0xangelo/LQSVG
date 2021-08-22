@@ -2,7 +2,7 @@ import pytest
 
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.testing.fixture import std_id
-from lqsvg.torch.utils import default_generator_seed
+from lqsvg.torch.random import default_generator_seed
 
 
 @pytest.fixture
