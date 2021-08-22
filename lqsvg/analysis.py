@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import itertools
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Tuple
 
 import numpy as np
 import torch
+from nnrl.nn.critic import VValue
 from torch import Tensor
 
 from lqsvg.envs import lqr
@@ -169,3 +170,26 @@ def linear_feedback_distance(linear_a: lqr.Linear, linear_b: lqr.Linear) -> Tens
     Ka, ka = linear_a
     Kb, kb = linear_b
     return linear_feedback_norm(lqr.Linear(Ka - Kb, ka - kb))
+
+
+def relative_error(target_val: Tensor, pred_val: Tensor) -> Tensor:
+    """Returns the relative value error.
+
+    Ref: https://en.wikipedia.org/wiki/Approximation_error
+    """
+    return torch.abs(1 - pred_val / target_val)
+
+
+def val_err_and_grad_acc(
+    val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
+) -> Tuple[Tensor, Tensor]:
+    """Computes metrics for estimated gradients."""
+    val_err = relative_error(target_val, val)
+    grad_acc = gradient_accuracy([svg], target_svg)
+    return val_err, grad_acc
+
+
+@torch.no_grad()
+def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
+    """Returns the error between the surrogate value and the state value."""
+    return relative_error(vval(obs).mean(), val)

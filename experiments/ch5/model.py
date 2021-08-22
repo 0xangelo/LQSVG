@@ -4,21 +4,17 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
-from nnrl.nn.actor import DeterministicPolicy
-from nnrl.nn.critic import HardValue, MLPQValue, QValue, QValueEnsemble, VValue
-from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb.sdk import wandb_config
+from wandb_util import with_prefix
 
-from lqsvg.analysis import gradient_accuracy
+from lqsvg.analysis import val_err_and_grad_acc, vvalue_err
 from lqsvg.data import markovian_state_sampler, recurrent_state_sampler
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr import dims_from_policy, spaces_from_dims
 from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
-from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator, mfdpg_estimator
-from lqsvg.torch import named as nt
+from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -28,9 +24,8 @@ from lqsvg.torch.nn.dynamics.segment import (
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.torch.nn.value import QuadQValue, QuadVValue, ZeroQValue
 
-SegBatch = Tuple[Tensor, Tensor, Tensor]
-ValBatch = Union[SegBatch, Sequence[Tensor]]
-TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
+SeqBatch = Tuple[Tensor, Tensor, Tensor]
+ValBatch = Union[SeqBatch, Sequence[Tensor]]
 
 
 @functools.singledispatch
@@ -68,46 +63,23 @@ def make_model(
     return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
 
 
-def relative_error(target_val: Tensor, pred_val: Tensor) -> Tensor:
-    """Returns the relative value error.
-
-    Ref: https://en.wikipedia.org/wiki/Approximation_error
-    """
-    return torch.abs(1 - pred_val / target_val)
-
-
-def val_err_and_grad_acc(
-    val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
-) -> Tuple[Tensor, Tensor]:
-    """Computes metrics for estimated gradients."""
-    val_err = relative_error(target_val, val)
-    grad_acc = gradient_accuracy([svg], target_svg)
-    return val_err, grad_acc
-
-
-@torch.no_grad()
-def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
-    """Returns the error between the surrogate value and the state value."""
-    return relative_error(vval(obs).mean(), val)
-
-
-def refine_segbatch(batch: SegBatch) -> SegBatch:
+def refine_segbatch(batch: SeqBatch) -> SeqBatch:
     # noinspection PyTypeChecker
     return tuple(x.refine_names("B", "H", "R") for x in batch)
 
 
 def wrap_log_prob(
     log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
-) -> Callable[[SegBatch], Tensor]:
-    def wrapped(batch: SegBatch) -> Tensor:
+) -> Callable[[SeqBatch], Tensor]:
+    def wrapped(batch: SeqBatch) -> Tensor:
         return log_prob(*batch)
 
     return wrapped
 
 
 def empirical_kl(
-    source_logp: Callable[[SegBatch], Tensor], other_logp: Callable[[SegBatch], Tensor]
-) -> Callable[[SegBatch], Tensor]:
+    source_logp: Callable[[SeqBatch], Tensor], other_logp: Callable[[SeqBatch], Tensor]
+) -> Callable[[SeqBatch], Tensor]:
     """Returns a function of samples to empirical KL divergence.
 
     Args:
@@ -116,15 +88,10 @@ def empirical_kl(
         other_logp: likelihood function of another distribution
     """
 
-    def kld(batch: SegBatch) -> Tensor:
+    def kld(batch: SeqBatch) -> Tensor:
         return torch.mean(source_logp(batch) - other_logp(batch))
 
     return kld
-
-
-def with_prefix(prefix: str, dictionary: dict) -> dict:
-    """Returns a dictionary copy with prefixed keys."""
-    return {prefix + k: v for k, v in dictionary.items()}
 
 
 class LightningModel(pl.LightningModule):
@@ -173,7 +140,7 @@ class LightningModel(pl.LightningModule):
             lqg.reward.standard_form(),
         ).requires_grad_(False)
 
-    def forward(self, batch: SegBatch) -> Tensor:
+    def forward(self, batch: SeqBatch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
         # pylint:disable=arguments-differ
         obs, act, new_obs = batch
@@ -192,7 +159,7 @@ class LightningModel(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
-    def training_step(self, batch: SegBatch, batch_idx: int) -> Tensor:
+    def training_step(self, batch: SeqBatch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
         loss = self(refine_segbatch(batch)).mean()
@@ -215,7 +182,7 @@ class LightningModel(pl.LightningModule):
 
         return self._eval_on_uniform_states(batch[0])
 
-    def _eval_on_traj_seg(self, batch: SegBatch) -> TensorDict:
+    def _eval_on_traj_seg(self, batch: SeqBatch) -> TensorDict:
         metrics = {}
         self.model.eval()
         batch = refine_segbatch(batch)
@@ -244,141 +211,6 @@ class LightningModel(pl.LightningModule):
             metrics[f"{horizon}/grad_acc"] = grad_acc
             metrics[f"{horizon}/relative_vval_err"] = vvalue_err(val, obs, self._vval)
         return metrics
-
-    def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
-        # Override original: set prog_bar=False to reduce clutter
-        self.log_dict(
-            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
-        )
-
-
-class ClippedQValue(QValue):
-    """Q-value computed as the minimum among Q-values in an ensemble."""
-
-    def __init__(self, q_values: QValueEnsemble):
-        super().__init__()
-        self.q_values = q_values
-
-    def forward(self, obs: Tensor, action: Tensor) -> Tensor:
-        values = self.q_values(obs, action)
-        mininum, _ = torch.stack(nt.unnamed(*values), dim=0).min(dim=0)
-        return mininum.refine_names(*values[0].names)
-
-
-def make_value(
-    policy: TVLinearPolicy, hparams: AttributeDict
-) -> Tuple[QValueEnsemble, QValueEnsemble, VValue]:
-    """Creates modules for Streamlined Off-Policy TD learning."""
-    n_state, n_ctrl, horizon = dims_from_policy(policy.standard_form())
-    obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
-    spec = MLPQValue.spec_cls(units=hparams.model["hunits"], activation="ReLU")
-    qvals = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    qvals = QValueEnsemble(qvals)
-
-    # Loss
-    target_policy = DeterministicPolicy.add_gaussian_noise(policy, noise_stddev=0.3)
-    qvals_ = [MLPQValue(obs_space, act_space, spec) for _ in range(2)]
-    target_qvals = QValueEnsemble(qvals_).requires_grad_(False)
-    target_vval = HardValue(target_policy, ClippedQValue(target_qvals))
-    return qvals, target_qvals, target_vval
-
-
-def refine_tdbatch(batch: TDBatch) -> TDBatch:
-    obs, act, rew, new_obs = (t.refine_names("B", ...) for t in batch)
-    obs, act, new_obs = nt.vector(obs, act, new_obs)
-    return obs, act, rew, new_obs
-
-
-class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
-    def __init__(
-        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
-    ):
-        super().__init__()
-        # Register modules to cast them to appropriate device
-        self.add_module("_lqg", lqg)
-        self.policy = policy
-        self.hparams.update(hparams)
-
-        # NN modules
-        self.qvals, self.targ_qvals, self.target_vval = make_value(policy, self.hparams)
-        # Estimator
-        self.estimator = mfdpg_estimator(self.policy, ClippedQValue(self.qvals))
-
-        # Groud-truth
-        dynamics, cost, init = lqg.standard_form()
-        true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
-        # Register targets as buffers so they are moved to device
-        self.register_buffer("true_val", true_val)
-        self.register_buffer("true_svg_K", true_svg.K)
-        self.register_buffer("true_svg_k", true_svg.k)
-
-        # For VValue error
-        self._vval = QuadVValue.from_policy(
-            policy.standard_form(),
-            lqg.trans.standard_form(),
-            lqg.reward.standard_form(),
-        ).requires_grad_(False)
-
-    def forward(self, batch: TDBatch) -> Tensor:
-        """Returns the temporal difference error induced by the value function."""
-        # pylint:disable=arguments-differ
-        obs, act, rew, new_obs = batch
-        with torch.no_grad():
-            target = nt.unnamed(rew + self.target_vval(new_obs))
-        loss_fn = nn.MSELoss()
-        values = nt.unnamed(*self.qvals(obs, act))
-        return torch.stack([loss_fn(v, target) for v in values]).sum()
-
-    def num_parameters(self) -> int:
-        """Returns the number of trainable parameters"""
-        return sum(p.numel() for p in self.qvals.parameters() if p.requires_grad)
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(
-            self.qvals.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
-
-    def training_step(self, batch: TDBatch, batch_idx: int) -> Tensor:
-        # pylint:disable=arguments-differ
-        del batch_idx
-        batch = refine_tdbatch(batch)
-        loss = self(batch)
-        self.log("train/loss", loss)
-        with torch.no_grad():
-            self.log_dict(with_prefix("train/", self._evaluate_on(batch)))
-        return loss
-
-    def on_train_batch_end(self, *args, **kwargs):
-        # pylint:disable=arguments-differ,unused-argument
-        update_polyak(self.qvals, self.targ_qvals, self.hparams.polyak)
-
-    def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
-        # pylint:disable=arguments-differ
-        del batch_idx
-        batch = refine_tdbatch(batch)
-        self.log_dict(with_prefix("val/", self._evaluate_on(batch)))
-
-    def test_step(self, batch: TDBatch, batch_idx: int) -> None:
-        # pylint:disable=arguments-differ
-        del batch_idx
-        batch = refine_tdbatch(batch)
-        self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
-
-    def _evaluate_on(self, batch: TDBatch) -> TensorDict:
-        obs, act, rew, new_obs = batch
-        prediction = self.qvals.clipped(nt.unnamed(*self.qvals(obs, act)))
-        td_error = relative_error(rew + self.target_vval(new_obs), prediction).mean()
-        with torch.enable_grad():
-            val, svg = self.estimator(obs)
-        return {
-            "relative_td_error": td_error,
-            "relative_vval_err": vvalue_err(val, obs, self._vval),
-            "grad_acc": gradient_accuracy(
-                [svg], lqr.Linear(self.true_svg_K, self.true_svg_k)
-            ),
-        }
 
     def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:
         # Override original: set prog_bar=False to reduce clutter

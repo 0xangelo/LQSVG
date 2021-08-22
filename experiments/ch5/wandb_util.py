@@ -3,6 +3,7 @@ import os
 from typing import Sequence, Tuple
 
 import wandb
+from wandb.sdk.wandb_run import Run
 
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.utils import iscontrollable, isstable, stationary_eigvals
@@ -37,7 +38,7 @@ def wandb_init(
     tags: Sequence[str] = (),
     reinit=True,
     **kwargs,
-) -> wandb.sdk.wandb_run.Run:
+) -> Run:
     # pylint:disable=too-many-arguments
     return wandb.init(
         name=name,
@@ -49,3 +50,8 @@ def wandb_init(
         reinit=reinit,
         **kwargs,
     )
+
+
+def with_prefix(prefix: str, dictionary: dict) -> dict:
+    """Returns a dictionary copy with prefixed keys."""
+    return {prefix + k: v for k, v in dictionary.items()}
