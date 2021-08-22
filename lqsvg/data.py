@@ -5,6 +5,7 @@ from typing import Callable, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
+from more_itertools import all_equal, first
 from nnrl.nn.distributions.types import SampleLogp
 from nnrl.types import TensorDict
 from ray.rllib import RolloutWorker, SampleBatch
@@ -77,13 +78,13 @@ def trajectory_sampler(
     dynamics: StateDynamics,
     reward_fn: RewardFunction,
 ) -> TrajectorySampler:
-    """Full trajectory sampler."""
+    """Creates a full trajectory sampler."""
 
     def sample_trajectory(
         horizon: int,
         sample_shape: Sequence[int] = torch.Size(),
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        """Sample full trajectory.
+        """Samples full trajectory.
 
         Sample trajectory using initial state, dynamics and reward models with
         a deterministic actor.
@@ -139,18 +140,16 @@ class TensorSeqDataset(Dataset[Tuple[Tensor, ...]]):
     # noinspection PyArgumentList
     def __init__(self, *tensors: Tensor, seq_len: int):
         tensors = tuple(t.align_to("B", "H", ...) for t in tensors)
-        trajs: int = tensors[0].size("B")
-        horizon: int = tensors[0].size("H")
-        assert all(
-            t.size("B") == trajs and t.size("H") == horizon for t in tensors
-        ), "Size mismatch between tensors"
+        msg = "Size mismatch between tensors in dim {}"
+        assert all_equal(t.size("B") for t in tensors), msg.format("B")
+        assert all_equal(t.size("H") for t in tensors), msg.format("H")
 
         # Pytorch Lightning deepcopies the dataloader when using overfit_batches=True
         # Deepcopying is incompatible with named tensors for some reason
         self.tensors = nt.unnamed(*tensors)
         self.seq_len = seq_len
-        self.seqs_per_traj = horizon - self.seq_len - 1
-        self._len = trajs * self.seqs_per_traj
+        self.seqs_per_traj = first(tensors).size("H") - self.seq_len - 1
+        self._len = first(tensors).size("B") * self.seqs_per_traj
 
     def __getitem__(self, index: int) -> Tuple[Tensor, ...]:
         traj_idx = index // self.seqs_per_traj
