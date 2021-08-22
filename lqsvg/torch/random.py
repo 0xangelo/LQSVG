@@ -129,14 +129,22 @@ def random_spd_matrix(
     n_batch: Optional[int] = None,
     rng: RNG = None,
 ) -> Tensor:
-    # pylint:disable=missing-function-docstring
-    mat = np_util.make_spd_matrix(
-        size,
-        sample_shape=minimal_sample_shape(
-            horizon, stationary=stationary, n_batch=n_batch
-        ),
-        rng=rng,
-    )
+    """Generates a random, named, symmetric positive definite matrix."""
+    sample_shape = minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
+    mat = np_util.make_spd_matrix(size, sample_shape=sample_shape, rng=rng)
     mat = nt.matrix(as_float_tensor(mat))
-    mat = expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
-    return mat
+    return expand_and_refine(mat, 2, horizon=horizon, n_batch=n_batch)
+
+
+def unit_vector(
+    size: int,
+    horizon: int,
+    stationary: bool = False,
+    n_batch: Optional[int] = None,
+    rng: RNG = None,
+) -> Tensor:
+    """Generates a random, named, unit vector."""
+    sample_shape = minimal_sample_shape(horizon, stationary=stationary, n_batch=n_batch)
+    vec = np_util.random_unit_vector(size, sample_shape=sample_shape, rng=rng)
+    vec = nt.vector(as_float_tensor(vec))
+    return expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
