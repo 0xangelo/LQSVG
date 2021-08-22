@@ -23,7 +23,8 @@ def env_info(lqg: LQGModule) -> dict:
 
 def extra_tags(config: dict) -> Tuple[str, ...]:
     extra = ()
-    if config["n_state"] > config["n_ctrl"]:
+    env_config = config["env_config"]
+    if env_config["n_state"] > env_config["n_ctrl"]:
         extra += ("underactuated",)
     return extra
 
