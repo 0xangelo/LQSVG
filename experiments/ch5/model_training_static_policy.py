@@ -99,7 +99,7 @@ class DataModule(pl.LightningDataModule):
     def val_dataloader(self) -> Tuple[DataLoader, DataLoader]:
         # pylint:disable=arguments-differ
         # For loss evaluation
-        seg_loader = DataLoader(
+        seq_loader = DataLoader(
             self.val_seq_dataset,
             shuffle=False,
             batch_size=self.spec.val_loss_batch_size,
@@ -110,7 +110,7 @@ class DataModule(pl.LightningDataModule):
             shuffle=True,
             batch_size=self.spec.val_grad_batch_size,
         )
-        return seg_loader, state_loader
+        return seq_loader, state_loader
 
     def test_dataloader(self) -> Tuple[DataLoader, DataLoader]:
         # pylint:disable=arguments-differ
@@ -205,7 +205,7 @@ def run_with_tune(name: str = "ModelSearch"):
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
             "val_grad_batch_size": 256,
-            "segment_len": 4,
+            "seq_len": 4,
         },
         "trainer": dict(
             max_epochs=1000,
@@ -238,7 +238,7 @@ def run_simple():
             "train_batch_size": 128,
             "val_loss_batch_size": 128,
             "val_grad_batch_size": 256,
-            "segment_len": 4,
+            "seq_len": 4,
         },
         "trainer": dict(
             max_epochs=5,
