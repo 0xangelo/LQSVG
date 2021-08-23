@@ -169,20 +169,26 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        self.log_dict(with_prefix("val/", self._evaluate_on(batch, dataloader_idx)))
+        self.log_dict(
+            with_prefix("val/", self._evaluate_on(batch, dataloader_idx)),
+            add_dataloader_idx=False,
+        )
 
     def test_step(self, batch: ValBatch, batch_idx: int, dataloader_idx: int):
         # pylint:disable=arguments-differ
         del batch_idx
-        self.log_dict(with_prefix("test/", self._evaluate_on(batch, dataloader_idx)))
+        self.log_dict(
+            with_prefix("test/", self._evaluate_on(batch, dataloader_idx)),
+            add_dataloader_idx=False,
+        )
 
     def _evaluate_on(self, batch: ValBatch, dataloader_idx: int) -> TensorDict:
         if dataloader_idx == 0:
-            return self._eval_on_traj_seg(batch)
+            return self._eval_on_traj_segment(batch)
 
         return self._eval_on_uniform_states(batch[0])
 
-    def _eval_on_traj_seg(self, batch: SeqBatch) -> TensorDict:
+    def _eval_on_traj_segment(self, batch: SeqBatch) -> TensorDict:
         metrics = {}
         self.model.eval()
         batch = refine_segbatch(batch)

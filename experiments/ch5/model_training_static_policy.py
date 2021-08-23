@@ -156,7 +156,7 @@ class Experiment(tune.Trainable):
         trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
-            callbacks=[pl.callbacks.EarlyStopping("val/loss/dataloader_idx_0")],
+            callbacks=[pl.callbacks.EarlyStopping("val/loss")],
             num_sanity_val_steps=0,  # avoid evaluating gradients in the beginning?
             checkpoint_callback=False,  # don't save last model checkpoint
             **self.hparams.trainer,
