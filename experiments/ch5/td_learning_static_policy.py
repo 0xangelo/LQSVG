@@ -1,17 +1,19 @@
 # pylint:disable=missing-docstring
 import functools
+import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
 import pytorch_lightning as pl
+import ray
 import torch
-from model import LightningQValue
+from critic import LightningQValue
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 from wandb.sdk import wandb_config, wandb_run
-from wandb_util import env_info, wandb_init
+from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg.data import markovian_state_sampler, train_val_sizes, trajectory_sampler
 from lqsvg.envs.lqr.generators import LQGGenerator
@@ -144,19 +146,22 @@ class Experiment(tune.Trainable):
 
 
 def main():
+    ray.init(logging_level=logging.WARNING)
+
     config = {
-        "wandb": {"name": "TDLearning", "mode": "online"},
+        "wandb": {"name": "CriticVsEigvalRange", "mode": "online"},
         "learning_rate": 1e-3,
         "weight_decay": 0,
         "polyak": 0.995,
-        "seed": 123,
+        "seed": tune.grid_search(list(range(123, 128))),
+        # "seed": 123,
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
             "horizon": 50,
-            "passive_eigval_range": (0.9, 1.1),
+            "passive_eigval_range": tune.grid_search([(0.9, 1.1), (0.5, 1.5)]),
         },
-        "model": {"hunits": (32, 32)},
+        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (32, 32)},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -164,13 +169,14 @@ def main():
         },
         "trainer": dict(
             max_epochs=20,
-            # fast_dev_run=True,
+            progress_bar_refresh_rate=0,  # don't show model training progress bar
+            weights_summary=None,  # don't print summary before training
             track_grad_norm=2,
-            weights_summary="full",
             val_check_interval=0.5,
         ),
     }
-    Experiment(config).train()
+    tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
+    ray.shutdown()
 
 
 if __name__ == "__main__":
