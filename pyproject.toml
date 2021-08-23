@@ -24,7 +24,7 @@ wandb = "^0.12.0"
 [tool.poetry.dev-dependencies]
 ipython = "^7.24.1"
 pre-commit = "^2.13.0"
-pylint = "^2.9.6"
+pylint = "^2.10.2"
 pytest = "^6.2.3"
 black = {extras = ["d"], version = "^21.5b2"}
 flake8 = "^3.9.2"
