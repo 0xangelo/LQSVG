@@ -223,7 +223,7 @@ def dpg_surrogate(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
 ) -> Callable[[Tensor, int], Tensor]:
-    """Returns the surrogate value fucntion for DPG.
+    """Returns the surrogate value function for DPG(K).
 
     Args:
         policy: differentiable function of policy parameters and states to
@@ -258,7 +258,7 @@ def dpg_surrogate(
 
 def nstep_estimator(
     policy: TVLinearPolicy, surrogate: Callable[[Tensor, int], Tensor]
-) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
+) -> MBEstimator:
     """Returns a model-based lookahead value gradient estimator.
 
     Args:
@@ -284,7 +284,7 @@ def dpg_estimator(
     dynamics: StateDynamics,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
-) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
+) -> MBEstimator:
     """Returns the model-based DPG estimator.
 
     Args:
