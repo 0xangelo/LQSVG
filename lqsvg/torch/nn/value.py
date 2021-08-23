@@ -53,8 +53,7 @@ class QuadraticMixin:
         quadratic = nt.horizon(*(r(p) for r, p in zip(refines, params)))
         for tensor, param in zip(quadratic, params):
             tensor.grad = None if param.grad is None else param.grad.clone()
-        # noinspection PyTypeChecker
-        return quadratic
+        return Quadratic(*quadratic)
 
     def copy_(self, quadratic: Quadratic) -> QuadraticMixin:
         """Update parameters to existing quadratic."""
