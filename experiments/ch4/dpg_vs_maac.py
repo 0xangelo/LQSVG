@@ -13,7 +13,7 @@ from torch import Tensor
 from torch.optim import Optimizer
 
 import lqsvg.torch.named as nt
-from lqsvg.analysis import linear_feedback_norm
+from lqsvg.analysis import total_norm
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.envs.lqr.modules import LQGModule
@@ -140,7 +140,7 @@ class Experiment(tune.Trainable):
     def postprocess_svg(self):
         if self.run.config.normalize_svg:
             svg = lqr.Linear(*(g.grad for g in self.policy.standard_form()))
-            svg_norm = linear_feedback_norm(svg)
+            svg_norm = total_norm(svg)
             for par in self.policy.parameters():
                 par.grad.data.div_(svg_norm)
 
