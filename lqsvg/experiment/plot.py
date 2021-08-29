@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import os.path as osp
 from textwrap import dedent
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import matplotlib as mpl
 import numpy as np
 from matplotlib import cm
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 
 STYLE_PATH = osp.join(mpl.__path__[0], "mpl-data", "stylelib")
 
@@ -100,8 +101,13 @@ def default_figsize(rows: int = 1, cols: int = 1) -> tuple[float, float]:
     return cols * default_width, rows * default_height
 
 
+# noinspection PyPep8Naming
 def plot_surface(
-    X: np.ndarray, Y: np.ndarray, Z: np.ndarray, ax=None, invert_xaxis: bool = False
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z: np.ndarray,
+    ax: Optional[Axes] = None,
+    invert_xaxis: bool = False,
 ) -> Any:
     """Create a 3D surface plot given inputs and outputs.
 
