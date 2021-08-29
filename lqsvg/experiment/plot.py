@@ -15,6 +15,16 @@ from matplotlib import cm
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 
+__all__ = [
+    "STYLE_PATH",
+    "create_latex_style",
+    "available_styles",
+    "save_pdf_tight",
+    "latex_size",
+    "default_figsize",
+    "plot_surface",
+]
+
 STYLE_PATH = osp.join(mpl.__path__[0], "mpl-data", "stylelib")
 
 
