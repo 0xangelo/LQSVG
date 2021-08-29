@@ -19,7 +19,7 @@ from lqsvg.torch import named as nt
 
 
 def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
-    """Perturb policy parameters to derive sub-optimal policies.
+    """Perturbs policy parameters to derive sub-optimal policies.
 
     Adds white noise to optimal policy parameters.
 
@@ -32,11 +32,11 @@ def perturb_policy(policy: lqr.Linear) -> lqr.Linear:
     # pylint:disable=invalid-name
     n_state, n_ctrl, _ = lqr.dims_from_policy(policy)
     K, k = (g + 0.5 * torch.randn_like(g) / (n_state + np.sqrt(n_ctrl)) for g in policy)
-    return K, k
+    return lqr.Linear(K, k)
 
 
 def stabilizing_policy(dynamics: lqr.LinSDynamics, rng: RNG = None) -> lqr.Linear:
-    """Compute linear policy parameters that stabilize an LQG.
+    """Computes linear policy parameters that stabilize an LQG.
 
     Warning:
         This is only defined for stationary systems
@@ -54,7 +54,7 @@ def stabilizing_policy(dynamics: lqr.LinSDynamics, rng: RNG = None) -> lqr.Linea
     # size of the columns of K
     # noinspection PyTypeChecker
     k = torch.zeros_like(K.select("C", 0))
-    return K, k
+    return lqr.Linear(K, k)
 
 
 def stabilizing_gain(
@@ -63,7 +63,7 @@ def stabilizing_gain(
     abs_high: float = 1.0,
     rng: RNG = None,
 ) -> Tensor:
-    """Compute gain that stabilizes a linear dynamical system."""
+    """Computes a dynamic gain that stabilizes a linear dynamical system."""
     # pylint:disable=invalid-name
     A, B = stationary_dynamics_factors(dynamics)
     result = place_dynamics_poles(
@@ -74,6 +74,7 @@ def stabilizing_gain(
     return K
 
 
+# noinspection PyPep8Naming
 def place_dynamics_poles(
     A: np.ndarray,
     B: np.ndarray,
@@ -81,7 +82,7 @@ def place_dynamics_poles(
     abs_high: float = 1.0,
     rng: RNG = None,
 ):
-    """Compute a solution that re-places the eigenvalues of linear dynamics."""
+    """Computes a solution that re-places the eigenvalues of linear dynamics."""
     # pylint:disable=invalid-name
     poles = sample_eigvals(A.shape[-1], abs_low, abs_high, size=(), rng=rng)
     with warnings.catch_warnings():
