@@ -9,7 +9,6 @@ from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
-from wandb.sdk import wandb_config
 from wandb_util import with_prefix
 
 from lqsvg.analysis import gradient_accuracy, relative_error, vvalue_err
@@ -72,9 +71,7 @@ def refine_tdbatch(batch: TDBatch) -> TDBatch:
 
 
 class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
-    def __init__(
-        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
-    ):
+    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, hparams: dict):
         super().__init__()
         # Register modules to cast them to appropriate device
         self.add_module("_lqg", lqg)

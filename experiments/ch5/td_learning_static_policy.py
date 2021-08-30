@@ -24,7 +24,7 @@ from lqsvg.torch.nn.policy import TVLinearPolicy
 
 
 def make_modules(
-    generator: LQGGenerator, hparams: wandb_config.Config
+    generator: LQGGenerator, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, LightningQValue]:
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
@@ -102,12 +102,15 @@ class DataModule(pl.LightningDataModule):
 
 
 class Experiment(tune.Trainable):
-    run: wandb_run.Run
+    _run: wandb_run.Run = None
 
-    def setup(self, config: dict):
-        wandb_kwargs = config.pop("wandb")
-        self.run = wandb_init(config=config, **wandb_kwargs)
-        pl.seed_everything(self.hparams.seed)
+    @property
+    def run(self) -> wandb_run.Run:
+        if self._run is None:
+            config = self.config.copy()
+            wandb_kwargs = config.pop("wandb")
+            self._run = wandb_init(config=config, **wandb_kwargs)
+        return self._run
 
     @property
     def hparams(self) -> wandb_config.Config:
@@ -120,7 +123,7 @@ class Experiment(tune.Trainable):
             rng=np.random.default_rng(self.hparams.seed),
             **self.hparams.env_config,
         )
-        lqg, policy, qvalue = make_modules(generator, self.hparams)
+        lqg, policy, qvalue = make_modules(generator, self.hparams.as_dict())
         datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
 
         logger = pl.loggers.WandbLogger(

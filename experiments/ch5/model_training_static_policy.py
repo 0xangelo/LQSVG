@@ -115,7 +115,7 @@ class DataModule(pl.LightningDataModule):
 
 
 def make_modules(
-    generator: LQGGenerator, hparams: wandb.sdk.wandb_config.Config
+    generator: LQGGenerator, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, LightningModel]:
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
@@ -129,13 +129,15 @@ def make_modules(
 
 
 class Experiment(tune.Trainable):
-    # pylint:disable=abstract-method,too-many-instance-attributes
-    run: wandb.sdk.wandb_run.Run
+    _run: wandb.sdk.wandb_run.Run = None
 
-    def setup(self, config: dict):
-        wandb_kwargs = config.pop("wandb")
-        self.run = wandb_init(config=config, **wandb_kwargs)
-        self.run.notes = "Seed determines env and policy"
+    @property
+    def run(self) -> wandb.sdk.wandb_run.Run:
+        if self._run is None:
+            config = self.config.copy()
+            wandb_kwargs = config.pop("wandb")
+            self._run = wandb_init(config=config, **wandb_kwargs)
+        return self._run
 
     @property
     def hparams(self) -> wandb.sdk.wandb_config.Config:
@@ -148,7 +150,7 @@ class Experiment(tune.Trainable):
             rng=np.random.default_rng(self.hparams.seed),
             **self.hparams.env_config,
         )
-        lqg, policy, model = make_modules(generator, self.hparams)
+        lqg, policy, model = make_modules(generator, self.hparams.as_dict())
         datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run

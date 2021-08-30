@@ -7,7 +7,6 @@ import torch
 from nnrl.types import TensorDict
 from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
-from wandb.sdk import wandb_config
 from wandb_util import with_prefix
 
 from lqsvg.analysis import val_err_and_grad_acc, vvalue_err
@@ -96,9 +95,7 @@ def empirical_kl(
 
 class LightningModel(pl.LightningModule):
     # pylint:disable=too-many-ancestors
-    def __init__(
-        self, lqg: LQGModule, policy: TVLinearPolicy, hparams: wandb_config.Config
-    ):
+    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, hparams: dict):
         super().__init__()
         # Register modules to cast them to appropriate device
         self.add_module("_lqg", lqg)
