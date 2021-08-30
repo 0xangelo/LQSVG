@@ -1,6 +1,7 @@
 """Utilities for data collection in LQG envs."""
 from __future__ import annotations
 
+import itertools
 from typing import Callable, Optional, Sequence, Tuple
 
 import numpy as np
@@ -14,13 +15,16 @@ from torch.utils.data import Dataset, random_split
 from tqdm.auto import tqdm
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
+from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.torch import named as nt
+from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.types import (
     DeterministicPolicy,
     InitStateFn,
     RecurrentDynamics,
     RewardFunction,
     StateDynamics,
+    Trajectory,
     TrajectorySampler,
 )
 
@@ -72,6 +76,33 @@ def recurrent_state_sampler(
     return sampler
 
 
+def environment_sampler(env: EnvModule) -> Callable[[TVLinearPolicy, int], Trajectory]:
+    """Creates a trajectory sampler from an environment module."""
+    dynamics = markovian_state_sampler(env.trans, env.trans.sample)
+
+    def sampler(policy: TVLinearPolicy, trajectories: int) -> Trajectory:
+        obs, logp = env.init.sample([trajectories])
+        obs = obs.refine_names("B", ...)
+        obss, acts, rews, logps = [obs], [], [], [logp]
+        for _ in range(env.horizon):
+            act = policy(obs)
+            rew = env.reward(obs, act)
+            new_obs, logp = dynamics(obs, act)
+
+            obss += [new_obs]
+            acts += [act]
+            rews += [rew]
+            logps += [logp]
+            obs = new_obs
+
+        obs, act, rew, logp = itertools.starmap(
+            nt.stack_horizon, (obss, acts, rews, logps)
+        )
+        return obs, act, rew, logp
+
+    return sampler
+
+
 def trajectory_sampler(
     policy: DeterministicPolicy,
     init_fn: InitStateFn,
@@ -80,10 +111,7 @@ def trajectory_sampler(
 ) -> TrajectorySampler:
     """Creates a full trajectory sampler."""
 
-    def sample_trajectory(
-        horizon: int,
-        sample_shape: Sequence[int] = torch.Size(),
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    def sample_trajectory(horizon: int, sample_shape: Sequence[int] = ()) -> Trajectory:
         """Samples full trajectory.
 
         Sample trajectory using initial state, dynamics and reward models with
