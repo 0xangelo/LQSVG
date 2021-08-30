@@ -2328,7 +2328,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 
 [[package]]
 name = "wandb"
-version = "0.12.0"
+version = "0.12.1"
 description = "A CLI and library for interacting with the Weights and Biases API."
 category = "main"
 optional = false
@@ -2356,6 +2356,7 @@ aws = ["boto3"]
 gcp = ["google-cloud-storage"]
 grpc = ["grpcio (==1.27.2)"]
 kubeflow = ["kubernetes", "minio", "google-cloud-storage", "sh"]
+launch = ["docker", "jupyter-repo2docker", "chardet", "iso8601"]
 media = ["numpy", "moviepy", "pillow", "bokeh", "soundfile", "plotly"]
 sweeps = ["numpy (>=1.15,<1.21)", "scipy (>=1.5.4)", "pyyaml", "scikit-learn (==0.24.1)", "jsonschema (>=3.2.0)", "jsonref (>=0.2)", "pydantic (>=1.8.2)"]
 
@@ -2439,7 +2440,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "da099991ca603e3ffd9c218f0864de2b798dd56c54af65c0c2ba4b674ba98a9a"
+content-hash = "f73e44726e39bf6adaa5f5bbc632876ae52dba01fa88ea123e93ff758c57db99"
 
 [metadata.files]
 absl-py = [
@@ -4156,8 +4157,8 @@ virtualenv = [
     {file = "virtualenv-20.7.2.tar.gz", hash = "sha256:9ef4e8ee4710826e98ff3075c9a4739e2cb1040de6a2a8d35db0055840dc96a0"},
 ]
 wandb = [
-    {file = "wandb-0.12.0-py2.py3-none-any.whl", hash = "sha256:93b424aef1cdfef7b8d35662bc085bed318b6d17128ee0ae82ba9c57b31eaf52"},
-    {file = "wandb-0.12.0.tar.gz", hash = "sha256:73954c4e41b1c06910b85276eb0017aa869822cc023c77aa51482e47e41a335c"},
+    {file = "wandb-0.12.1-py2.py3-none-any.whl", hash = "sha256:723e81cca072def483422b9ae45d5c1b5c8f2d011dc5c85c8891696f8504a55e"},
+    {file = "wandb-0.12.1.tar.gz", hash = "sha256:739f205b5c9a5bc25e742f1c707e65322cd6aafba8ec64299e5757f992f34be3"},
 ]
 watchdog = [
     {file = "watchdog-2.1.5-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:5f57ce4f7e498278fb2a091f39359930144a0f2f90ea8cbf4523c4e25de34028"},
