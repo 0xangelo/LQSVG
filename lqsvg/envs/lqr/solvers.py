@@ -19,8 +19,19 @@ from .named import (
 )
 from .types import LQG, LQR, LinDynamics, Linear, LinSDynamics, QuadCost, Quadratic
 
+__all__ = [
+    "LQGControl",
+    "LQGPrediction",
+    "LQRControl",
+    "LQRPrediction",
+    "NamedLQGControl",
+    "NamedLQGPrediction",
+    "NamedLQRControl",
+    "NamedLQRPrediction",
+]
 
-def transpose(tensor: Tensor):
+
+def transpose(tensor: Tensor) -> Tensor:
     """Transposes a batched matrix by the last two dimensions."""
     return tensor.transpose(-2, -1)
 
