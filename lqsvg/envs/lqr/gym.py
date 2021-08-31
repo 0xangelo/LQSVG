@@ -12,10 +12,10 @@ from ray.rllib.utils.typing import EnvActionType, EnvInfoDict, EnvObsType, EnvTy
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.torch.nn.dynamics.gauss import InitStateModule
 from lqsvg.torch.nn.dynamics.linear import LinearDynamicsModule
 from lqsvg.torch.nn.reward import QuadraticReward
 
+from ...torch.nn.initstate import InitStateModule
 from .generators import LQGGenerator
 from .modules import LQGModule
 from .solvers import NamedLQGControl

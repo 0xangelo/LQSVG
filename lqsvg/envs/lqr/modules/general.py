@@ -6,8 +6,8 @@ from nnrl.nn.model import StochasticModel
 from torch import Tensor, nn
 
 from lqsvg.envs import lqr
-from lqsvg.torch.nn.dynamics.gauss import InitStateModule
 from lqsvg.torch.nn.dynamics.linear import LinearDynamics, LinearDynamicsModule
+from lqsvg.torch.nn.initstate import InitStateModule
 from lqsvg.torch.nn.reward import QuadraticReward
 
 
