@@ -68,10 +68,8 @@ def _unpack_params(
         loc = nt.where(time.eq(horizon), params["state"], params["loc"])
     scale_tril = params["scale_tril"]
 
-    sample_names = tuple(f"B{i+1}" for i, _ in enumerate(sample_shape))
     loc, scale_tril, time = (
-        x.expand(torch.Size(sample_shape) + x.shape).refine_names(*sample_names, ...)
-        for x in (loc, scale_tril, time)
+        x.expand(torch.Size(sample_shape) + x.shape) for x in (loc, scale_tril, time)
     )
     return loc, scale_tril, time
 

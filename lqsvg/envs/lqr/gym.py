@@ -152,7 +152,7 @@ class RandomVectorLQG(TorchLQGMixin, VectorEnv):
 
     def vector_reset(self) -> List[EnvObsType]:
         _curr_states, _ = self.module.init.sample((self.num_envs,))
-        self._curr_states = _curr_states.rename(B1="B")
+        self._curr_states = _curr_states.refine_names("B", ...)
         return self._get_obs(self.curr_states)
 
     @torch.no_grad()
