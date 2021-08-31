@@ -6,7 +6,6 @@ from torch import IntTensor, Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.utils import unpack_obs
 from lqsvg.torch.random import normal_vector, spd_matrix
 
 
@@ -58,7 +57,7 @@ class QuadraticReward(nn.Module):
 
     def forward(self, obs: Tensor, act: Tensor) -> Tensor:
         obs, act = (nt.vector(x) for x in (obs, act))
-        state, time = unpack_obs(obs)
+        state, time = lqr.unpack_obs(obs)
         tau = nt.vector_to_matrix(torch.cat([state, act], dim="R"))
         time = nt.vector_to_scalar(time)
 
