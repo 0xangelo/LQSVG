@@ -12,15 +12,12 @@ from ray.rllib.utils.typing import EnvActionType, EnvInfoDict, EnvObsType, EnvTy
 from torch import Tensor
 
 import lqsvg.torch.named as nt
-from lqsvg.torch.nn.dynamics.linear import LinearDynamicsModule
-from lqsvg.torch.nn.reward import QuadraticReward
+from lqsvg.torch.nn.env import LQGModule
 
-from ...torch.nn.initstate import InitStateModule
 from .generators import LQGGenerator
-from .modules import LQGModule
 from .solvers import NamedLQGControl
 from .types import GaussInit, Linear, LinSDynamics, QuadCost, Quadratic
-from .utils import dims_from_dynamics, spaces_from_dims
+from .utils import spaces_from_dims
 
 Obs = np.ndarray
 Act = np.ndarray
@@ -43,27 +40,25 @@ class TorchLQGMixin:
         cost: QuadCost,
         init: GaussInit,
     ):
-        self.module = LQGModule(
-            dims=dims_from_dynamics(dynamics),
-            trans=LinearDynamicsModule.from_existing(dynamics, stationary=False),
-            reward=QuadraticReward.from_existing(cost),
-            init=InitStateModule.from_existing(init),
-        )
+        self.dynamics, self.cost, self.rho = dynamics, cost, init
+        self.module = LQGModule.from_existing(dynamics, cost, init)
         # Ensure optimizers don't update the MDP
         self.module.requires_grad_(False)
-        self.dynamics, self.cost, self.rho = self.module.standard_form()
         self.observation_space, self.action_space = self._setup_spaces()
 
     @property
     def horizon(self):
+        # noinspection PyArgumentList
         return self.dynamics.F.size("H")
 
     @property
     def n_state(self):
+        # noinspection PyArgumentList
         return self.dynamics.F.size("R")
 
     @property
     def n_tau(self):
+        # noinspection PyArgumentList
         return self.dynamics.F.size("C")
 
     @property
@@ -108,8 +103,8 @@ class LQGEnv(TorchLQGMixin, gym.Env):
         next_state, _ = self.module.trans.sample(self.module.trans(state, action))
 
         self._curr_state = next_state
-        done = next_state[-1].long() == self.horizon
-        return self._get_obs(), reward.item(), done.item(), {}
+        done = next_state[-1].long().item() == self.horizon
+        return self._get_obs(), reward.item(), done, {}
 
     def _get_obs(self) -> Obs:
         obs = self._curr_state

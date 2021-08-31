@@ -15,8 +15,8 @@ from torch.utils.data import Dataset, random_split
 from tqdm.auto import tqdm
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
-from lqsvg.envs.lqr.modules.general import EnvModule
 from lqsvg.torch import named as nt
+from lqsvg.torch.nn.env import EnvModule
 from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.types import (
     DeterministicPolicy,

@@ -1,14 +1,14 @@
-# pylint:disable=unsubscriptable-object
 """Compilation of LQG modules."""
-from __future__ import annotations
+from typing import Tuple
 
 from nnrl.nn.model import StochasticModel
 from torch import Tensor, nn
 
 from lqsvg.envs import lqr
-from lqsvg.torch.nn.dynamics.linear import LinearDynamics, LinearDynamicsModule
-from lqsvg.torch.nn.initstate import InitStateModule
-from lqsvg.torch.nn.reward import QuadraticReward
+
+from .dynamics.linear import LinearDynamics, LinearDynamicsModule
+from .initstate import InitStateModule
+from .reward import QuadraticReward
 
 
 class EnvModule(nn.Module):
@@ -20,7 +20,7 @@ class EnvModule(nn.Module):
 
     def __init__(
         self,
-        dims: tuple[int, int, int],
+        dims: Tuple[int, int, int],
         trans: StochasticModel,
         reward: QuadraticReward,
         init: InitStateModule,
@@ -55,7 +55,7 @@ class LQGModule(EnvModule):
 
     def __init__(
         self,
-        dims: tuple[int, int, int],
+        dims: Tuple[int, int, int],
         trans: LinearDynamics,
         reward: QuadraticReward,
         init: InitStateModule,
@@ -65,7 +65,7 @@ class LQGModule(EnvModule):
     @classmethod
     def from_existing(
         cls, dynamics: lqr.LinSDynamics, cost: lqr.QuadCost, init: lqr.GaussInit
-    ) -> LQGModule:
+    ) -> "LQGModule":
         """Create LQG from existing components' parameters."""
         dims = lqr.dims_from_dynamics(dynamics)
         trans = LinearDynamicsModule.from_existing(dynamics, stationary=False)
@@ -73,7 +73,7 @@ class LQGModule(EnvModule):
         init = InitStateModule.from_existing(init)
         return cls(dims, trans, reward, init)
 
-    def standard_form(self) -> tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
+    def standard_form(self) -> Tuple[lqr.LinSDynamics, lqr.QuadCost, lqr.GaussInit]:
         """Submodules as a collection of matrices."""
         trans = self.trans.standard_form()
         cost = self.reward.standard_form()
