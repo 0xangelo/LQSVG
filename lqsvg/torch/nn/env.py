@@ -10,6 +10,8 @@ from .dynamics.linear import LinearDynamics, LinearDynamicsModule
 from .initstate import InitStateModule
 from .reward import QuadraticReward
 
+__all__ = ["EnvModule", "LQGModule"]
+
 
 class EnvModule(nn.Module):
     """Environment dynamics as a neural network module."""

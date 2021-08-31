@@ -7,6 +7,8 @@ from torch import Tensor, nn
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import assemble_cholesky, disassemble_cholesky, softplusinv
 
+__all__ = ["CholeskyFactor", "SPDMatrix"]
+
 
 class CholeskyFactor(nn.Module):
     """Matrix Cholesky factor stored as unconstrained parameters.
