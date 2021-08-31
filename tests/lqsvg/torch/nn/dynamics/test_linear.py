@@ -9,59 +9,9 @@ from torch import Tensor
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import LinSDynamics
 from lqsvg.envs.lqr.generators import make_lindynamics, make_linsdynamics
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearDynamics, LinearDynamicsModule
-from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
+from lqsvg.envs.lqr.utils import unpack_obs
 from lqsvg.testing import check
-
-
-@pytest.fixture
-def obs(
-    n_state: int,
-    horizon: int,
-    batch_shape: tuple[int, ...],
-    batch_names: tuple[str, ...],
-) -> Tensor:
-    state = nt.vector(torch.randn(batch_shape + (n_state,))).refine_names(
-        *batch_names, ...
-    )
-    dummy, _ = nt.split(state, [1, n_state - 1], dim="R")
-    time = torch.randint_like(nt.unnamed(dummy), low=0, high=horizon)
-    time = time.refine_names(*dummy.names).int()
-    return pack_obs(state, time).requires_grad_()
-
-
-@pytest.fixture
-def last_obs(
-    n_state: int,
-    horizon: int,
-    batch_shape: tuple[int, ...],
-    batch_names: tuple[str, ...],
-) -> Tensor:
-    state = nt.vector(torch.randn(batch_shape + (n_state,))).refine_names(
-        *batch_names, ...
-    )
-    dummy, _ = nt.split(state, [1, n_state - 1], dim="R")
-    time = torch.full_like(dummy, fill_value=horizon).int()
-    return pack_obs(state, time).requires_grad_()
-
-
-@pytest.fixture
-def new_obs(obs: Tensor) -> Tensor:
-    state, time = unpack_obs(obs)
-    state_ = torch.randn_like(state)
-    time_ = time + 1
-    return pack_obs(state_, time_).requires_grad_()
-
-
-@pytest.fixture
-def act(
-    n_ctrl: int, batch_shape: tuple[int, ...], batch_names: tuple[str, ...]
-) -> Tensor:
-    return (
-        nt.vector(torch.randn(batch_shape + (n_ctrl,)))
-        .refine_names(*batch_names, ...)
-        .requires_grad_()
-    )
+from lqsvg.torch.nn.dynamics.linear import LinearDynamics, LinearDynamicsModule
 
 
 # noinspection PyMethodMayBeStatic

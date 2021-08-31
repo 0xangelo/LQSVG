@@ -8,8 +8,8 @@ from nnrl.nn.model import StochasticModel
 from torch import IntTensor, Tensor
 
 from lqsvg.envs.lqr import pack_obs, unpack_obs
-from lqsvg.envs.lqr.modules import LinearDynamicsModule
 from lqsvg.testing import check
+from lqsvg.torch.nn.dynamics.linear import LinearDynamicsModule
 from lqsvg.torch.nn.dynamics.segment import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -17,10 +17,8 @@ from lqsvg.torch.nn.dynamics.segment import (
     MLPDynamicsModel,
     log_prob_fn,
 )
-from tests.lqsvg.envs.lqr.modules.dynamics.test_linear import (
-    DynamicsModuleTests,
-    LinearParamsTestMixin,
-)
+
+from .test_linear import DynamicsModuleTests, LinearParamsTestMixin
 
 
 @pytest.fixture(params=[(), (10,)], ids=lambda x: f"HiddenUnits:{x}")

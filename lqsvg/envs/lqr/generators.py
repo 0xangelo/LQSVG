@@ -38,6 +38,8 @@ __all__ = [
     "make_lqr",
     "make_lqr_linear_navigation",
     "stack_lqs",
+    "make_linsdynamics",
+    "make_lindynamics",
 ]
 
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Type
-
 import pytest
 import torch
 from torch import Tensor, nn
@@ -9,21 +7,16 @@ from torch import Tensor, nn
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr import pack_obs, unpack_obs
-from lqsvg.envs.lqr.modules.dynamics.gauss import InitStateModule
 from lqsvg.testing.fixture import standard_fixture
 from lqsvg.torch.nn.cholesky import CholeskyFactor
+from lqsvg.torch.nn.dynamics.gauss import InitStateModule
 
 dim = standard_fixture((2, 4, 8), "Dim")
 
 
 @pytest.fixture
-def module_cls() -> Type[InitStateModule]:
-    return InitStateModule
-
-
-@pytest.fixture
-def module(module_cls: Type[InitStateModule], dim: int) -> InitStateModule:
-    return module_cls(dim)
+def module(dim: int) -> InitStateModule:
+    return InitStateModule(dim)
 
 
 @pytest.fixture
@@ -45,8 +38,8 @@ def init(dim: int) -> lqr.GaussInit:
 
 
 class TestInitStateDynamics:
-    def test_init(self, module_cls: Type[InitStateModule], dim: int):
-        module = module_cls(dim)
+    def test_constructor(self, dim: int):
+        module = InitStateModule(dim)
         params = list(module.parameters())
 
         assert len(params) == 3

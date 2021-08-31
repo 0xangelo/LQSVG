@@ -1,11 +1,11 @@
 """NN initial state models."""
-# pylint:disable=invalid-name
 from __future__ import annotations
 
 from typing import Optional
 
 from lqsvg.envs.lqr import make_gaussinit
-from lqsvg.envs.lqr.modules import InitStateModule
+
+from .dynamics.gauss import InitStateModule
 
 __all__ = ["InitStateModel"]
 

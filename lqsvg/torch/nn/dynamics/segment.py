@@ -18,9 +18,9 @@ from torch.nn.functional import softplus
 
 import lqsvg.torch.named as nt
 from lqsvg.envs.lqr import spaces_from_dims, unpack_obs
-from lqsvg.envs.lqr.modules import LinearDynamicsModule
-from lqsvg.envs.lqr.modules.dynamics.linear import LinearNormalParamsMixin
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
+
+from .linear import LinearDynamicsModule, LinearNormalParamsMixin
 
 __all__ = [
     "LinearTransitionModel",
