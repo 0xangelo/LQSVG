@@ -12,17 +12,19 @@ from wandb_util import with_prefix
 from lqsvg.analysis import val_err_and_grad_acc, vvalue_err
 from lqsvg.data import markovian_state_sampler, recurrent_state_sampler
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator
-from lqsvg.torch.nn.dynamics.segment import (
+from lqsvg.torch.nn import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
+    LQGModule,
     MLPDynamicsModel,
-    log_prob_fn,
+    QuadQValue,
+    QuadraticReward,
+    QuadVValue,
+    TVLinearPolicy,
+    ZeroQValue,
 )
-from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.reward import QuadraticReward
-from lqsvg.torch.nn.value import QuadQValue, QuadVValue, ZeroQValue
+from lqsvg.torch.sequence import log_prob_fn
 
 SeqBatch = Tuple[Tensor, Tensor, Tensor]
 ValBatch = Union[SeqBatch, Sequence[Tensor]]

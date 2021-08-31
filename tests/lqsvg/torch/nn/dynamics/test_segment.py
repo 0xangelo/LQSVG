@@ -15,8 +15,8 @@ from lqsvg.torch.nn.dynamics.segment import (
     LinearDiagDynamicsModel,
     LinearTransitionModel,
     MLPDynamicsModel,
-    log_prob_fn,
 )
+from lqsvg.torch.sequence import log_prob_fn
 
 from .test_linear import DynamicsModuleTests, LinearParamsTestMixin
 
