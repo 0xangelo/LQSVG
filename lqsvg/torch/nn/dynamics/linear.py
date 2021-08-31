@@ -15,6 +15,13 @@ from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 from lqsvg.torch.nn.cholesky import CholeskyFactor
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
 
+__all__ = [
+    "LinearDynamics",
+    "LinearDynamicsModule",
+    "LinearNormalParams",
+    "LinearNormalParamsMixin",
+]
+
 
 def index_by_horizon(
     *tensors: Tensor, index: IntTensor, horizon: int, stationary: bool

@@ -7,7 +7,6 @@ from typing import Callable, Optional, Sequence
 
 import nnrl.nn as nnx
 import nnrl.nn.distributions as ptd
-import nnrl.nn.init as nnx_init
 import torch
 from nnrl.nn.model import StochasticModel
 from nnrl.nn.model.stochastic.single import DynamicsParams, MLPModel
@@ -17,7 +16,8 @@ from torch import Tensor, nn
 from torch.nn.functional import softplus
 
 import lqsvg.torch.named as nt
-from lqsvg.envs.lqr import spaces_from_dims, unpack_obs
+from lqsvg.envs import lqr
+from lqsvg.torch.nn.diagscale import DiagScale
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
 
 from .linear import LinearDynamicsModule, LinearNormalParamsMixin
@@ -129,7 +129,7 @@ class MLPDynamicsModel(StochasticModel):
         # pylint:disable=too-many-arguments
         # Define input/output spaces.
         self.n_state, self.n_ctrl, self.horizon = n_state, n_ctrl, horizon
-        obs_space, act_space = spaces_from_dims(n_state, n_ctrl, horizon)
+        obs_space, act_space = lqr.spaces_from_dims(n_state, n_ctrl, horizon)
 
         # Create encoder and Normal parameters head
         spec = MLPModel.spec_cls(
@@ -154,7 +154,7 @@ class MLPDynamicsModel(StochasticModel):
 
     def forward(self, obs: Tensor, action: Tensor) -> TensorDict:
         """Map observation and action to diagonal Normal parameters."""
-        state, time = unpack_obs(obs)
+        state, time = lqr.unpack_obs(obs)
         obs_ = torch.cat([state, time.float() / self.horizon], dim="R")
         mlp_params = self.params(*nt.unnamed(obs_, action))
 
@@ -167,64 +167,6 @@ class MLPDynamicsModel(StochasticModel):
             "time": time,
             "state": state,
         }
-
-
-class DiagScale(nn.Module):
-    """Input dependent/independent diagonal stddev.
-
-    Utilizes bounded log_stddev as described in the 'Well behaved probabilistic
-    networks' appendix of `PETS`_.
-
-    .. _`PETS`: https://papers.nips.cc/paper/7725-deep-reinforcement-learning-in-a-handful-of-trials-using-probabilistic-dynamics-models
-
-    Args:
-        in_features: size of the input vector
-        event_size: size of the corresponding random variable for which the
-            diagonal stddev is predicted
-        input_dependent_scale: Whether to parameterize the standard deviation
-            as a function of the input. If False, uses the input only to infer
-            the batch dimensions
-        log_std_bounds: maximum and minimum values for the log standard
-            deviation parameter
-        bound_parameters: Whether to use buffers or learnable parameters for
-            the log-scale bounds
-    """  # pylint:disable=line-too-long
-
-    def __init__(
-        self,
-        in_features: int,
-        event_size: int,
-        input_dependent_scale: bool,
-        log_std_bounds: tuple[float, float] = (2.0, -20),
-        bound_parameters: bool = False,
-    ):
-        # pylint:disable=too-many-arguments
-        super().__init__()
-        if input_dependent_scale:
-            self.log_scale_module = nn.Linear(in_features, event_size)
-        else:
-            self.log_scale_module = nnx.LeafParameter(event_size)
-
-        max_logvar = torch.full((event_size,), log_std_bounds[0])
-        min_logvar = torch.full((event_size,), log_std_bounds[1])
-        if bound_parameters:
-            self.max_logvar = nn.Parameter(max_logvar)
-            self.min_logvar = nn.Parameter(min_logvar)
-        else:
-            self.register_buffer("max_logvar", max_logvar)
-            self.register_buffer("min_logvar", min_logvar)
-
-        self.apply(nnx_init.initialize_("orthogonal", gain=0.01))
-
-    def forward(self, inputs: Tensor) -> Tensor:
-        # pylint:disable=arguments-differ,missing-function-docstring
-        log_scale = self.log_scale_module(inputs)
-        max_logvar = self.max_logvar.expand_as(log_scale)
-        min_logvar = self.min_logvar.expand_as(log_scale)
-        log_scale = max_logvar - softplus(max_logvar - log_scale)
-        log_scale = min_logvar + softplus(log_scale - min_logvar)
-        scale = log_scale.exp()
-        return torch.diag_embed(scale)
 
 
 class GRUGaussDynamics(nn.Module):
@@ -297,7 +239,7 @@ class GRUGaussDynamics(nn.Module):
     ) -> TensorDict:
         # pylint:disable=missing-function-docstring
         # Concatenate state and action vectors and normalize time in [0, 1]
-        state, time = unpack_obs(obs)
+        state, time = lqr.unpack_obs(obs)
         vec = torch.cat((state, time.float() / self.horizon, action), dim="R")
         # Ensure minimal dims for subsequent layers
         vec = nt.unnamed(vec.align_to(*self.input_names))
