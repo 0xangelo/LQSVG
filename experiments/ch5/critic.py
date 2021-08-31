@@ -11,13 +11,10 @@ from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb_util import with_prefix
 
-from lqsvg.analysis import gradient_accuracy, relative_error, vvalue_err
+from lqsvg import analysis, estimator
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.modules import LQGModule
-from lqsvg.estimator import analytic_svg, mfdpg_estimator
 from lqsvg.torch import named as nt
-from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.value import QuadQValue, QuadVValue
+from lqsvg.torch.nn import LQGModule, QuadQValue, QuadVValue, TVLinearPolicy
 
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
 
@@ -59,7 +56,9 @@ def make_value(
     target_qvals.load_state_dict(qvals.state_dict())
 
     # Loss
-    target_policy = DeterministicPolicy.add_gaussian_noise(policy, noise_stddev=0.3)
+    target_policy = DeterministicPolicy.add_gaussian_noise(
+        policy, noise_stddev=hparams.model.get("target_policy_sigma", 0.3)
+    )
     target_vval = HardValue(target_policy, ClippedQValue(target_qvals))
     return qvals, target_qvals, target_vval
 
@@ -81,11 +80,13 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
         # NN modules
         self.qvals, self.targ_qvals, self.target_vval = make_value(policy, self.hparams)
         # Estimator
-        self.estimator = mfdpg_estimator(self.policy, ClippedQValue(self.qvals))
+        self.estimator = estimator.mfdpg_estimator(
+            self.policy, ClippedQValue(self.qvals)
+        )
 
         # Groud-truth
         dynamics, cost, init = lqg.standard_form()
-        true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
+        true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
         # Register targets as buffers so they are moved to device
         self.register_buffer("true_val", true_val)
         self.register_buffer("true_svg_K", true_svg.K)
@@ -148,13 +149,15 @@ class LightningQValue(pl.LightningModule):  # pylint:disable=too-many-ancestors
     def _evaluate_on(self, batch: TDBatch) -> TensorDict:
         obs, act, rew, new_obs = batch
         prediction = self.qvals.clipped(nt.unnamed(*self.qvals(obs, act)))
-        td_error = relative_error(rew + self.target_vval(new_obs), prediction).mean()
+        td_error = analysis.relative_error(
+            rew + self.target_vval(new_obs), prediction
+        ).mean()
         with torch.enable_grad():
             val, svg = self.estimator(obs)
         return {
             "relative_td_error": td_error,
-            "relative_vval_err": vvalue_err(val, obs, self._vval),
-            "grad_acc": gradient_accuracy(
+            "relative_vval_err": analysis.vvalue_err(val, obs, self._vval),
+            "grad_acc": analysis.gradient_accuracy(
                 [svg], lqr.Linear(self.true_svg_K, self.true_svg_k)
             ),
         }

@@ -17,10 +17,9 @@ from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg import data
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils
 from lqsvg.torch import named as nt
-from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 
 
 def make_modules(
@@ -54,18 +53,13 @@ class DataModule(pl.LightningDataModule):
         super().__init__()
         self.spec = spec
 
-        sample_fn = data.trajectory_sampler(
-            policy,
-            lqg.init.sample,
-            data.markovian_state_sampler(lqg.trans, lqg.trans.sample),
-            lqg.reward,
-        )
-        self.sample_fn = functools.partial(sample_fn, horizon=lqg.horizon)
+        sampler = data.environment_sampler(lqg)
+        self.sample_fn = functools.partial(sampler, policy)
 
     def prepare_data(self) -> None:
         with torch.no_grad():
-            obs, act, rew, _ = self.sample_fn(sample_shape=[self.spec.trajectories])
-        obs, act, rew = (t.rename(B1="B").align_to("H", ...) for t in (obs, act, rew))
+            obs, act, rew, _ = self.sample_fn(self.spec.trajectories)
+        obs, act, rew = (t.align_to("H", "B", ...) for t in (obs, act, rew))
         self.tensors = (obs[:-1], act, rew, obs[1:])
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -152,7 +146,7 @@ def main():
     ray.init(logging_level=logging.WARNING)
 
     config = {
-        "wandb": {"name": "CriticVsEigvalRange", "mode": "online"},
+        "wandb": {"name": "ValueLearning", "mode": "online"},
         "learning_rate": 1e-3,
         "weight_decay": 0,
         "polyak": 0.995,
@@ -162,7 +156,7 @@ def main():
             "n_state": 2,
             "n_ctrl": 2,
             "horizon": 50,
-            "passive_eigval_range": tune.grid_search([(0.9, 1.1), (0.5, 1.5)]),
+            "passive_eigval_range": (0.9, 1.1),
         },
         "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (32, 32)},
         "datamodule": {
