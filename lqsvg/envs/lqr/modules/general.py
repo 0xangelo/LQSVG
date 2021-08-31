@@ -6,10 +6,9 @@ from nnrl.nn.model import StochasticModel
 from torch import Tensor, nn
 
 from lqsvg.envs import lqr
+from lqsvg.torch.nn.reward import QuadraticReward
 
-from . import LinearDynamicsModule
-from .dynamics import InitStateModule, LinearDynamics
-from .reward import QuadraticReward
+from .dynamics import InitStateModule, LinearDynamics, LinearDynamicsModule
 
 
 class EnvModule(nn.Module):

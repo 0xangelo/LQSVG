@@ -15,8 +15,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from wandb.sdk import wandb_config, wandb_run
 from wandb_util import WANDB_DIR, env_info, wandb_init
 
-from lqsvg.data import markovian_state_sampler, train_val_sizes, trajectory_sampler
-from lqsvg.envs.lqr.generators import LQGGenerator
+from lqsvg import data
+from lqsvg.envs import lqr
 from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils
 from lqsvg.torch import named as nt
@@ -24,7 +24,7 @@ from lqsvg.torch.nn.policy import TVLinearPolicy
 
 
 def make_modules(
-    generator: LQGGenerator, hparams: dict
+    generator: lqr.LQGGenerator, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, LightningQValue]:
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
@@ -54,10 +54,10 @@ class DataModule(pl.LightningDataModule):
         super().__init__()
         self.spec = spec
 
-        sample_fn = trajectory_sampler(
+        sample_fn = data.trajectory_sampler(
             policy,
             lqg.init.sample,
-            markovian_state_sampler(lqg.trans, lqg.trans.sample),
+            data.markovian_state_sampler(lqg.trans, lqg.trans.sample),
             lqg.reward,
         )
         self.sample_fn = functools.partial(sample_fn, horizon=lqg.horizon)
@@ -70,7 +70,7 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         idxs = torch.randperm(self.spec.trajectories)
-        split_sizes = train_val_sizes(self.spec.trajectories, self.spec.train_frac)
+        split_sizes = data.train_val_sizes(self.spec.trajectories, self.spec.train_frac)
         train_traj_idxs, val_traj_idxs = torch.split(idxs, split_sizes)
         # noinspection PyTypeChecker
         train_trajs, val_trajs = (
@@ -117,7 +117,7 @@ class Experiment(tune.Trainable):
         return self.run.config
 
     def step(self) -> dict:
-        generator = LQGGenerator(
+        generator = lqr.LQGGenerator(
             stationary=True,
             controllable=True,
             rng=np.random.default_rng(self.hparams.seed),

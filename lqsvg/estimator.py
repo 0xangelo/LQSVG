@@ -10,10 +10,10 @@ from torch import Tensor, autograd, nn
 
 from lqsvg.data import markovian_state_sampler, trajectory_sampler
 from lqsvg.envs import lqr
-from lqsvg.envs.lqr.modules import LQGModule, QuadraticReward
-from lqsvg.envs.lqr.modules.general import EnvModule
+from lqsvg.envs.lqr.modules.general import EnvModule, LQGModule
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch.nn.reward import QuadraticReward
 from lqsvg.types import (
     DeterministicPolicy,
     QValueFn,

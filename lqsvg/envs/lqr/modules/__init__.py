@@ -1,4 +1,3 @@
-# pylint:disable=missing-module-docstring
+"""NN modules for LQG."""
 from .dynamics import *
 from .general import LQGModule
-from .reward import *
