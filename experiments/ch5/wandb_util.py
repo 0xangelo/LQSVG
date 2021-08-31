@@ -5,9 +5,9 @@ from typing import Sequence, Tuple
 import wandb
 from wandb.sdk.wandb_run import Run
 
-from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.utils import iscontrollable, isstable, stationary_eigvals
 from lqsvg.experiment.utils import calver
+from lqsvg.torch.nn import LQGModule
 
 WANDB_DIR = os.path.abspath("./results")
 
@@ -33,7 +33,7 @@ def extra_tags(config: dict) -> Tuple[str, ...]:
 def wandb_init(
     name: str,
     config: dict,
-    project="LQG-SVG",
+    project="ch5",
     entity="angelovtt",
     tags: Sequence[str] = (),
     reinit=True,
@@ -46,7 +46,7 @@ def wandb_init(
         project=project,
         entity=entity,
         dir=WANDB_DIR,
-        tags=("ch5", calver()) + extra_tags(config) + tuple(tags),
+        tags=(calver(),) + extra_tags(config) + tuple(tags),
         reinit=reinit,
         **kwargs,
     )
