@@ -146,10 +146,11 @@ def main():
     ray.init(logging_level=logging.WARNING)
 
     config = {
-        "wandb": {"name": "ValueLearning", "mode": "online"},
-        "learning_rate": 1e-3,
+        "wandb": {"name": "ValueGradientLearning", "mode": "online"},
+        "loss": "VGL(1)",
+        "learning_rate": tune.grid_search([1e-2, 1e-3]),
         "weight_decay": 0,
-        "polyak": 0.995,
+        "polyak": 0,
         "seed": tune.grid_search(list(range(123, 128))),
         # "seed": 123,
         "env_config": {
@@ -158,14 +159,14 @@ def main():
             "horizon": 50,
             "passive_eigval_range": (0.9, 1.1),
         },
-        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (32, 32)},
+        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (10, 10)},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
             "val_batch_size": 128,
         },
         "trainer": dict(
-            max_epochs=20,
+            max_epochs=40,
             progress_bar_refresh_rate=0,  # don't show model training progress bar
             weights_summary=None,  # don't print summary before training
             track_grad_norm=2,
