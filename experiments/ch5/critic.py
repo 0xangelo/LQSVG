@@ -224,10 +224,11 @@ class LightningQValue(pl.LightningModule):
         obs = batch[0]
         with torch.enable_grad():
             val, svg = self.estimator(obs)
+        true_vval = self.true_vval(obs).mean()
         return {
-            "relative_vval_err": analysis.relative_error(val, self._vval(obs).mean()),
-            "grad_acc": analysis.gradient_accuracy(
-                [svg], lqr.Linear(self.true_svg_K, self.true_svg_k)
+            "relative_vval_err": analysis.relative_error(val, true_vval),
+            "grad_acc": analysis.cosine_similarity(
+                svg, lqr.Linear(self.true_svg_K, self.true_svg_k)
             ),
             **qval_metrics(self, batch),
         }
