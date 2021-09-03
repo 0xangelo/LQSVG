@@ -9,10 +9,8 @@ from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb_util import with_prefix
 
-from lqsvg.analysis import val_err_and_grad_acc, vvalue_err
-from lqsvg.data import markovian_state_sampler, recurrent_state_sampler
+from lqsvg import analysis, data, estimator
 from lqsvg.envs import lqr
-from lqsvg.estimator import MBEstimator, analytic_svg, maac_estimator
 from lqsvg.torch.nn import (
     GRUGaussDynamics,
     LinearDiagDynamicsModel,
@@ -33,10 +31,9 @@ ValBatch = Union[SeqBatch, Sequence[Tensor]]
 @functools.singledispatch
 def make_estimator(
     model: nn.Module, policy: TVLinearPolicy, reward: QuadraticReward, qval: QuadQValue
-) -> MBEstimator:
-    return maac_estimator(
-        policy, markovian_state_sampler(model, model.rsample), reward, qval
-    )
+) -> estimator.MBEstimator:
+    dynamics = data.markovian_state_sampler(model, model.rsample)
+    return estimator.maac_estimator(policy, dynamics, reward, qval)
 
 
 @make_estimator.register
@@ -45,14 +42,9 @@ def _(
     policy: TVLinearPolicy,
     reward: QuadraticReward,
     qval: QuadQValue,
-) -> MBEstimator:
-    return maac_estimator(
-        policy,
-        recurrent_state_sampler(model, model.dist.rsample),
-        reward,
-        qval,
-        recurrent=True,
-    )
+) -> estimator.MBEstimator:
+    dynamics = data.recurrent_state_sampler(model, model.dist.rsample)
+    return estimator.maac_estimator(policy, dynamics, reward, qval, recurrent=True)
 
 
 def make_model(
@@ -97,13 +89,26 @@ def empirical_kl(
 
 
 class LightningModel(pl.LightningModule):
-    # pylint:disable=too-many-ancestors
+    # pylint:disable=too-many-ancestors,too-many-instance-attributes
     def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, hparams: dict):
         super().__init__()
         # Register modules to cast them to appropriate device
-        self.add_module("_lqg", lqg)
-        self.add_module("_policy", policy)
+        self.lqg = lqg
+        self.policy = policy
         self.hparams.update(hparams)
+
+        # Ground-truth
+        dynamics, cost, init = lqg.standard_form()
+        true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
+        # Register targets as buffers so they are moved to device
+        self.register_buffer("true_val", true_val)
+        self.register_buffer("true_svg_K", true_svg.K)
+        self.register_buffer("true_svg_k", true_svg.k)
+        quad_qval, quad_vval = estimator.on_policy_value_functions(
+            policy.standard_form(), dynamics, cost
+        )
+        self.true_qval = QuadQValue.from_existing(quad_qval).requires_grad_(False)
+        self.true_vval = QuadVValue.from_existing(quad_vval).requires_grad_(False)
 
         # NN modules
         self.model = make_model(lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams)
@@ -114,31 +119,8 @@ class LightningModel(pl.LightningModule):
         )
 
         # Estimators
-        if self.hparams.zero_q:
-            qval = ZeroQValue()
-        else:
-            qval = QuadQValue.from_policy(
-                policy.standard_form(),
-                lqg.trans.standard_form(),
-                lqg.reward.standard_form(),
-            ).requires_grad_(False)
+        qval = ZeroQValue() if self.hparams.zero_q else self.true_qval
         self.estimator = make_estimator(self.model, policy, lqg.reward, qval)
-        self.add_module("_qval", qval)
-
-        # Ground-truth
-        dynamics, cost, init = lqg.standard_form()
-        true_val, true_svg = analytic_svg(policy, init, dynamics, cost)
-        # Register targets as buffers so they are moved to device
-        self.register_buffer("true_val", true_val)
-        self.register_buffer("true_svg_K", true_svg.K)
-        self.register_buffer("true_svg_k", true_svg.k)
-
-        # For VValue error
-        self._vval = QuadVValue.from_policy(
-            policy.standard_form(),
-            lqg.trans.standard_form(),
-            lqg.reward.standard_form(),
-        ).requires_grad_(False)
 
     def forward(self, batch: SeqBatch) -> Tensor:
         """Negative log-likelihood of (batched) trajectory segment."""
@@ -209,13 +191,14 @@ class LightningModel(pl.LightningModule):
         for horizon in horizons:
             with torch.enable_grad():
                 val, svg = self.estimator(obs, horizon)
-            true_svg = lqr.Linear(self.true_svg_K, self.true_svg_k)
-            value_err, grad_acc = val_err_and_grad_acc(
-                val, svg, self.true_val, true_svg
+            value_err, grad_acc = analysis.val_err_and_grad_acc(
+                val, svg, self.true_val, lqr.Linear(self.true_svg_K, self.true_svg_k)
             )
             metrics[f"{horizon}/relative_value_err"] = value_err
             metrics[f"{horizon}/grad_acc"] = grad_acc
-            metrics[f"{horizon}/relative_vval_err"] = vvalue_err(val, obs, self._vval)
+            metrics[f"{horizon}/relative_vval_err"] = analysis.relative_error(
+                self.true_vval(obs).mean(), val
+            )
         return metrics
 
     def log_grad_norm(self, grad_norm_dict: Dict[str, Tensor]) -> None:

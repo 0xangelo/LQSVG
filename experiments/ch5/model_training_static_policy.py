@@ -16,17 +16,12 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb_util import WANDB_DIR, env_info, wandb_init
 
-import lqsvg.torch.named as nt
-from lqsvg.data import (
-    TensorSeqDataset,
-    markovian_state_sampler,
-    train_val_sizes,
-    trajectory_sampler,
-)
+from lqsvg import data
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.experiment import utils as exp_utils
-from lqsvg.torch.nn.policy import TVLinearPolicy
+from lqsvg.torch import named as nt
+from lqsvg.torch.nn import LQGModule, TVLinearPolicy
+from lqsvg.types import DeterministicPolicy
 
 
 @dataclass
@@ -48,39 +43,36 @@ class DataModule(pl.LightningDataModule):
     val_seq_dataset: Dataset
     val_state_dataset: Dataset
 
-    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec):
+    def __init__(self, lqg: LQGModule, behavior: DeterministicPolicy, spec: DataSpec):
         super().__init__()
         self.spec = spec
         assert self.spec.seq_len <= lqg.horizon, "Invalid trajectory segment length"
 
-        sample_fn = trajectory_sampler(
-            policy,
-            lqg.init.sample,
-            markovian_state_sampler(lqg.trans, lqg.trans.sample),
-            lqg.reward,
-        )
-        self.sample_fn = functools.partial(sample_fn, horizon=lqg.horizon)
+        sampler = data.environment_sampler(lqg)
+        self.sample_fn = functools.partial(sampler, behavior)
 
     def prepare_data(self) -> None:
         with torch.no_grad():
-            obs, act, _, _ = self.sample_fn(sample_shape=[self.spec.trajectories])
-        obs = obs.rename(B1="B").align_to("H", "B", ...)
-        act = act.rename(B1="B").align_to("H", "B", ...)
+            obs, act, _, _ = self.sample_fn(self.spec.trajectories)
+        obs = obs.align_to("H", "B", ...)
+        act = act.align_to("H", "B", ...)
         self.tensors = (obs[:-1], act, obs[1:])
 
     def setup(self, stage: Optional[str] = None):
-        n_trajs = self.spec.trajectories
+        spec = self.spec
         train_traj_idxs, val_traj_idxs = torch.split(
-            torch.randperm(n_trajs),
-            split_size_or_sections=train_val_sizes(n_trajs, self.spec.train_frac),
+            torch.randperm(spec.trajectories),
+            split_size_or_sections=data.train_val_sizes(
+                spec.trajectories, spec.train_frac
+            ),
         )
         # noinspection PyTypeChecker
         train_trajs, val_trajs = (
             tuple(nt.index_select(t, "B", idxs) for t in self.tensors)
             for idxs in (train_traj_idxs, val_traj_idxs)
         )
-        self.train_dataset = TensorSeqDataset(*train_trajs, seq_len=self.spec.seq_len)
-        self.val_seq_dataset = TensorSeqDataset(*val_trajs, seq_len=self.spec.seq_len)
+        self.train_dataset = data.TensorSeqDataset(*train_trajs, seq_len=spec.seq_len)
+        self.val_seq_dataset = data.TensorSeqDataset(*val_trajs, seq_len=spec.seq_len)
         val_obs = val_trajs[0]
         self.val_state_dataset = TensorDataset(
             nt.unnamed(val_obs.flatten(["H", "B"], "B"))
@@ -114,9 +106,35 @@ class DataModule(pl.LightningDataModule):
         return self.val_dataloader()
 
 
+def gaussian_behavior(
+    policy: TVLinearPolicy, exploration: dict, seed: int
+) -> DeterministicPolicy:
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    sigma = exploration["action_noise_sigma"]
+
+    def behavior(obs: Tensor) -> Tensor:
+        act = policy(obs)
+        noise = torch.randn(size=act.shape, generator=generator, device=act.device)
+        return act + noise * sigma
+
+    return behavior
+
+
+def behavior_policy(
+    policy: TVLinearPolicy, exploration: dict, seed: int
+) -> DeterministicPolicy:
+    kind = exploration["type"]
+    if kind is None:
+        return policy
+    if kind == "gaussian":
+        return gaussian_behavior(policy, exploration, seed)
+    raise ValueError(f"Unknown exploration type '{kind}'")
+
+
 def make_modules(
     generator: LQGGenerator, hparams: dict
-) -> Tuple[LQGModule, TVLinearPolicy, LightningModel]:
+) -> Tuple[LQGModule, TVLinearPolicy, DeterministicPolicy, LightningModel]:
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
@@ -124,8 +142,9 @@ def make_modules(
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
         dynamics, rng=generator.rng
     )
+    behavior = behavior_policy(policy, hparams["exploration"], hparams["seed"])
     model = LightningModel(lqg, policy, hparams)
-    return lqg, policy, model
+    return lqg, policy, behavior, model
 
 
 class Experiment(tune.Trainable):
@@ -150,8 +169,8 @@ class Experiment(tune.Trainable):
             rng=np.random.default_rng(self.hparams.seed),
             **self.hparams.env_config,
         )
-        lqg, policy, model = make_modules(generator, self.hparams.as_dict())
-        datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
+        lqg, _, behavior, model = make_modules(generator, self.hparams.as_dict())
+        datamodule = DataModule(lqg, behavior, DataSpec(**self.hparams.datamodule))
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
@@ -181,24 +200,27 @@ def run_with_tune(name: str = "ModelSearch"):
     models = [
         {"type": "linear"},
         {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
-        # {"type": "gru", "kwargs": {"mlp_hunits": (), "gru_hunits": (10, 10)}},
         {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
     ]
     config = {
         "wandb": {"name": name},
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
-        # "seed": tune.grid_search(list(range(123, 128))),
-        "seed": 124,
+        "seed": tune.grid_search(list(range(123, 128))),
+        # "seed": 124,
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
             "horizon": 50,
-            "passive_eigval_range": tune.grid_search([(0.9, 1.1), (0.5, 1.5)]),
+            "passive_eigval_range": (0.9, 1.1),
         },
+        "exploration": {
+            "type": tune.grid_search([None, "gaussian"]),
+            "action_noise_sigma": 0.3,
+        },
+        "model": tune.grid_search(models),
         "pred_horizon": [0, 2, 4, 8],
         "zero_q": False,
-        "model": tune.grid_search(models),
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -213,7 +235,7 @@ def run_with_tune(name: str = "ModelSearch"):
             track_grad_norm=2,
         ),
     }
-    tune.run(Experiment, config=config, num_samples=5, local_dir=WANDB_DIR)
+    tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
     ray.shutdown()
 
 
