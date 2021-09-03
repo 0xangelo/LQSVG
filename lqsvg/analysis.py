@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import itertools
-from typing import Callable, Iterable, Sequence, Tuple, Union
+from typing import Callable, Iterable, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,85 @@ from lqsvg.estimator import analytic_value
 from lqsvg.np_util import RNG, random_unit_vector
 from lqsvg.torch import named as nt
 from lqsvg.torch.utils import as_float_tensor, vector_to_tensors
+
+
+def total_norm(tensors: Iterable[Tensor], dim: Optional[int] = None) -> Tensor:
+    """Returns the L2 norm of the flattened input tensors.
+
+    Args:
+        tensors: Sequence of tensors
+        dim: Dimension along which to compute the norm. If None, computes over
+            the flattened input tensors.
+    """
+    return torch.linalg.norm(
+        torch.stack([torch.linalg.norm(t, dim=dim) for t in tensors], dim=0), dim=0
+    )
+
+
+def total_distance(
+    first: Iterable[Tensor], second: Iterable[Tensor], dim: Optional[int] = None
+) -> Tensor:
+    """Returns the L2 norm of the difference between input tensors.
+
+    Args:
+        first: Sequence of tensors
+        second: Sequence of tensors
+        dim: Dimension along which to compute the distance. If None, computes
+            over the flattened input tensors.
+    """
+    return total_norm((f - s for f, s in zip(first, second)), dim=dim)
+
+
+def cosine_similarity(
+    first: Union[Tensor, Sequence[Tensor]],
+    second: Union[Tensor, Sequence[Tensor]],
+    dim: Optional[int] = None,
+) -> Tensor:
+    """Returns the cosine similarity between tensors.
+
+    Args:
+        first: Tensor or sequence of tensors
+        second: Tensor or sequence of tensors
+        dim: Dimension along which to compute the cosine similarity. If None,
+            computes over the flattened input tensors.
+
+    Returns:
+        Scalar tensor representing the cosine similarity between the vectors of
+        flattened input tensors.
+    """
+    assert torch.is_tensor(first) == torch.is_tensor(second)
+    if torch.is_tensor(first):
+        first, second = [first], [second]
+
+    dot_product = sum(
+        torch.sum(f * s) if dim is None else torch.sum(f * s, dim=dim)
+        for f, s in zip(first, second)
+    )
+    norm_prod = total_norm(first, dim=dim) * total_norm(second, dim=dim)
+    return dot_product / norm_prod
+
+
+def relative_error(target_val: Tensor, pred_val: Tensor) -> Tensor:
+    """Returns the relative value error.
+
+    Ref: https://en.wikipedia.org/wiki/Approximation_error
+    """
+    return torch.abs(1 - pred_val / target_val)
+
+
+def val_err_and_grad_acc(
+    val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
+) -> Tuple[Tensor, Tensor]:
+    """Computes metrics for estimated gradients."""
+    val_err = relative_error(target_val, val)
+    grad_acc = gradient_accuracy([svg], target_svg)
+    return val_err, grad_acc
+
+
+@torch.no_grad()
+def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
+    """Returns the error between the surrogate value and the state value."""
+    return relative_error(vval(obs).mean(), val)
 
 
 def gradient_accuracy(svgs: Iterable[lqr.Linear], target: lqr.Linear) -> Tensor:
@@ -108,58 +187,3 @@ def delta_to_return(
         return analytic_value(gains, init, dynamics, cost).numpy()
 
     return f_delta
-
-
-def total_norm(tensors: Iterable[Tensor]) -> Tensor:
-    """Returns the L2 norm of the flattened input tensors."""
-    return torch.linalg.norm(torch.stack([torch.linalg.norm(t) for t in tensors]))
-
-
-def total_distance(first: Iterable[Tensor], second: Iterable[Tensor]) -> Tensor:
-    """Returns the L2 norm of the difference between input tensors."""
-    return total_norm(f - s for f, s in zip(first, second))
-
-
-def cosine_similarity(
-    first: Union[Tensor, Sequence[Tensor]], second: Union[Tensor, Sequence[Tensor]]
-) -> Tensor:
-    """Returns the cosine similarity between tensors.
-
-    Args:
-        first: Tensor or sequence of tensors
-        second: Tensor or sequence of tensors
-
-    Returns:
-        Scalar tensor representing the cosine similarity between the vectors of
-        flattened input tensors.
-    """
-    assert torch.is_tensor(first) == torch.is_tensor(second)
-    if torch.is_tensor(first):
-        first, second = [first], [second]
-
-    dot_product = sum(torch.sum(f * s) for f, s in zip(first, second))
-    norm_prod = total_norm(first) * total_norm(second)
-    return dot_product / norm_prod
-
-
-def relative_error(target_val: Tensor, pred_val: Tensor) -> Tensor:
-    """Returns the relative value error.
-
-    Ref: https://en.wikipedia.org/wiki/Approximation_error
-    """
-    return torch.abs(1 - pred_val / target_val)
-
-
-def val_err_and_grad_acc(
-    val: Tensor, svg: lqr.Linear, target_val: Tensor, target_svg: lqr.Linear
-) -> Tuple[Tensor, Tensor]:
-    """Computes metrics for estimated gradients."""
-    val_err = relative_error(target_val, val)
-    grad_acc = gradient_accuracy([svg], target_svg)
-    return val_err, grad_acc
-
-
-@torch.no_grad()
-def vvalue_err(val: Tensor, obs: Tensor, vval: VValue) -> Tensor:
-    """Returns the error between the surrogate value and the state value."""
-    return relative_error(vval(obs).mean(), val)
