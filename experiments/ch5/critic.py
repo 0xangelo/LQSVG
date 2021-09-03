@@ -58,8 +58,11 @@ def value_gradient_learning(module: "LightningQValue", batch: TDBatch) -> Tensor
     value = module.qval(obs, act)
     target = rew + module.target_vval(new_obs)
 
-    (act_grad,) = autograd.grad(torch.sum(value - target), act, create_graph=True)
-    loss = torch.norm(act_grad)
+    delta = value - target
+    (act_grad,) = autograd.grad(
+        delta, act, grad_outputs=torch.ones_like(delta), create_graph=True
+    )
+    loss = torch.norm(act_grad, dim=-1).mean()
     return loss
 
 
@@ -77,6 +80,15 @@ class ClippedQValue(QValue):
         self.q_values = q_values
 
     def forward(self, obs: Tensor, action: Tensor) -> Tensor:
+        """Computes the clipped Q-value.
+
+        Args:
+            obs: The observation (*, O)
+            action: The action (*, A)
+
+        Returns:
+            The clipped Q-value (*,)
+        """
         values = self.q_values(obs, action)
         mininum, _ = torch.stack(nt.unnamed(*values), dim=0).min(dim=0)
         return mininum.refine_names(*values[0].names)
@@ -146,7 +158,7 @@ def modules(
 
 
 class LightningQValue(pl.LightningModule):
-    # pylint:disable=too-many-ancestors,arguments-differ
+    # pylint:disable=too-many-ancestors,arguments-differ,too-many-instance-attributes
     def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, hparams: dict):
         super().__init__()
         # Register modules to cast them to appropriate device
@@ -166,13 +178,11 @@ class LightningQValue(pl.LightningModule):
         self.register_buffer("true_val", true_val)
         self.register_buffer("true_svg_K", true_svg.K)
         self.register_buffer("true_svg_k", true_svg.k)
-
-        # For VValue error
-        self._vval = QuadVValue.from_policy(
-            policy.standard_form(),
-            lqg.trans.standard_form(),
-            lqg.reward.standard_form(),
-        ).requires_grad_(False)
+        quad_q, quad_v = estimator.on_policy_value_functions(
+            policy.standard_form(), dynamics, cost
+        )
+        self.true_qval = QuadQValue.from_existing(quad_q).requires_grad_(False)
+        self.true_vval = QuadVValue.from_existing(quad_v).requires_grad_(False)
 
     def num_parameters(self) -> int:
         """Returns the number of trainable parameters"""
@@ -211,18 +221,15 @@ class LightningQValue(pl.LightningModule):
         self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
 
     def _evaluate_on(self, batch: TDBatch) -> TensorDict:
-        obs, act, rew, new_obs = batch
-        td_error = analysis.relative_error(
-            rew + self.target_vval(new_obs), self.qval(obs, act)
-        ).mean()
+        obs = batch[0]
         with torch.enable_grad():
             val, svg = self.estimator(obs)
         return {
-            "relative_td_error": td_error,
             "relative_vval_err": analysis.relative_error(val, self._vval(obs).mean()),
             "grad_acc": analysis.gradient_accuracy(
                 [svg], lqr.Linear(self.true_svg_K, self.true_svg_k)
             ),
+            **qval_metrics(self, batch),
         }
 
     def log_grad_norm(self, grad_norm_dict: TensorDict) -> None:
@@ -230,3 +237,36 @@ class LightningQValue(pl.LightningModule):
         self.log_dict(
             grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
         )
+
+
+@torch.enable_grad()
+def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
+    # pylint:disable=too-many-locals
+    obs = batch[0]  # (B, O)
+    act = module.policy(obs)  # (B, A)
+    rew = module.lqg.reward(obs, act)  # (B,)
+    new_obs, _ = module.lqg.trans.rsample(module.lqg.trans(obs, act))  # (B, O)
+
+    pred = module.qval(obs, act)  # (B,)
+    target = rew + module.target_vval(new_obs)  # (B,)
+    true_qval = module.true_qval(obs, act)  # (B,)
+
+    td_error = analysis.relative_error(pred, target).mean()  # ()
+
+    grad_out = torch.ones_like(pred)  # (B,)
+    # (B, A)
+    pred_agrad = autograd.grad(pred, act, grad_outputs=grad_out, retain_graph=True)[0]
+    # (B, A)
+    target_agrad = autograd.grad(target, act, grad_outputs=grad_out, retain_graph=True)
+    target_agrad = target_agrad[0]
+    # (B, A)
+    true_agrad = autograd.grad(true_qval, act, grad_outputs=grad_out)[0]
+
+    td_agrad_acc = analysis.cosine_similarity(pred_agrad, target_agrad, dim=-1).mean()
+    true_agrad_acc = analysis.cosine_similarity(pred_agrad, true_agrad, dim=-1).mean()
+
+    return {
+        "bootstrap/relative_qval_err": td_error,
+        "bootstrap/action_grad_acc": td_agrad_acc,
+        "action_grad_acc": true_agrad_acc,
+    }
