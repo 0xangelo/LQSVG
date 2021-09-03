@@ -17,7 +17,6 @@ from tqdm.auto import tqdm
 from lqsvg.envs.lqr.gym import TorchLQGMixin
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn.env import EnvModule
-from lqsvg.torch.nn.policy import TVLinearPolicy
 from lqsvg.types import (
     DeterministicPolicy,
     InitStateFn,
@@ -76,11 +75,13 @@ def recurrent_state_sampler(
     return sampler
 
 
-def environment_sampler(env: EnvModule) -> Callable[[TVLinearPolicy, int], Trajectory]:
+def environment_sampler(
+    env: EnvModule,
+) -> Callable[[DeterministicPolicy, int], Trajectory]:
     """Creates a trajectory sampler from an environment module."""
     dynamics = markovian_state_sampler(env.trans, env.trans.sample)
 
-    def sampler(policy: TVLinearPolicy, trajectories: int) -> Trajectory:
+    def sampler(policy: DeterministicPolicy, trajectories: int) -> Trajectory:
         obs, logp = env.init.sample([trajectories])
         obs = obs.refine_names("B", ...)
         obss, acts, rews, logps = [obs], [], [], [logp]
