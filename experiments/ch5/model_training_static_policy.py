@@ -150,6 +150,9 @@ def make_modules(
 class Experiment(tune.Trainable):
     _run: wandb.sdk.wandb_run.Run = None
 
+    def setup(self, config: dict):
+        pl.seed_everything(config["seed"])
+
     @property
     def run(self) -> wandb.sdk.wandb_run.Run:
         if self._run is None:
@@ -206,7 +209,7 @@ def run_with_tune(name: str = "ModelSearch"):
         "wandb": {"name": name},
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
-        "seed": tune.grid_search(list(range(123, 128))),
+        "seed": tune.grid_search(list(range(128, 143))),
         # "seed": 124,
         "env_config": {
             "n_state": 2,
