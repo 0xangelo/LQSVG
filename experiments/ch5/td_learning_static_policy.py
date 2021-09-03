@@ -163,7 +163,7 @@ def main():
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
-            "val_batch_size": 128,
+            "val_batch_size": 256,
         },
         "trainer": dict(
             max_epochs=40,
