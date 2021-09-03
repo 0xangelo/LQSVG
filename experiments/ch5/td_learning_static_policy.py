@@ -148,9 +148,9 @@ def main():
     config = {
         "wandb": {"name": "ValueGradientLearning", "mode": "online"},
         "loss": "VGL(1)",
-        "learning_rate": tune.grid_search([1e-2, 1e-3]),
+        "learning_rate": 1e-3,
         "weight_decay": 0,
-        "polyak": 0,
+        "polyak": tune.grid_search([0, 0.995]),
         "seed": tune.grid_search(list(range(123, 128))),
         # "seed": 123,
         "env_config": {
