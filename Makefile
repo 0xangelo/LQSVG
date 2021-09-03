@@ -23,4 +23,4 @@ test-cov-lines:
 	pytest --cov=lqsvg --cov-report=term-missing
 
 black:
-	blackd 2> /dev/null &
+	poetry run blackd 2> /dev/null &
