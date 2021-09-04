@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import torch
-from torch import IntTensor, Tensor, nn
+from torch import Tensor, nn
 
 from lqsvg.envs import lqr
 from lqsvg.torch import named as nt
-from lqsvg.torch.random import normal_vector, spd_matrix
+from lqsvg.torch.random import normal_vector, spd_matrix, unit_vector
+from lqsvg.torch.utils import index_by_horizon
 
 __all__ = ["QuadraticReward", "QuadRewardModel"]
 
@@ -50,20 +51,16 @@ class QuadraticReward(nn.Module):
         C, c = nt.horizon(nt.matrix(self.C), nt.vector(self.c))
         return C, c
 
-    def _index_parameters(self, index: IntTensor) -> tuple[Tensor, Tensor]:
-        refined = self._refined_parameters()
-        index = torch.clamp(index, max=self.horizon - 1)
-        # noinspection PyTypeChecker
-        C, c = (nt.index_by(x, dim="H", index=index) for x in refined)
-        return C, c
-
     def forward(self, obs: Tensor, act: Tensor) -> Tensor:
         obs, act = (nt.vector(x) for x in (obs, act))
         state, time = lqr.unpack_obs(obs)
         tau = nt.vector_to_matrix(torch.cat([state, act], dim="R"))
         time = nt.vector_to_scalar(time)
 
-        C, c = self._index_parameters(time)
+        C, c = self._refined_parameters()
+        C, c = index_by_horizon(
+            C, c, index=time, horizon=self.horizon, stationary=False
+        )
         c = nt.vector_to_matrix(c)
 
         cost = nt.transpose(tau) @ C @ tau / 2 + nt.transpose(c) @ tau
@@ -75,8 +72,49 @@ class QuadraticReward(nn.Module):
         return lqr.QuadCost(C=C, c=c)
 
 
-class QuadRewardModel(QuadraticReward):
-    """Time-varying quadratic reward model."""
+class QuadRewardModel(nn.Module):
+    """Quadratic reward model."""
 
-    def __init__(self, n_state: int, n_ctrl: int, horizon: int):
-        super().__init__(n_state + n_ctrl, horizon)
+    # pylint:disable=invalid-name,missing-docstring
+    n_tau: int
+    horizon: int
+    stationary: bool
+    C: nn.Parameter
+    c: nn.Parameter
+
+    def __init__(
+        self, n_state: int, n_ctrl: int, horizon: int, stationary: bool = True
+    ):
+        super().__init__()
+        self.n_tau = n_state + n_ctrl
+        self.horizon = horizon
+        self.stationary = stationary
+
+        h_size = 1 if stationary else horizon
+
+        self.C = nn.Parameter(Tensor(h_size, self.n_tau, self.n_tau))
+        self.c = nn.Parameter(Tensor(h_size, self.n_tau))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Default parameter initialization."""
+        h_size = 1 if self.stationary else self.horizon
+        self.C.data.copy_(spd_matrix(self.n_tau, horizon=h_size))
+        self.c.data.copy_(unit_vector(self.n_tau, horizon=h_size))
+
+    def forward(self, obs: Tensor, act: Tensor) -> Tensor:
+        obs, act = (nt.vector(x) for x in (obs, act))
+        state, time = lqr.unpack_obs(obs)
+        tau = nt.vector_to_matrix(torch.cat([state, act], dim="R"))
+        time = nt.vector_to_scalar(time)
+
+        C, c = nt.horizon(nt.matrix(self.C), nt.vector(self.c))
+        C, c = index_by_horizon(
+            C, c, index=time, horizon=self.horizon, stationary=self.stationary
+        )
+        c = nt.vector_to_matrix(c)
+
+        cost = nt.transpose(tau) @ C @ tau / 2 + nt.transpose(c) @ tau
+        reward = nt.matrix_to_scalar(cost.neg())
+        return nt.where(time.ge(self.horizon), torch.zeros_like(reward), reward)

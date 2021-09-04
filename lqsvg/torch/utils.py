@@ -5,7 +5,7 @@ from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import torch
-from torch import Tensor
+from torch import IntTensor, Tensor
 
 from lqsvg.torch import named as nt
 
@@ -83,3 +83,17 @@ def expand_and_refine(
     )
     tensor = tensor.expand(*shape).refine_names(*names)
     return tensor
+
+
+def index_by_horizon(
+    *tensors: Tensor, index: IntTensor, horizon: int, stationary: bool
+) -> Tuple[Tensor, ...]:
+    """Like index_by but handling horizon limits and stationarity."""
+    tensors = nt.horizon(*tensors)
+    if stationary:
+        idx = torch.zeros_like(index)
+    else:
+        # Timesteps after termination use last parameters
+        idx = torch.clamp(index, max=horizon - 1).int()
+    tensors = tuple(nt.index_by(t, dim="H", index=idx) for t in tensors)
+    return tensors[0] if len(tensors) == 1 else tensors

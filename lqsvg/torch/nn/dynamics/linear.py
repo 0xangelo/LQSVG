@@ -3,17 +3,17 @@ from __future__ import annotations
 
 import abc
 import math
-from typing import Tuple
 
 import torch
 from nnrl.nn.model import StochasticModel
-from torch import IntTensor, Tensor, nn
+from torch import Tensor, nn
 
 import lqsvg.torch.named as nt
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.utils import stationary_dynamics, unpack_obs
 from lqsvg.torch.nn.cholesky import CholeskyFactor
 from lqsvg.torch.nn.distributions import TVMultivariateNormal
+from lqsvg.torch.utils import index_by_horizon
 
 __all__ = [
     "LinearDynamics",
@@ -21,20 +21,6 @@ __all__ = [
     "LinearNormalParams",
     "LinearNormalParamsMixin",
 ]
-
-
-def index_by_horizon(
-    *tensors: Tensor, index: IntTensor, horizon: int, stationary: bool
-) -> Tuple[Tensor, ...]:
-    """Like index_by but handling horizon limits and stationarity."""
-    tensors = nt.horizon(*tensors)
-    if stationary:
-        idx = torch.zeros_like(index)
-    else:
-        # Timesteps after termination use last parameters
-        idx = torch.clamp(index, max=horizon - 1).int()
-    tensors = tuple(nt.index_by(t, dim="H", index=idx) for t in tensors)
-    return tensors[0] if len(tensors) == 1 else tensors
 
 
 class LinearNormalParamsMixin(abc.ABC):
