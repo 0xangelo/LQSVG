@@ -10,6 +10,7 @@ import ray
 import torch
 import wandb.sdk
 from ray import tune
+from torch import nn
 from wandb_util import WANDB_DIR, wandb_init, with_prefix
 
 from lqsvg import data
@@ -18,18 +19,16 @@ from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 
 
-def make_model(
-    lqg: LQGModule, policy: TVLinearPolicy, config: dict
-) -> pl.LightningModule:
+def make_model(lqg: LQGModule, policy: TVLinearPolicy, config: dict) -> nn.Module:
     # pylint:disable=unused-argument
-    return pl.LightningModule()
+    return nn.Module()
 
 
 def model_trainer(
     config: dict,
-) -> Callable[[pl.LightningModule, Sequence[data.Trajectory]], dict]:
+) -> Callable[[nn.Module, Sequence[data.Trajectory]], dict]:
     # pylint:disable=unused-argument
-    def train(model: pl.LightningModule, dataset: Sequence[data.Trajectory]) -> dict:
+    def train(model: nn.Module, dataset: Sequence[data.Trajectory]) -> dict:
         pass
 
     return train
@@ -37,12 +36,10 @@ def model_trainer(
 
 def policy_trainer(
     config: dict,
-) -> Callable[[TVLinearPolicy, pl.LightningModule, Sequence[data.Trajectory]], dict]:
+) -> Callable[[TVLinearPolicy, nn.Module, Sequence[data.Trajectory]], dict]:
     # pylint:disable=unused-argument
     def optimize(
-        policy: TVLinearPolicy,
-        model: pl.LightningModule,
-        dataset: Sequence[data.Trajectory],
+        policy: TVLinearPolicy, model: nn.Module, dataset: Sequence[data.Trajectory]
     ) -> dict:
         pass
 
