@@ -5,6 +5,7 @@ import torch
 from torch import Tensor, nn
 
 from lqsvg.envs import lqr
+from lqsvg.np_util import RNG
 from lqsvg.torch import named as nt
 from lqsvg.torch.random import normal_vector, spd_matrix, unit_vector
 from lqsvg.torch.utils import index_by_horizon
@@ -83,8 +84,14 @@ class QuadRewardModel(nn.Module):
     c: nn.Parameter
 
     def __init__(
-        self, n_state: int, n_ctrl: int, horizon: int, stationary: bool = True
+        self,
+        n_state: int,
+        n_ctrl: int,
+        horizon: int,
+        stationary: bool = True,
+        rng: RNG = None,
     ):
+        # pylint:disable=too-many-arguments
         super().__init__()
         self.n_tau = n_state + n_ctrl
         self.horizon = horizon
@@ -95,13 +102,13 @@ class QuadRewardModel(nn.Module):
         self.C = nn.Parameter(Tensor(h_size, self.n_tau, self.n_tau))
         self.c = nn.Parameter(Tensor(h_size, self.n_tau))
 
-        self.reset_parameters()
+        self.reset_parameters(rng)
 
-    def reset_parameters(self):
+    def reset_parameters(self, rng: RNG):
         """Default parameter initialization."""
         h_size = 1 if self.stationary else self.horizon
-        self.C.data.copy_(spd_matrix(self.n_tau, horizon=h_size))
-        self.c.data.copy_(unit_vector(self.n_tau, horizon=h_size))
+        self.C.data.copy_(spd_matrix(self.n_tau, horizon=h_size, rng=rng))
+        self.c.data.copy_(unit_vector(self.n_tau, horizon=h_size, rng=rng))
 
     def forward(self, obs: Tensor, act: Tensor) -> Tensor:
         obs, act = (nt.vector(x) for x in (obs, act))
