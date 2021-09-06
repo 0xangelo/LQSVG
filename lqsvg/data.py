@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Tuple
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
 from more_itertools import all_equal, first
 from nnrl.nn.distributions.types import SampleLogp
 from nnrl.types import TensorDict
+from numpy.random import Generator
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, random_split
 from tqdm.auto import tqdm
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
@@ -155,6 +158,75 @@ def train_val_sizes(total: int, train_frac: float) -> Tuple[int, int]:
     train_samples = int(total * train_frac)
     val_samples = total - train_samples
     return train_samples, val_samples
+
+
+def split_along_batch_dim(
+    tensors: Sequence[Tensor], split_sizes: Sequence[int], rng: Generator
+) -> Sequence[Sequence[Tensor]]:
+    """Randomly splits tensors along the 'B' dimension in given split sizes."""
+    if not tensors:
+        return ((),) * len(split_sizes)
+
+    # noinspection PyArgumentList
+    bsize = tensors[0].size("B")
+    indices = torch.split(
+        torch.as_tensor(rng.permutation(bsize)), split_size_or_sections=split_sizes
+    )
+    # noinspection PyTypeChecker
+    return tuple(
+        tuple(nt.index_select(t, "B", idxs) for t in tensors) for idxs in indices
+    )
+
+
+@dataclass()
+class SequenceDataSpec:
+    """Specifications for SequenceDataModule."""
+
+    train_batch_size: int
+    val_batch_size: int
+    seq_len: int
+    train_fraction: float = 0.9
+
+
+class SequenceDataModule(pl.LightningDataModule):
+    """Data module holding sequence tensors."""
+
+    train_dataset: Dataset
+    val_dataset: Dataset
+    spec_cls = SequenceDataSpec
+
+    def __init__(self, *tensors: Tensor, spec: SequenceDataSpec, rng: Generator):
+        super().__init__()
+        assert tensors, "Empty tensor list"
+        self.tensors = tuple(t.align_to("H", "B", ...) for t in tensors)
+        self.sequences = self.tensors[0].size("B")
+        self.names = tuple(t.names[2:] for t in self.tensors)
+        self.spec = spec
+        self.rng = rng
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        spec = self.spec
+        train_tensors, val_tensors = split_along_batch_dim(
+            self.tensors, train_val_sizes(self.sequences, spec.train_fraction), self.rng
+        )
+        self.train_dataset = TensorSeqDataset(*train_tensors, seq_len=spec.seq_len)
+        self.val_dataset = TensorSeqDataset(*val_tensors, seq_len=spec.seq_len)
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_dataset, batch_size=self.spec.train_batch_size, shuffle=True
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.val_dataset, batch_size=self.spec.val_batch_size, shuffle=False
+        )
+
+    def on_after_batch_transfer(
+        self, batch: Tuple[Tensor, ...], dataloader_idx: int
+    ) -> Tuple[Tensor, ...]:
+        del dataloader_idx
+        return tuple(t.refine_names("B", "H", *n) for t, n in zip(batch, self.names))
 
 
 class TensorSeqDataset(Dataset[Tuple[Tensor, ...]]):
