@@ -53,11 +53,6 @@ def make_model(n_state: int, n_ctrl: int, horizon: int, hparams: dict) -> nn.Mod
     raise ValueError(f"Unknown model type '{kind}'")
 
 
-def refine_segbatch(batch: SeqBatch) -> SeqBatch:
-    # noinspection PyTypeChecker
-    return tuple(x.refine_names("B", "H", "R") for x in batch)
-
-
 def wrap_log_prob(
     log_prob: Callable[[Tensor, Tensor, Tensor], Tensor]
 ) -> Callable[[SeqBatch], Tensor]:
@@ -142,7 +137,7 @@ class LightningModel(pl.LightningModule):
     def training_step(self, batch: SeqBatch, batch_idx: int) -> Tensor:
         # pylint:disable=arguments-differ
         del batch_idx
-        loss = self(refine_segbatch(batch)).mean()
+        loss = self(batch).mean()
         self.log("train/loss", loss)
         return loss
 
@@ -171,7 +166,6 @@ class LightningModel(pl.LightningModule):
     def _eval_on_traj_segment(self, batch: SeqBatch) -> TensorDict:
         metrics = {}
         self.model.eval()
-        batch = refine_segbatch(batch)
         # Compute log-prob of traj segments
         metrics["loss"] = self(batch).mean()
         # Compute KL with true dynamics
@@ -183,7 +177,6 @@ class LightningModel(pl.LightningModule):
         # Avoid:
         # RuntimeError: cudnn RNN backward can only be called in training mode
         self.model.train()
-        obs = obs.refine_names("B", "R")
         horizons = self.hparams.pred_horizon
         horizons = [horizons] if isinstance(horizons, int) else horizons
         for horizon in horizons:

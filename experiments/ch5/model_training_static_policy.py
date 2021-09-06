@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 import ray
 import torch
 import wandb.sdk
-from model import LightningModel
+from model import LightningModel, ValBatch
 from numpy.random import Generator
 from ray import tune
 from torch import Tensor
@@ -105,6 +105,12 @@ class DataModule(pl.LightningDataModule):
     def test_dataloader(self) -> Tuple[DataLoader, DataLoader]:
         # pylint:disable=arguments-differ
         return self.val_dataloader()
+
+    def on_after_batch_transfer(self, batch: ValBatch, dataloader_idx: int) -> ValBatch:
+        if dataloader_idx == 0:
+            return tuple(t.refine_names("B", "H", "R") for t in batch)
+
+        return tuple(t.refine_names("B", "R") for t in batch)
 
 
 def gaussian_behavior(
