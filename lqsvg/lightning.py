@@ -1,4 +1,8 @@
 """Lightning utilities."""
+import functools
+import logging
+import warnings
+from contextlib import contextmanager
 from typing import Callable, TypeVar
 
 import pytorch_lightning as pl
@@ -37,3 +41,30 @@ class Lightning(pl.LightningModule):
         loss = self.loss(batch)
         self.log("val/loss", loss)
         return loss
+
+
+def suppress_lightning_info_logging():
+    """Silences messages related to GPU/TPU availability."""
+    # https://github.com/PyTorchLightning/pytorch-lightning/issues/3431
+    logging.getLogger("lightning").setLevel(logging.WARNING)
+
+
+@contextmanager
+def suppress_dataloader_warnings(num_workers: bool = True, shuffle: bool = False):
+    """Ignore PyTorch Lightning warnings regarding dataloaders.
+
+    Args:
+        num_workers: include number-of-workers warnings
+        shuffle: include val/test dataloader shuffling warnings
+    """
+    suppress = functools.partial(
+        warnings.filterwarnings,
+        "ignore",
+        module="pytorch_lightning.trainer.data_loading",
+    )
+    with warnings.catch_warnings():
+        if num_workers:
+            suppress(message=".*Consider increasing the value of the `num_workers`.*")
+        if shuffle:
+            suppress(message="Your .+_dataloader has `shuffle=True`")
+        yield

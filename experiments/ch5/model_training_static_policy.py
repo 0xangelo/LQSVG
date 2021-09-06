@@ -16,9 +16,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb_util import WANDB_DIR, env_info, wandb_init
 
-from lqsvg import data
+from lqsvg import data, lightning
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.experiment import utils as exp_utils
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 from lqsvg.types import DeterministicPolicy
@@ -189,7 +188,7 @@ class Experiment(tune.Trainable):
         with self.run as run:
             run.summary.update(env_info(lqg))
             run.summary.update({"trainable_parameters": model.num_parameters()})
-            with exp_utils.suppress_dataloader_warnings(num_workers=True, shuffle=True):
+            with lightning.suppress_dataloader_warnings(num_workers=True, shuffle=True):
                 trainer.validate(model, datamodule=datamodule)
                 trainer.fit(model, datamodule=datamodule)
                 final_eval = trainer.test(model, datamodule=datamodule)
