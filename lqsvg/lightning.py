@@ -43,6 +43,36 @@ class Lightning(pl.LightningModule):
         return loss
 
 
+def train_lite(
+    model: Lightning, datamodule: pl.LightningDataModule, config: dict
+) -> dict:
+    """Optimizes a model with minimal configurations.
+
+    Args:
+        model: The lightning model
+        datamodule: The dataset module
+        config: Dictionary with training configurations
+
+    Returns:
+        Dictionary with staticts of the trained model on validation data
+    """
+    trainer = pl.Trainer(
+        max_epochs=config["max_epochs"],
+        logger=False,
+        callbacks=[
+            pl.callbacks.EarlyStopping("val/loss", check_on_train_epoch_end=False)
+        ],
+        num_sanity_val_steps=0,
+        progress_bar_refresh_rate=0,  # don't show progress bar for model training
+        weights_summary=None,  # don't print summary before training
+        checkpoint_callback=False,  # don't save last model checkpoint
+    )
+    trainer.fit(model, datamodule=datamodule)
+    # Assume there is only one validation dataloader
+    (info,) = trainer.validate(model, datamodule=datamodule)
+    return info
+
+
 def suppress_info_logging():
     """Silences messages related to GPU/TPU availability."""
     # https://github.com/PyTorchLightning/pytorch-lightning/issues/3431
