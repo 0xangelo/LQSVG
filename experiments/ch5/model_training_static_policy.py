@@ -196,31 +196,24 @@ class Experiment(tune.Trainable):
         return {tune.result.DONE: True, **final_eval[0]}
 
 
-def run_with_tune(name: str = "ModelSearch"):
-    ray.init(logging_level=logging.WARNING)
+@click.group()
+def main():
+    pass
 
-    models = [
-        {"type": "linear"},
-        {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
-        {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
-    ]
-    config = {
-        "wandb": {"name": name},
+
+def base_config() -> dict:
+    return {
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
-        "seed": tune.grid_search(list(range(128, 143))),
-        # "seed": 124,
+        "seed": 124,
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
             "horizon": 50,
             "passive_eigval_range": (0.9, 1.1),
         },
-        "exploration": {
-            "type": tune.grid_search([None, "gaussian"]),
-            "action_noise_sigma": 0.3,
-        },
-        "model": tune.grid_search(models),
+        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
+        "model": {"type": "linear"},
         "pred_horizon": [0, 2, 4, 8],
         "zero_q": False,
         "datamodule": {
@@ -237,33 +230,37 @@ def run_with_tune(name: str = "ModelSearch"):
             track_grad_norm=2,
         ),
     }
+
+
+@main.command()
+@click.option("--name", type=str)
+def sweep(name: str = "ModelSearch"):
+    ray.init(logging_level=logging.WARNING)
+
+    models = [
+        {"type": "linear"},
+        {"type": "mlp", "kwargs": {"hunits": (10, 10), "activation": "ReLU"}},
+        {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
+    ]
+    config = {
+        **base_config(),
+        "wandb": {"name": name},
+        "seed": tune.grid_search(list(range(128, 143))),
+        "exploration": {
+            "type": tune.grid_search([None, "gaussian"]),
+            "action_noise_sigma": 0.3,
+        },
+        "model": tune.grid_search(models),
+    }
     tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
     ray.shutdown()
 
 
-def run_simple():
+@main.command()
+def debug():
     config = {
+        **base_config(),
         "wandb": {"name": "Debug", "mode": "offline"},
-        "learning_rate": 1e-3,
-        "weight_decay": 1e-4,
-        "seed": 123,
-        "env_config": {
-            "n_state": 2,
-            "n_ctrl": 2,
-            "horizon": 50,
-            "passive_eigval_range": (0.9, 1.1),
-        },
-        "pred_horizon": [0, 2, 4, 8],
-        "zero_q": False,
-        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
-        "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
-        "datamodule": {
-            "trajectories": 2000,
-            "train_batch_size": 128,
-            "val_loss_batch_size": 128,
-            "val_grad_batch_size": 256,
-            "seq_len": 4,
-        },
         "trainer": dict(
             max_epochs=5,
             fast_dev_run=True,
@@ -277,19 +274,8 @@ def run_simple():
             # gpus=1,
         ),
     }
-    experiment = Experiment(config)
-    experiment.train()
-
-
-@click.command()
-@click.option("--name", type=str)
-@click.option("--debug/--no-debug", default=False)
-def main(name: str, debug: bool):
-    if debug:
-        run_simple()
-    else:
-        run_with_tune(name)
+    Experiment(config).train()
 
 
 if __name__ == "__main__":
-    main()  # pylint:disable=no-value-for-parameter
+    main()
