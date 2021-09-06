@@ -11,7 +11,6 @@ from torch import Tensor
 from lqsvg.envs.lqr.utils import pack_obs, unpack_obs
 from lqsvg.testing.fixture import std_id
 from lqsvg.torch import named as nt
-from lqsvg.torch.random import default_generator_seed
 
 
 @pytest.fixture(params=(2, 3), ids=std_id("NState"))
@@ -47,12 +46,6 @@ def batch_shape(request) -> Tuple[int, ...]:
 @pytest.fixture
 def rng(seed: int) -> Generator:
     return np.random.default_rng(seed)
-
-
-@pytest.fixture(autouse=True)
-def torch_generator_state(seed: int):
-    with default_generator_seed(seed):
-        yield
 
 
 @pytest.fixture
