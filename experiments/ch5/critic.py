@@ -1,6 +1,7 @@
 # pylint:disable=missing-docstring
 from typing import Callable, Tuple
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from nnrl.nn.actor import DeterministicPolicy
@@ -8,7 +9,7 @@ from nnrl.nn.critic import HardValue, MLPQValue, QValue, QValueEnsemble, VValue
 from nnrl.nn.model import StochasticModel
 from nnrl.nn.utils import update_polyak
 from nnrl.types import TensorDict
-from pytorch_lightning.utilities import AttributeDict
+from numpy.random import Generator
 from torch import Tensor, autograd, nn
 from wandb_util import with_prefix
 
@@ -22,6 +23,7 @@ from lqsvg.torch.nn import (
     QuadVValue,
     TVLinearPolicy,
 )
+from lqsvg.torch.random import default_generator_seed
 
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
 
@@ -95,17 +97,20 @@ class ClippedQValue(QValue):
 
 
 def td_modules(
-    policy: DeterministicPolicy, qval_fn: Callable[..., QValue], hparams: AttributeDict
+    policy: DeterministicPolicy,
+    qval_fn: Callable[[Generator], QValue],
+    hparams: dict,
+    rng: Generator,
 ) -> Tuple[ClippedQValue, ClippedQValue, VValue]:
     """Creates modules for Streamlined Off-Policy TD learning."""
-    qval = ClippedQValue(QValueEnsemble([qval_fn() for _ in range(2)]))
-    target_qval = ClippedQValue(QValueEnsemble([qval_fn() for _ in range(2)]))
+    qval = ClippedQValue(QValueEnsemble([qval_fn(rng) for _ in range(2)]))
+    target_qval = ClippedQValue(QValueEnsemble([qval_fn(rng) for _ in range(2)]))
     target_qval.requires_grad_(False)
     # Syncronize initial Q values
     target_qval.load_state_dict(qval.state_dict())
 
     # Target state-values
-    target_noise = hparams.model.get("target_policy_sigma", 0.3)
+    target_noise = hparams.get("target_policy_sigma", 0.3)
     if target_noise:
         target_policy = DeterministicPolicy.add_gaussian_noise(
             policy, noise_stddev=target_noise
@@ -117,12 +122,15 @@ def td_modules(
 
 
 def vgl_modules(
-    policy: DeterministicPolicy, qval_fn: Callable[..., QValue], _: AttributeDict
+    policy: DeterministicPolicy,
+    qval_fn: Callable[[Generator], QValue],
+    _: dict,
+    rng: Generator,
 ) -> Tuple[QValue, QValue, VValue]:
     """Creates modules for Value Gradient Learning (VGL)."""
-    qval = qval_fn()
+    qval = qval_fn(rng)
 
-    target_qval = qval_fn().requires_grad_(False)
+    target_qval = qval_fn(rng).requires_grad_(False)
     target_qval.load_state_dict(qval.state_dict())
 
     target_vval = HardValue(policy, qval)
@@ -130,31 +138,40 @@ def vgl_modules(
 
 
 def qval_constructor(
-    policy: TVLinearPolicy, hparams: AttributeDict
-) -> Callable[..., QValue]:
+    policy: TVLinearPolicy, hparams: dict
+) -> Callable[[Generator], QValue]:
     n_state, n_ctrl, horizon = lqr.dims_from_policy(policy.standard_form())
-    kind = hparams.model["type"]
+    kind = hparams["type"]
     if kind == "mlp":
-        obs_space, act_space = lqr.spaces_from_dims(n_state, n_ctrl, horizon)
-        spec = MLPQValue.spec_cls(units=hparams.model["hunits"], activation="ReLU")
-        return lambda: MLPQValue(obs_space, act_space, spec)
-    if kind == "quad":
-        rng = hparams.seed
-        return lambda: QuadQValue(n_state + n_ctrl, horizon, rng)
 
-    raise ValueError(f"Unknown Qvalue type {kind}")
+        def constructor(rng: Generator) -> MLPQValue:
+            obs_space, act_space = lqr.spaces_from_dims(n_state, n_ctrl, horizon)
+            spec = MLPQValue.spec_cls(units=hparams["hunits"], activation="ReLU")
+            with default_generator_seed(rng.integers(np.iinfo(int).max)):
+                return MLPQValue(obs_space, act_space, spec)
+
+    elif kind == "quad":
+
+        def constructor(rng: Generator) -> QuadQValue:
+            return QuadQValue(n_state + n_ctrl, horizon, rng)
+
+    else:
+        raise ValueError(f"Unknown Qvalue type {kind}")
+
+    return constructor
 
 
 def modules(
-    policy: TVLinearPolicy, hparams: AttributeDict
+    policy: TVLinearPolicy, hparams: dict, rng: Generator
 ) -> Tuple[QValue, QValue, VValue]:
-    qval_fn = qval_constructor(policy, hparams)
-    if hparams.loss == "TD(1)":
-        return td_modules(policy, qval_fn, hparams)
-    if hparams.loss == "VGL(1)":
-        return vgl_modules(policy, qval_fn, hparams)
+    qval_fn = qval_constructor(policy, hparams["model"])
+    loss = hparams["loss"]
+    if loss == "TD(1)":
+        return td_modules(policy, qval_fn, hparams["model"], rng)
+    if loss == "VGL(1)":
+        return vgl_modules(policy, qval_fn, {}, rng)
 
-    raise ValueError(f"No modules defined for loss '{hparams.loss}'")
+    raise ValueError(f"No modules defined for loss '{loss}'")
 
 
 class LightningQValue(pl.LightningModule):
@@ -167,7 +184,9 @@ class LightningQValue(pl.LightningModule):
         self.hparams.update(hparams)
 
         # NN modules
-        self.qval, self.target_qval, self.target_vval = modules(policy, self.hparams)
+        self.qval, self.target_qval, self.target_vval = modules(
+            policy, self.hparams, np.random.default_rng(self.hparams.seed)
+        )
         # Estimator
         self.estimator = estimator.mfdpg_estimator(self.policy, self.qval)
 

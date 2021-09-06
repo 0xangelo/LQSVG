@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import click
 import numpy as np
 import pytorch_lightning as pl
 import ray
@@ -141,24 +142,25 @@ class Experiment(tune.Trainable):
         return {tune.result.DONE: True, **final_eval[0]}
 
 
+@click.group()
 def main():
-    ray.init(logging_level=logging.WARNING)
+    pass
 
-    config = {
-        "wandb": {"name": "ValueGradientLearning", "mode": "online"},
+
+def base_config() -> dict:
+    return {
         "loss": "VGL(1)",
         "learning_rate": 1e-3,
         "weight_decay": 0,
-        "polyak": tune.grid_search([0, 0.995]),
-        "seed": tune.grid_search(list(range(123, 128))),
-        # "seed": 123,
+        "polyak": 0.995,
+        "seed": 123,
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
             "horizon": 50,
             "passive_eigval_range": (0.9, 1.1),
         },
-        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (10, 10)},
+        "model": {"type": "mlp", "hunits": (10, 10)},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -172,8 +174,35 @@ def main():
             val_check_interval=0.5,
         ),
     }
+
+
+@main.command()
+def sweep():
+    ray.init(logging_level=logging.WARNING)
+
+    config = {
+        **base_config(),
+        "wandb": {"name": "ValueGradientLearning", "mode": "online"},
+        "polyak": tune.grid_search([0, 0.995]),
+        "seed": tune.grid_search(list(range(123, 128))),
+        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (10, 10)},
+    }
     tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
     ray.shutdown()
+
+
+@main.command()
+def debug():
+    config = {
+        **base_config(),
+        "wandb": {"name": "DEBUG", "mode": "offline"},
+        "trainer": dict(
+            track_grad_norm=2,
+            fast_dev_run=True,
+            weights_summary="full",
+        ),
+    }
+    Experiment(config).train()
 
 
 if __name__ == "__main__":
