@@ -11,6 +11,7 @@ import ray
 import torch
 import wandb.sdk
 from model import LightningModel
+from numpy.random import Generator
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
@@ -42,13 +43,20 @@ class DataModule(pl.LightningDataModule):
     val_seq_dataset: Dataset
     val_state_dataset: Dataset
 
-    def __init__(self, lqg: LQGModule, behavior: DeterministicPolicy, spec: DataSpec):
+    def __init__(
+        self,
+        lqg: LQGModule,
+        behavior: DeterministicPolicy,
+        spec: DataSpec,
+        rng: Generator,
+    ):
         super().__init__()
         self.spec = spec
         assert self.spec.seq_len <= lqg.horizon, "Invalid trajectory segment length"
 
         sampler = data.environment_sampler(lqg)
         self.sample_fn = functools.partial(sampler, behavior)
+        self.rng = rng
 
     def prepare_data(self) -> None:
         with torch.no_grad():
@@ -59,16 +67,10 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         spec = self.spec
-        train_traj_idxs, val_traj_idxs = torch.split(
-            torch.randperm(spec.trajectories),
-            split_size_or_sections=data.train_val_sizes(
-                spec.trajectories, spec.train_frac
-            ),
-        )
-        # noinspection PyTypeChecker
-        train_trajs, val_trajs = (
-            tuple(nt.index_select(t, "B", idxs) for t in self.tensors)
-            for idxs in (train_traj_idxs, val_traj_idxs)
+        train_trajs, val_trajs = data.split_along_batch_dim(
+            self.tensors,
+            data.train_val_sizes(spec.trajectories, spec.train_frac),
+            self.rng,
         )
         self.train_dataset = data.TensorSeqDataset(*train_trajs, seq_len=spec.seq_len)
         self.val_seq_dataset = data.TensorSeqDataset(*val_trajs, seq_len=spec.seq_len)
@@ -132,16 +134,21 @@ def behavior_policy(
 
 
 def make_modules(
-    generator: LQGGenerator, hparams: dict
+    rng: Generator, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, DeterministicPolicy, LightningModel]:
+    generator = LQGGenerator(
+        stationary=True, controllable=True, rng=rng, **hparams["env_config"]
+    )
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
     lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
-        dynamics, rng=generator.rng
+        dynamics, rng=rng
     )
-    behavior = behavior_policy(policy, hparams["exploration"], hparams["seed"])
+    behavior = behavior_policy(
+        policy, hparams["exploration"], rng.integers(np.iinfo(int).max).item()
+    )
     model = LightningModel(lqg, policy, hparams)
     return lqg, policy, behavior, model
 
@@ -165,14 +172,9 @@ class Experiment(tune.Trainable):
         return self.run.config
 
     def step(self) -> dict:
-        generator = LQGGenerator(
-            stationary=True,
-            controllable=True,
-            rng=np.random.default_rng(self.hparams.seed),
-            **self.hparams.env_config,
-        )
-        lqg, _, behavior, model = make_modules(generator, self.hparams.as_dict())
-        datamodule = DataModule(lqg, behavior, DataSpec(**self.hparams.datamodule))
+        rng = np.random.default_rng(self.hparams.seed)
+        lqg, _, behavior, model = make_modules(rng, self.hparams.as_dict())
+        datamodule = DataModule(lqg, behavior, DataSpec(**self.hparams.datamodule), rng)
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
