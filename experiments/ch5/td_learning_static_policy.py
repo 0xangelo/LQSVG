@@ -9,7 +9,8 @@ import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
-from critic import LightningQValue
+from critic import LightningQValue, TDBatch
+from numpy.random import Generator
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
@@ -23,14 +24,17 @@ from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 
 
 def make_modules(
-    generator: lqr.LQGGenerator, hparams: dict
+    rng: Generator, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, LightningQValue]:
+    generator = lqr.LQGGenerator(
+        stationary=True, controllable=True, rng=rng, **hparams["env_config"]
+    )
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
     lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
-        dynamics, rng=generator.rng
+        dynamics, rng
     )
     qvalue = LightningQValue(lqg, policy, hparams)
     return lqg, policy, qvalue
@@ -49,9 +53,12 @@ class DataModule(pl.LightningDataModule):
     train_dataset: TensorDataset
     val_dataset: TensorDataset
 
-    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec):
+    def __init__(
+        self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec, rng: Generator
+    ):
         super().__init__()
         self.spec = spec
+        self.rng = rng
 
         sampler = data.environment_sampler(lqg)
         self.sample_fn = functools.partial(sampler, policy)
@@ -63,13 +70,10 @@ class DataModule(pl.LightningDataModule):
         self.tensors = (obs[:-1], act, rew, obs[1:])
 
     def setup(self, stage: Optional[str] = None) -> None:
-        idxs = torch.randperm(self.spec.trajectories)
-        split_sizes = data.train_val_sizes(self.spec.trajectories, self.spec.train_frac)
-        train_traj_idxs, val_traj_idxs = torch.split(idxs, split_sizes)
-        # noinspection PyTypeChecker
-        train_trajs, val_trajs = (
-            tuple(nt.index_select(t, "B", i) for t in self.tensors)
-            for i in (train_traj_idxs, val_traj_idxs)
+        train_trajs, val_trajs = data.split_along_batch_dim(
+            self.tensors,
+            data.train_val_sizes(self.spec.trajectories, self.spec.train_frac),
+            self.rng,
         )
         train_trans, val_trans = (
             tuple(t.flatten(["H", "B"], "B") for t in tensors)
@@ -94,6 +98,11 @@ class DataModule(pl.LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         return self.val_dataloader()
 
+    def on_after_batch_transfer(self, batch: TDBatch, _: int) -> TDBatch:
+        obs, act, rew, new_obs = (t.refine_names("B", ...) for t in batch)
+        obs, act, new_obs = nt.vector(obs, act, new_obs)
+        return obs, act, rew, new_obs
+
 
 class Experiment(tune.Trainable):
     _run: wandb_run.Run = None
@@ -111,14 +120,9 @@ class Experiment(tune.Trainable):
         return self.run.config
 
     def step(self) -> dict:
-        generator = lqr.LQGGenerator(
-            stationary=True,
-            controllable=True,
-            rng=np.random.default_rng(self.hparams.seed),
-            **self.hparams.env_config,
-        )
-        lqg, policy, qvalue = make_modules(generator, self.hparams.as_dict())
-        datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule))
+        rng = np.random.default_rng(self.hparams.seed)
+        lqg, policy, qvalue = make_modules(rng, self.hparams.as_dict())
+        datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule), rng)
 
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run

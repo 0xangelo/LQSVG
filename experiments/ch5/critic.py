@@ -28,12 +28,6 @@ from lqsvg.torch.random import default_generator_seed
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
 
 
-def refine_tdbatch(batch: TDBatch) -> TDBatch:
-    obs, act, rew, new_obs = (t.refine_names("B", ...) for t in batch)
-    obs, act, new_obs = nt.vector(obs, act, new_obs)
-    return obs, act, rew, new_obs
-
-
 def value_learning(module: "LightningQValue", batch: TDBatch) -> Tensor:
     """Returns the temporal difference error induced by the value function."""
     module.qval: ClippedQValue
@@ -219,7 +213,6 @@ class LightningQValue(pl.LightningModule):
 
     def training_step(self, batch: TDBatch, batch_idx: int) -> Tensor:
         del batch_idx
-        batch = refine_tdbatch(batch)
         loss = self(batch)
         self.log("train/loss", loss)
         with torch.no_grad():
@@ -231,12 +224,10 @@ class LightningQValue(pl.LightningModule):
 
     def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
         del batch_idx
-        batch = refine_tdbatch(batch)
         self.log_dict(with_prefix("val/", self._evaluate_on(batch)))
 
     def test_step(self, batch: TDBatch, batch_idx: int) -> None:
         del batch_idx
-        batch = refine_tdbatch(batch)
         self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
 
     def _evaluate_on(self, batch: TDBatch) -> TensorDict:
