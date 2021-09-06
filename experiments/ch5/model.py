@@ -5,7 +5,6 @@ from typing import Callable, Dict, Sequence, Tuple, Union
 import pytorch_lightning as pl
 import torch
 from nnrl.types import TensorDict
-from pytorch_lightning.utilities import AttributeDict
 from torch import Tensor, nn
 from wandb_util import with_prefix
 
@@ -17,7 +16,6 @@ from lqsvg.torch.nn import (
     LQGModule,
     MLPDynamicsModel,
     QuadQValue,
-    QuadraticReward,
     QuadVValue,
     TVLinearPolicy,
     ZeroQValue,
@@ -30,7 +28,7 @@ ValBatch = Union[SeqBatch, Sequence[Tensor]]
 
 @functools.singledispatch
 def make_estimator(
-    model: nn.Module, policy: TVLinearPolicy, reward: QuadraticReward, qval: QuadQValue
+    model: nn.Module, policy: TVLinearPolicy, reward: nn.Module, qval: nn.Module
 ) -> estimator.MBEstimator:
     dynamics = data.markovian_state_sampler(model, model.rsample)
     return estimator.maac_estimator(policy, dynamics, reward, qval)
@@ -38,23 +36,21 @@ def make_estimator(
 
 @make_estimator.register
 def _(
-    model: GRUGaussDynamics,
-    policy: TVLinearPolicy,
-    reward: QuadraticReward,
-    qval: QuadQValue,
+    model: GRUGaussDynamics, policy: TVLinearPolicy, reward: nn.Module, qval: nn.Module
 ) -> estimator.MBEstimator:
     dynamics = data.recurrent_state_sampler(model, model.dist.rsample)
     return estimator.maac_estimator(policy, dynamics, reward, qval, recurrent=True)
 
 
-def make_model(
-    n_state: int, n_ctrl: int, horizon: int, hparams: AttributeDict
-) -> nn.Module:
-    if hparams.model["type"] == "linear":
+def make_model(n_state: int, n_ctrl: int, horizon: int, hparams: dict) -> nn.Module:
+    kind = hparams["type"]
+    if kind == "linear":
         return LinearDiagDynamicsModel(n_state, n_ctrl, horizon, stationary=True)
-    if hparams.model["type"] == "gru":
-        return GRUGaussDynamics(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
-    return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams.model["kwargs"])
+    if kind == "gru":
+        return GRUGaussDynamics(n_state, n_ctrl, horizon, **hparams["kwargs"])
+    if kind == "mlp":
+        return MLPDynamicsModel(n_state, n_ctrl, horizon, **hparams["kwargs"])
+    raise ValueError(f"Unknown model type '{kind}'")
 
 
 def refine_segbatch(batch: SeqBatch) -> SeqBatch:
@@ -111,7 +107,9 @@ class LightningModel(pl.LightningModule):
         self.true_vval = QuadVValue.from_existing(quad_vval).requires_grad_(False)
 
         # NN modules
-        self.model = make_model(lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams)
+        self.model = make_model(
+            lqg.n_state, lqg.n_ctrl, lqg.horizon, self.hparams.model
+        )
         self.seg_log_prob = log_prob_fn(self.model, self.model.dist)
         self.kl_with_dynamics = empirical_kl(
             wrap_log_prob(log_prob_fn(lqg.trans, lqg.trans.dist)),

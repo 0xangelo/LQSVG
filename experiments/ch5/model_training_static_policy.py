@@ -255,6 +255,7 @@ def run_simple():
         },
         "pred_horizon": [0, 2, 4, 8],
         "zero_q": False,
+        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
         "model": {"type": "gru", "kwargs": {"mlp_hunits": (10,), "gru_hunits": (10,)}},
         "datamodule": {
             "trajectories": 2000,
@@ -273,7 +274,7 @@ def run_simple():
             # limit_val_batches=10,
             # profiler="simple",
             val_check_interval=0.5,
-            gpus=1,
+            # gpus=1,
         ),
     }
     experiment = Experiment(config)
