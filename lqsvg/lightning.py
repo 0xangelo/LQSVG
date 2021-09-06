@@ -43,7 +43,7 @@ class Lightning(pl.LightningModule):
         return loss
 
 
-def suppress_lightning_info_logging():
+def suppress_info_logging():
     """Silences messages related to GPU/TPU availability."""
     # https://github.com/PyTorchLightning/pytorch-lightning/issues/3431
     logging.getLogger("lightning").setLevel(logging.WARNING)
