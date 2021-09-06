@@ -24,7 +24,7 @@ more-itertools = "^8.8.0"
 
 [tool.poetry.dev-dependencies]
 ipython = "^7.27.0"
-pre-commit = "^2.14.1"
+pre-commit = "^2.15.0"
 pylint = "^2.10.2"
 pytest = "^6.2.3"
 black = {extras = ["d"], version = "^21.5b2"}
