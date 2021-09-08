@@ -27,7 +27,7 @@ ipython = "^7.27.0"
 pre-commit = "^2.15.0"
 pylint = "^2.10.2"
 pytest = "^6.2.5"
-black = {extras = ["d"], version = "^21.5b2"}
+black = {extras = ["d"], version = "^21.8b0"}
 flake8 = "^3.9.2"
 pytest-mock = "^3.6.1"
 jupyterlab-code-formatter = "^1.4.10"
