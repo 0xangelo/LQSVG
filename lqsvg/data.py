@@ -160,6 +160,13 @@ def train_val_sizes(total: int, train_frac: float) -> Tuple[int, int]:
     return train_samples, val_samples
 
 
+def obs_trajectory_to_transitions(obs: Tensor) -> Tuple[Tensor, Tensor]:
+    """Splits an observation sequence into current and next observation pairs."""
+    aligned = obs.align_to("H", ...)
+    curr, succ = aligned[:-1], aligned[1:]
+    return curr.align_as(obs), succ.align_as(obs)
+
+
 def split_along_batch_dim(
     tensors: Sequence[Tensor], split_sizes: Sequence[int], rng: Generator
 ) -> Sequence[Sequence[Tensor]]:
