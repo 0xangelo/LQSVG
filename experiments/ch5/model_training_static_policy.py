@@ -1,6 +1,7 @@
 # pylint:disable=missing-docstring
 import functools
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -13,6 +14,7 @@ import wandb.sdk
 from model import LightningModel, ValBatch
 from numpy.random import Generator
 from ray import tune
+from ray.tune.logger import NoopLogger
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from wandb_util import WANDB_DIR, env_info, wandb_init
@@ -268,7 +270,7 @@ def sweep(name: str = "ModelSearch"):
 def debug():
     config = {
         **base_config(),
-        "wandb": {"name": "Debug", "mode": "offline"},
+        "wandb": {"name": "Debug", "mode": "disabled"},
         "trainer": dict(
             max_epochs=5,
             fast_dev_run=True,
@@ -282,7 +284,9 @@ def debug():
             # gpus=1,
         ),
     }
-    Experiment(config).train()
+    Experiment(
+        config, logger_creator=functools.partial(NoopLogger, logdir=os.devnull)
+    ).train()
 
 
 if __name__ == "__main__":
