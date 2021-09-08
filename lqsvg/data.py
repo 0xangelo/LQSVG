@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -14,7 +14,7 @@ from nnrl.types import TensorDict
 from numpy.random import Generator
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 from tqdm.auto import tqdm
 
 from lqsvg.envs.lqr.gym import TorchLQGMixin
@@ -185,7 +185,58 @@ def split_along_batch_dim(
     )
 
 
-@dataclass()
+@dataclass
+class TensorDataSpec:
+    """Specifications for TensorDataModule."""
+
+    train_batch_size: int
+    val_batch_size: int
+    train_fraction: float = 0.9
+
+
+class TensorDataModule(pl.LightningDataModule):
+    """Data module holding tensors."""
+
+    train_dataset: TensorDataset
+    val_dataset: TensorDataset
+    spec_cls = TensorDataSpec
+
+    def __init__(
+        self, *tensors: Tensor, spec: Union[TensorDataSpec, dict], rng: Generator
+    ):
+        super().__init__()
+        assert tensors, "Empty tensor list"
+        self.tensors = tuple(t.align_to("B", ...) for t in tensors)
+        self.size = self.tensors[0].size("B")
+        self.names = tuple(t.names for t in self.tensors)
+        self.spec = self.spec_cls(**spec) if isinstance(spec, dict) else spec
+        self.rng = rng
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        spec = self.spec
+        train_val_tensors = split_along_batch_dim(
+            self.tensors, train_val_sizes(self.size, spec.train_fraction), self.rng
+        )
+        train_tensors, val_tensors = itertools.starmap(nt.unnamed, train_val_tensors)
+        self.train_dataset = TensorDataset(*train_tensors)
+        self.val_dataset = TensorDataset(*val_tensors)
+
+    def train_dataloader(self) -> DataLoader:
+        batch_size = self.spec.train_batch_size
+        return DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
+
+    def val_dataloader(self) -> DataLoader:
+        batch_size = self.spec.val_batch_size
+        return DataLoader(self.val_dataset, batch_size=batch_size, shuffle=False)
+
+    def on_after_batch_transfer(
+        self, batch: Tuple[Tensor, ...], dataloader_idx: int
+    ) -> Tuple[Tensor, ...]:
+        del dataloader_idx
+        return tuple(t.refine_names(*names) for t, names in zip(batch, self.names))
+
+
+@dataclass
 class SequenceDataSpec:
     """Specifications for SequenceDataModule."""
 
@@ -202,13 +253,15 @@ class SequenceDataModule(pl.LightningDataModule):
     val_dataset: Dataset
     spec_cls = SequenceDataSpec
 
-    def __init__(self, *tensors: Tensor, spec: SequenceDataSpec, rng: Generator):
+    def __init__(
+        self, *tensors: Tensor, spec: Union[SequenceDataSpec, dict], rng: Generator
+    ):
         super().__init__()
         assert tensors, "Empty tensor list"
-        self.tensors = tuple(t.align_to("H", "B", ...) for t in tensors)
+        self.tensors = tuple(t.align_to("B", "H", ...) for t in tensors)
         self.sequences = self.tensors[0].size("B")
-        self.names = tuple(t.names[2:] for t in self.tensors)
-        self.spec = spec
+        self.names = tuple(t.names for t in self.tensors)
+        self.spec = self.spec_cls(**spec) if isinstance(spec, dict) else spec
         self.rng = rng
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -220,20 +273,18 @@ class SequenceDataModule(pl.LightningDataModule):
         self.val_dataset = TensorSeqDataset(*val_tensors, seq_len=spec.seq_len)
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset, batch_size=self.spec.train_batch_size, shuffle=True
-        )
+        batch_size = self.spec.train_batch_size
+        return DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.val_dataset, batch_size=self.spec.val_batch_size, shuffle=False
-        )
+        batch_size = self.spec.val_batch_size
+        return DataLoader(self.val_dataset, batch_size=batch_size, shuffle=False)
 
     def on_after_batch_transfer(
         self, batch: Tuple[Tensor, ...], dataloader_idx: int
     ) -> Tuple[Tensor, ...]:
         del dataloader_idx
-        return tuple(t.refine_names("B", "H", *n) for t, n in zip(batch, self.names))
+        return tuple(t.refine_names(*names) for t, names in zip(batch, self.names))
 
 
 class TensorSeqDataset(Dataset[Tuple[Tensor, ...]]):
