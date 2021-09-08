@@ -160,6 +160,12 @@ def train_val_sizes(total: int, train_frac: float) -> Tuple[int, int]:
     return train_samples, val_samples
 
 
+@nt.variadic
+def merge_horizon_and_batch_dims(tensor: Tensor) -> Tensor:
+    """Flattens the 'H' and 'B' dimensions into a single 'B' dimension."""
+    return tensor.flatten("H B".split(), "B")
+
+
 def obs_trajectory_to_transitions(obs: Tensor) -> Tuple[Tensor, Tensor]:
     """Splits an observation sequence into current and next observation pairs."""
     aligned = obs.align_to("H", ...)
