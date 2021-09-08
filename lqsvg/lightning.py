@@ -22,23 +22,23 @@ class Lightning(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.loss = loss
+        self.loss_fn = loss
         self.hparams.update(config)
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(
             self.model.parameters(),
-            lr=self.params.learning_rate,
+            lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
 
-    def training_step(self, batch: BatchType) -> Tensor:
-        loss = self.loss(batch)
+    def training_step(self, batch: BatchType, _: int) -> Tensor:
+        loss = self.loss_fn(batch)
         self.log("train/loss", loss)
         return loss
 
-    def validation_step(self, batch: BatchType) -> Tensor:
-        loss = self.loss(batch)
+    def validation_step(self, batch: BatchType, _: int) -> Tensor:
+        loss = self.loss_fn(batch)
         self.log("val/loss", loss)
         return loss
 
