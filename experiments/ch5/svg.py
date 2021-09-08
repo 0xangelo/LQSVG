@@ -60,7 +60,7 @@ def dynamics_loss(dynamics: nn.Module) -> Callable[[DynamicsBatch], Tensor]:
     log_prob = log_prob_fn(dynamics, dynamics.dist)
 
     def loss(batch: DynamicsBatch) -> Tensor:
-        obs, act, new_obs = (t.refine_names("B", "H", "R") for t in batch)
+        obs, act, new_obs = batch
         return -log_prob(obs, act, new_obs).mean()
 
     return loss
@@ -69,9 +69,6 @@ def dynamics_loss(dynamics: nn.Module) -> Callable[[DynamicsBatch], Tensor]:
 def reward_loss(reward: nn.Module) -> Callable[[RewardBatch], Tensor]:
     def loss(batch: RewardBatch) -> Tensor:
         obs, act, rew = batch
-        obs = obs.refine_names("B", "R")
-        act = act.refine_names("B", "R")
-        rew = rew.refine_names("B")
         return torch.mean(0.5 * torch.square(reward(obs, act) - rew))
 
     return loss
@@ -88,6 +85,7 @@ def model_trainer(
     )
     pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
 
+    @lightning.suppress_dataloader_warnings(num_workers=True)
     def train(dataset: Replay, rng: Generator) -> dict:
         obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
         obs, next_obs = data.obs_trajectory_to_transitions(obs)
@@ -158,7 +156,8 @@ def policy_optimization_(
     dataset = deque(maxlen=config["replay_size"] // lqg.horizon)
     for _ in itertools.count():
         metrics = {}
-        trajectories = collect(policy, config["trajs_per_iter"])
+        with torch.no_grad():
+            trajectories = collect(policy, config["trajs_per_iter"])
         dataset.append(trajectories)
         metrics.update(optimize_model_(dataset, rng))
         metrics.update(optimize_policy_(dataset, rng))
@@ -187,7 +186,9 @@ class Experiment(tune.Trainable):
     _run: wandb.sdk.wandb_run.Run = None
 
     def setup(self, config: dict):
+        lightning.suppress_info_logging()
         pl.seed_everything(config["seed"])
+
         with nt.suppress_named_tensor_warning():
             lqg = create_env(config)
         policy = init_policy(lqg, config)
@@ -260,6 +261,27 @@ def debug():
     config = {
         **base_config(),
         "wandb": {"name": "DEBUG", "mode": "disabled"},
+        "trajs_per_iter": 10,
+        "model": {
+            "perfect_model": False,
+            "learning_rate": 1e-3,
+            "weight_decay": 0,
+            "max_epochs": 20,
+            "dynamics": {"type": "linear"},
+            "qvalue": {
+                "loss": "TD(1)",
+                "model": {"type": "mlp", "hunits": (10, 10)},
+            },
+            "dynamics_dm": {
+                "train_batch_size": 128,
+                "val_batch_size": 128,
+                "seq_len": 8,
+            },
+            "reward_dm": {
+                "train_batch_size": 64,
+                "val_batch_size": 64,
+            },
+        },
     }
     exp = Experiment(config, logger_creator=partial(NoopLogger, logdir=os.devnull))
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
