@@ -87,6 +87,7 @@ def model_trainer(
     pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
 
     @lightning.suppress_dataloader_warnings(num_workers=True)
+    @lightning.suppress_datamodule_warnings()
     def train(dataset: Replay, rng: Generator) -> dict:
         obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
         obs, next_obs = data.obs_trajectory_to_transitions(obs)
