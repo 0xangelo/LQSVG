@@ -69,7 +69,7 @@ def train_lite(
     )
     trainer.fit(model, datamodule=datamodule)
     # Assume there is only one validation dataloader
-    (info,) = trainer.validate(model, datamodule=datamodule)
+    (info,) = trainer.validate(model, datamodule=datamodule, verbose=False)
     return info
 
 
