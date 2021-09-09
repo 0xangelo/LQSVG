@@ -26,6 +26,7 @@ from lqsvg.envs import lqr
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, QuadQValue, QuadRewardModel, TVLinearPolicy
 from lqsvg.torch.sequence import log_prob_fn
+from lqsvg.types import DeterministicPolicy
 
 DynamicsBatch = Tuple[Tensor, Tensor, Tensor]
 RewardBatch = Tuple[Tensor, Tensor, Tensor]
@@ -95,7 +96,7 @@ def model_trainer(
         reward_dm = data.TensorDataModule(
             *data.merge_horizon_and_batch_dims(obs, act, rew),
             spec=config["reward_dm"],
-            rng=rng
+            rng=rng,
         )
         dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
         reward_info = lightning.train_lite(pl_reward, reward_dm, config)
@@ -135,11 +136,31 @@ def episode_stats(dataset: Replay) -> dict:
     }
 
 
-def timesteps(trajectories: data.Trajectory):
-    """Returns the number of timesteps in a trajectory batch."""
-    actions = trajectories[1]
-    # noinspection PyArgumentList
-    return actions.size("H") * actions.size("B")
+def total_timesteps(dataset: Sequence[data.Trajectory]) -> int:
+    return sum(map(data.timesteps, dataset))
+
+
+@torch.no_grad()
+def prepopulate_(
+    dataset: deque,
+    collect: Callable[[DeterministicPolicy, int], data.Trajectory],
+    policy: DeterministicPolicy,
+    config: dict,
+):
+    dataset.append(
+        collect(policy, config["learning_starts"] - config["trajs_per_iter"])
+    )
+
+
+def collection_stats(
+    iteration: int, trajectories: data.Trajectory, dataset: Sequence[data.Trajectory]
+) -> dict:
+    return {
+        tune.result.TIMESTEPS_THIS_ITER: total_timesteps(dataset)
+        if iteration == 0
+        else data.timesteps(trajectories),
+        **with_prefix("collect/", episode_stats(dataset)),
+    }
 
 
 def policy_optimization_(
@@ -149,21 +170,23 @@ def policy_optimization_(
     rng = np.random.default_rng(config["seed"])
     model = make_model(lqg, policy, rng, config["model"])
 
-    collect = data.environment_sampler(lqg)
     optimize_model_ = model_trainer(model, config["model"])
     optimize_policy_ = policy_trainer(policy, model, config)
 
     dataset = deque(maxlen=config["replay_size"] // lqg.horizon)
-    for _ in itertools.count():
-        metrics = {}
+    collect = data.environment_sampler(lqg)
+    prepopulate_(dataset, collect, policy, config)
+
+    for i in itertools.count():
         with torch.no_grad():
             trajectories = collect(policy, config["trajs_per_iter"])
         dataset.append(trajectories)
+
+        metrics = {}
         metrics.update(optimize_model_(dataset, rng))
         metrics.update(optimize_policy_(dataset, rng))
 
-        metrics[tune.result.TIMESTEPS_THIS_ITER] = timesteps(trajectories)
-        metrics.update(with_prefix("collect/", episode_stats(dataset)))
+        metrics.update(collection_stats(i, trajectories, dataset))
         yield metrics
 
 
@@ -227,6 +250,7 @@ def base_config() -> dict:
             "passive_eigval_range": (0.9, 1.1),
         },
         "replay_size": int(1e5),
+        "learning_starts": 10,
         "trajs_per_iter": 1,
         "model": {
             "perfect_model": True,
@@ -261,7 +285,6 @@ def debug():
     config = {
         **base_config(),
         "wandb": {"name": "DEBUG", "mode": "disabled"},
-        "trajs_per_iter": 10,
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
