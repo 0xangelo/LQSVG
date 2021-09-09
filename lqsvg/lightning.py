@@ -76,7 +76,7 @@ def train_lite(
 def suppress_info_logging():
     """Silences messages related to GPU/TPU availability."""
     # https://github.com/PyTorchLightning/pytorch-lightning/issues/3431
-    logging.getLogger("lightning").setLevel(logging.WARNING)
+    logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
 
 
 @contextmanager
