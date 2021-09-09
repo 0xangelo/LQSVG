@@ -80,6 +80,18 @@ def suppress_info_logging():
 
 
 @contextmanager
+def suppress_datamodule_warnings():
+    """Ignores the DataModule.prepare_data deprecation warning."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            module="pytorch_lightning.core.datamodule",
+            message="DataModule.prepare_data has already been called",
+        )
+        yield
+
+
+@contextmanager
 def suppress_dataloader_warnings(num_workers: bool = True, shuffle: bool = False):
     """Ignore PyTorch Lightning warnings regarding dataloaders.
 
