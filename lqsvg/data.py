@@ -408,3 +408,10 @@ def collect_with_progress(worker, total_trajs, prog: bool = True) -> SampleBatch
             pbar.update(eps - old_eps)
 
     return sample_batch
+
+
+def timesteps(trajectories: Trajectory):
+    """Returns the number of timesteps in a trajectory batch."""
+    actions = trajectories[1]
+    # noinspection PyArgumentList
+    return actions.size("H") * actions.size("B")
