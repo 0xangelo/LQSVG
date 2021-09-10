@@ -24,7 +24,7 @@ def default_generator_seed(seed: int):
         torch.set_rng_state(state)
 
 
-def numpy_to_torch_generator(rng: np.random.Generator) -> torch.Generator:
+def numpy_to_torch_generator(rng: np.random.Generator) -> Generator:
     """Returns a PyTorch random number generator from a Numpy one."""
     generator = torch.Generator()
     generator.manual_seed(rng.integers(np.iinfo(int).max).item())
