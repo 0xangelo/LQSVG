@@ -296,6 +296,9 @@ class SequenceDataModule(pl.LightningDataModule):
 class TensorSeqDataset(Dataset[Tuple[Tensor, ...]]):
     """Dataset wrapping sequence tensors.
 
+    Note:
+        May refactor this to use `torch.Tensor.unfold`.
+
     Args:
         *tensors: tensors that have the same size of the first and second
             dimensions.
