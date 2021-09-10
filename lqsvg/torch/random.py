@@ -24,6 +24,13 @@ def default_generator_seed(seed: int):
         torch.set_rng_state(state)
 
 
+def numpy_to_torch_generator(rng: np.random.Generator) -> torch.Generator:
+    """Returns a PyTorch random number generator from a Numpy one."""
+    generator = torch.Generator()
+    generator.manual_seed(rng.integers(np.iinfo(int).max).item())
+    return generator
+
+
 def default_rng(seed: Union[None, int, Generator] = None) -> Generator:
     """Mirrors numpy's `default_rng` to produce RNGs for Pytorch.
 
