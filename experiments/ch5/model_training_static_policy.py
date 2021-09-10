@@ -23,6 +23,7 @@ from lqsvg import data, lightning
 from lqsvg.envs.lqr.generators import LQGGenerator
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
+from lqsvg.torch.random import numpy_to_torch_generator
 from lqsvg.types import DeterministicPolicy
 
 
@@ -116,10 +117,9 @@ class DataModule(pl.LightningDataModule):
 
 
 def gaussian_behavior(
-    policy: TVLinearPolicy, exploration: dict, seed: int
+    policy: TVLinearPolicy, exploration: dict, rng: Generator
 ) -> DeterministicPolicy:
-    generator = torch.Generator()
-    generator.manual_seed(seed)
+    generator = numpy_to_torch_generator(rng)
     sigma = exploration["action_noise_sigma"]
 
     def behavior(obs: Tensor) -> Tensor:
@@ -131,13 +131,13 @@ def gaussian_behavior(
 
 
 def behavior_policy(
-    policy: TVLinearPolicy, exploration: dict, seed: int
+    policy: TVLinearPolicy, exploration: dict, rng: Generator
 ) -> DeterministicPolicy:
     kind = exploration["type"]
     if kind is None:
         return policy
     if kind == "gaussian":
-        return gaussian_behavior(policy, exploration, seed)
+        return gaussian_behavior(policy, exploration, rng)
     raise ValueError(f"Unknown exploration type '{kind}'")
 
 
@@ -154,9 +154,7 @@ def make_modules(
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
         dynamics, rng=rng
     )
-    behavior = behavior_policy(
-        policy, hparams["exploration"], rng.integers(np.iinfo(int).max).item()
-    )
+    behavior = behavior_policy(policy, hparams["exploration"], rng)
     model = LightningModel(lqg, policy, hparams)
     return lqg, policy, behavior, model
 
