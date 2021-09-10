@@ -11,7 +11,6 @@ import torch
 from more_itertools import all_equal, first
 from nnrl.nn.distributions.types import SampleLogp
 from nnrl.types import TensorDict
-from numpy.random import Generator
 from ray.rllib import RolloutWorker, SampleBatch
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
@@ -174,7 +173,7 @@ def obs_trajectory_to_transitions(obs: Tensor) -> Tuple[Tensor, Tensor]:
 
 
 def split_along_batch_dim(
-    tensors: Sequence[Tensor], split_sizes: Sequence[int], rng: Generator
+    tensors: Sequence[Tensor], split_sizes: Sequence[int], rng: torch.Generator
 ) -> Sequence[Sequence[Tensor]]:
     """Randomly splits tensors along the 'B' dimension in given split sizes."""
     if not tensors:
@@ -183,7 +182,7 @@ def split_along_batch_dim(
     # noinspection PyArgumentList
     bsize = tensors[0].size("B")
     indices = torch.split(
-        torch.as_tensor(rng.permutation(bsize)), split_size_or_sections=split_sizes
+        torch.randperm(bsize, generator=rng), split_size_or_sections=split_sizes
     )
     # noinspection PyTypeChecker
     return tuple(
@@ -208,7 +207,7 @@ class TensorDataModule(pl.LightningDataModule):
     spec_cls = TensorDataSpec
 
     def __init__(
-        self, *tensors: Tensor, spec: Union[TensorDataSpec, dict], rng: Generator
+        self, *tensors: Tensor, spec: Union[TensorDataSpec, dict], rng: torch.Generator
     ):
         super().__init__()
         assert tensors, "Empty tensor list"
@@ -260,7 +259,10 @@ class SequenceDataModule(pl.LightningDataModule):
     spec_cls = SequenceDataSpec
 
     def __init__(
-        self, *tensors: Tensor, spec: Union[SequenceDataSpec, dict], rng: Generator
+        self,
+        *tensors: Tensor,
+        spec: Union[SequenceDataSpec, dict],
+        rng: torch.Generator,
     ):
         super().__init__()
         assert tensors, "Empty tensor list"
