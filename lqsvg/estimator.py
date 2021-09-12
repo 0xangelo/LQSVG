@@ -22,9 +22,12 @@ from lqsvg.types import (
     StateDynamics,
 )
 
+# Model-based surrogate objective
+MBSurrogate = Callable[[Tensor, int], Tensor]
+# Model-free surrogate objective
+MFSurrogate = Callable[[Tensor], Tensor]
 # Model-based estimator
 MBEstimator = Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]
-
 # Model-free estimator
 MFEstimator = Callable[[Tensor], Tuple[Tensor, lqr.Linear]]
 
@@ -165,9 +168,7 @@ def analytic_svg(
     return value, svg
 
 
-def mfdpg_surrogate(
-    policy: DeterministicPolicy, qvalue: QValueFn
-) -> Callable[[Tensor], Tensor]:
+def mfdpg_surrogate(policy: DeterministicPolicy, qvalue: QValueFn) -> MFSurrogate:
     """Returns the surrogate objective function for model-free DPG.
 
     Args:
@@ -187,9 +188,7 @@ def mfdpg_surrogate(
     return surrogate
 
 
-def model_free_estimator(
-    policy: TVLinearPolicy, surrogate: Callable[[Tensor], Tensor]
-) -> MFEstimator:
+def model_free_estimator(policy: TVLinearPolicy, surrogate: MFSurrogate) -> MFEstimator:
     """Model-free value gradient estimator.
 
     Args:
@@ -222,7 +221,7 @@ def dpg_surrogate(
     dynamics: StateDynamics,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
-) -> Callable[[Tensor, int], Tensor]:
+) -> MBSurrogate:
     """Returns the surrogate value function for DPG(K).
 
     Args:
@@ -256,9 +255,7 @@ def dpg_surrogate(
     return surrogate
 
 
-def nstep_estimator(
-    policy: TVLinearPolicy, surrogate: Callable[[Tensor, int], Tensor]
-) -> MBEstimator:
+def nstep_estimator(policy: TVLinearPolicy, surrogate: MBSurrogate) -> MBEstimator:
     """Returns a model-based lookahead value gradient estimator.
 
     Args:
@@ -306,7 +303,7 @@ def maac_markovian(
     policy: DeterministicPolicy,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
-) -> Callable[[Tensor, int], Tensor]:
+) -> MBSurrogate:
     """Returns the surrogate value function for MAAC with markovian model.
 
     Args:
@@ -341,7 +338,7 @@ def maac_recurrent(
     policy: DeterministicPolicy,
     reward_fn: RewardFunction,
     qvalue: QValueFn,
-) -> Callable[[Tensor, int], Tensor]:
+) -> MBSurrogate:
     """Returns the surrogate value function for MAAC with recurrent model.
 
     Args:
@@ -378,7 +375,7 @@ def maac_estimator(
     reward_fn: RewardFunction,
     qvalue: QValueFn,
     recurrent: bool = False,
-) -> Callable[[Tensor, int], Tuple[Tensor, lqr.Linear]]:
+) -> MBEstimator:
     """Returns the value gradient estimator from MAAC.
 
     Args:
