@@ -154,7 +154,7 @@ def prepopulate_(
 def collection_stats(
     iteration: int, trajectories: data.Trajectory, dataset: Replay
 ) -> dict:
-    batched = map(partial(torch.cat, dim="B"), zip(*dataset))
+    batched = tuple(map(partial(torch.cat, dim="B"), zip(*dataset)))
     obs, act, rew, logp = (t.align_to("B", "H", ...)[-100:] for t in batched)
 
     rets = rew.sum("H")
@@ -170,17 +170,11 @@ def collection_stats(
         "episode_logp_mean": log_likelihoods.mean().item(),
     }
 
-    timesteps_this_iter = (
-        sum(map(data.timesteps, dataset))
-        if iteration == 0
-        else data.timesteps(trajectories)
-    )
+    actions = trajectories[1] if iteration > 0 else batched[1]
     # noinspection PyArgumentList
-    episodes_this_iter = (
-        trajectories[0].size("B")
-        if iteration > 0
-        else sum(traj[0].size("B") for traj in dataset)
-    )
+    timesteps_this_iter = actions.size("B") * actions.size("H")
+    # noinspection PyArgumentList
+    episodes_this_iter = actions.size("B")
     return {
         tune.result.TIMESTEPS_THIS_ITER: timesteps_this_iter,
         tune.result.EPISODES_THIS_ITER: episodes_this_iter,
