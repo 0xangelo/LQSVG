@@ -47,6 +47,7 @@ __all__ = [
 
 def isstationary(dynamics: AnyDynamics) -> bool:
     """Returns whether the dynamics are stationary (time-invariant)."""
+    # noinspection PyTypeChecker
     return (
         nt.allclose(dynamics.F, dynamics.F.select("H", 0))
         and nt.allclose(dynamics.f, dynamics.f.select("H", 0))
@@ -189,6 +190,7 @@ def isstabilizable(dynamics: AnyDynamics) -> np.ndarray:
 ###############################################################################
 
 
+# noinspection PyTypeChecker
 def stationary_dynamics(dynamics: AnyDynamics) -> AnyDynamics:
     """Retrieve stationary dynamics parameters with no horizon dimension.
 
@@ -414,6 +416,7 @@ def random_mat_with_eigval_range(
 ###############################################################################
 
 
+# noinspection PyArgumentList
 def dims_from_dynamics(dynamics: AnyDynamics) -> tuple[int, int, int]:
     """Retrieve LQG dimensions from linear Gaussian transition dynamics."""
     n_state = dynamics.F.size("R")
@@ -440,6 +443,7 @@ def dims_from_policy(policy: Linear) -> tuple[int, int, int]:
     return n_state, n_ctrl, horizon
 
 
+# noinspection PyArgumentList
 def dims_from_cost(cost: QuadCost) -> tuple[int, int]:
     """Retrieve dimensions from quadratic cost function.
 
