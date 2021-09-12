@@ -164,4 +164,4 @@ def sample_with_replacement(
     # noinspection PyArgumentList
     weights = torch.ones(tensor.size(dim))
     idxs = torch.multinomial(weights, num_samples=size, replacement=True, generator=rng)
-    return torch.index_select(tensor, dim=dim, index=idxs)
+    return nt.index_select(tensor, dim=dim, index=idxs.int())
