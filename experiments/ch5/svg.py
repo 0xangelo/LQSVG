@@ -21,7 +21,7 @@ from ray.tune.logger import NoopLogger
 from torch import Tensor, nn
 from wandb_util import WANDB_DIR, wandb_init, with_prefix
 
-from lqsvg import data, lightning
+from lqsvg import analysis, data, estimator, lightning
 from lqsvg.envs import lqr
 from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
@@ -119,8 +119,12 @@ def all_nonterminal_obs(dataset: Replay, horizon: int) -> Tensor:
 
 
 def policy_trainer(
-    policy: TVLinearPolicy, model: nn.Module, config: dict
+    lqg: LQGModule, policy: TVLinearPolicy, model: nn.Module, config: dict
 ) -> Callable[[Replay, RNG], dict]:
+    # Ground-truth
+    dynamics, cost, init = lqg.standard_form()
+    optimal = estimator.optimal_value(dynamics, cost, init)
+
     optim = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
     surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
 
@@ -134,7 +138,13 @@ def policy_trainer(
         val = surrogate(obs, config["pred_horizon"])
         val.neg().backward()
         optim.step()
-        return {"surrogate_value": val.item()}
+        return {
+            "surrogate_value": val.item(),
+            "suboptimality_gap": analysis.relative_error(
+                optimal,
+                estimator.analytic_value(policy.standard_form(), init, dynamics, cost),
+            ).item(),
+        }
 
     return optimize
 
@@ -190,7 +200,7 @@ def policy_optimization_(
     model = make_model(lqg, policy, rng, config["model"])
 
     optimize_model_ = model_trainer(model, config["model"])
-    optimize_policy_ = policy_trainer(policy, model, config)
+    optimize_policy_ = policy_trainer(lqg, policy, model, config)
 
     dataset = deque(maxlen=config["replay_size"] // lqg.horizon)
     collect = data.environment_sampler(lqg)
