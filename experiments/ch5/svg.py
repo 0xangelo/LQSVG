@@ -170,11 +170,20 @@ def collection_stats(
         "episode_logp_mean": log_likelihoods.mean().item(),
     }
 
-    total_timesteps = sum(map(data.timesteps, dataset))
-    return {
-        tune.result.TIMESTEPS_THIS_ITER: total_timesteps
+    timesteps_this_iter = (
+        sum(map(data.timesteps, dataset))
         if iteration == 0
-        else data.timesteps(trajectories),
+        else data.timesteps(trajectories)
+    )
+    # noinspection PyArgumentList
+    episodes_this_iter = (
+        trajectories[0].size("B")
+        if iteration > 0
+        else sum(traj[0].size("B") for traj in dataset)
+    )
+    return {
+        tune.result.TIMESTEPS_THIS_ITER: timesteps_this_iter,
+        tune.result.EPISODES_THIS_ITER: episodes_this_iter,
         **with_prefix("collect/", episode_stats),
     }
 
