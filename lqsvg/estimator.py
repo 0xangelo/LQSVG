@@ -107,6 +107,25 @@ def analytic_value(
     return value
 
 
+def optimal_value(
+    dynamics: lqr.LinSDynamics, cost: lqr.QuadCost, init: lqr.GaussInit
+) -> Tensor:
+    """Computes the optimal value attainable in an LQG.
+
+    Args:
+        dynamics: linear Gaussian parameters in canonical form
+        cost: quadratic cost coefficients in canonical form
+        init: Gaussian initial state mean and covariance
+
+    Returns:
+        A tensor representing the optimal expected return
+    """
+    n_state, n_ctrl, horizon = lqr.dims_from_dynamics(dynamics)
+    solver = lqr.NamedLQGControl(n_state, n_ctrl, horizon)
+    _, _, vstar = solver(dynamics, cost)
+    return expected_value(init, lqr.Quadratic(*(t.select("H", 0) for t in vstar)))
+
+
 def policy_svg(
     policy: TVLinearPolicy,
     value: Tensor,
