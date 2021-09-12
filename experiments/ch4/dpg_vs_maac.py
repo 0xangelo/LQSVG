@@ -16,13 +16,11 @@ import lqsvg.torch.named as nt
 from lqsvg.analysis import total_norm
 from lqsvg.envs import lqr
 from lqsvg.envs.lqr.generators import LQGGenerator
-from lqsvg.envs.lqr.modules import LQGModule
 from lqsvg.envs.lqr.solvers import NamedLQGControl
 from lqsvg.estimator import DPG, MAAC, AnalyticSVG, ExpectedValue, MonteCarloSVG
 from lqsvg.experiment.utils import calver
 from lqsvg.np_util import RNG
-from lqsvg.torch.nn.policy import TVLinearPolicy
-from lqsvg.torch.nn.value import QuadQValue
+from lqsvg.torch.nn import LQGModule, QuadQValue, TVLinearPolicy
 
 
 # noinspection PyAbstractClass
