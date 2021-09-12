@@ -155,3 +155,13 @@ def unit_vector(
     vec = np_util.random_unit_vector(size, sample_shape=sample_shape, rng=rng)
     vec = nt.vector(as_float_tensor(vec))
     return expand_and_refine(vec, 1, horizon=horizon, n_batch=n_batch)
+
+
+def sample_with_replacement(
+    tensor: Tensor, size: int, dim: Union[int, str], rng: torch.Generator
+) -> Tensor:
+    """Subsamples a tensor along a dimension with replacement."""
+    # noinspection PyArgumentList
+    weights = torch.ones(tensor.size(dim))
+    idxs = torch.multinomial(weights, num_samples=size, replacement=True, generator=rng)
+    return torch.index_select(tensor, dim=dim, index=idxs)
