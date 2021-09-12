@@ -27,6 +27,22 @@ ValBatch = Union[SeqBatch, Sequence[Tensor]]
 
 
 @functools.singledispatch
+def surrogate_fn(
+    model: nn.Module, policy: TVLinearPolicy, reward: nn.Module, qval: nn.Module
+) -> estimator.MBSurrogate:
+    dynamics = data.markovian_state_sampler(model, model.rsample)
+    return estimator.maac_markovian(dynamics, policy, reward, qval)
+
+
+@surrogate_fn.register
+def _(
+    model: GRUGaussDynamics, policy: TVLinearPolicy, reward: nn.Module, qval: nn.Module
+) -> estimator.MBSurrogate:
+    dynamics = data.recurrent_state_sampler(model, model.dist.rsample)
+    return estimator.maac_recurrent(dynamics, policy, reward, qval)
+
+
+@functools.singledispatch
 def make_estimator(
     model: nn.Module, policy: TVLinearPolicy, reward: nn.Module, qval: nn.Module
 ) -> estimator.MBEstimator:
