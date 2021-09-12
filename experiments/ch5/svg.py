@@ -8,7 +8,6 @@ from functools import partial
 from typing import Callable, Generator, Sequence, Tuple
 
 import click
-import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
@@ -16,6 +15,7 @@ import wandb.sdk
 import yaml
 from critic import modules as critic_modules
 from model import make_model as dynamics_model
+from model import surrogate_fn
 from ray import tune
 from ray.tune.logger import NoopLogger
 from torch import Tensor, nn
@@ -23,8 +23,10 @@ from wandb_util import WANDB_DIR, wandb_init, with_prefix
 
 from lqsvg import data, lightning
 from lqsvg.envs import lqr
+from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, QuadQValue, QuadRewardModel, TVLinearPolicy
+from lqsvg.torch.random import sample_with_replacement
 from lqsvg.torch.sequence import log_prob_fn
 from lqsvg.types import DeterministicPolicy
 
@@ -34,7 +36,7 @@ Replay = Sequence[data.Trajectory]
 
 
 def make_model(
-    lqg: LQGModule, policy: TVLinearPolicy, rng: Generator, config: dict
+    lqg: LQGModule, policy: TVLinearPolicy, rng: RNG, config: dict
 ) -> nn.Module:
     # pylint:disable=unused-argument
     model = nn.Module()
@@ -42,17 +44,17 @@ def make_model(
         model.dynamics = lqg.trans
         model.reward = lqg.reward
         model.qval = QuadQValue(
-            n_tau=lqg.n_state + lqg.n_ctrl, horizon=lqg.horizon, rng=rng
+            n_tau=lqg.n_state + lqg.n_ctrl, horizon=lqg.horizon, rng=rng.numpy
         )
     else:
         model.dynamics = dynamics_model(
             lqg.n_state, lqg.n_ctrl, lqg.horizon, config["dynamics"]
         )
         model.reward = QuadRewardModel(
-            lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True, rng=rng
+            lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True, rng=rng.numpy
         )
         model.qval, model.target_qval, model.target_vval = critic_modules(
-            policy, config["qvalue"], rng
+            policy, config["qvalue"], rng.numpy
         )
     return model
 
@@ -75,9 +77,7 @@ def reward_loss(reward: nn.Module) -> Callable[[RewardBatch], Tensor]:
     return loss
 
 
-def model_trainer(
-    model: nn.Module, config: dict
-) -> Callable[[Replay, Generator], dict]:
+def model_trainer(model: nn.Module, config: dict) -> Callable[[Replay, RNG], dict]:
     if config["perfect_model"]:
         return lambda *_: {}
 
@@ -88,16 +88,16 @@ def model_trainer(
 
     @lightning.suppress_dataloader_warnings(num_workers=True)
     @lightning.suppress_datamodule_warnings()
-    def train(dataset: Replay, rng: Generator) -> dict:
+    def train(dataset: Replay, rng: RNG) -> dict:
         obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
         obs, next_obs = data.obs_trajectory_to_transitions(obs)
         dynamics_dm = data.SequenceDataModule(
-            obs, act, next_obs, spec=config["dynamics_dm"], rng=rng
+            obs, act, next_obs, spec=config["dynamics_dm"], rng=rng.torch
         )
         reward_dm = data.TensorDataModule(
             *data.merge_horizon_and_batch_dims(obs, act, rew),
             spec=config["reward_dm"],
-            rng=rng,
+            rng=rng.torch,
         )
         dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
         reward_info = lightning.train_lite(pl_reward, reward_dm, config)
@@ -109,12 +109,35 @@ def model_trainer(
     return train
 
 
+def all_obs(dataset: Replay) -> Tensor:
+    obs = torch.cat(tuple(t[0] for t in dataset), dim="B")
+    return data.merge_horizon_and_batch_dims(obs)
+
+
+def nonterminal(obs: Tensor, horizon: int) -> Tensor:
+    time = nt.vector_to_scalar(lqr.unpack_obs(obs)[1])
+    # noinspection PyArgumentList
+    result = nt.unnamed(obs)[nt.unnamed(time < horizon).nonzero(as_tuple=True)]
+    return result.refine_names(*obs.names)
+
+
 def policy_trainer(
     policy: TVLinearPolicy, model: nn.Module, config: dict
-) -> Callable[[Replay, Generator], dict]:
-    # pylint:disable=unused-argument
-    def optimize(dataset: Replay, rng: Generator) -> dict:
-        return {}
+) -> Callable[[Replay, RNG], dict]:
+    optim = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
+    surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
+
+    def optimize(dataset: Replay, rng: RNG) -> dict:
+        obs = nonterminal(all_obs(dataset), policy.action_linear.horizon)
+        obs = sample_with_replacement(
+            obs, size=config["svg_batch_size"], dim="B", rng=rng.torch
+        )
+
+        optim.zero_grad()
+        val = surrogate(obs, config["pred_horizon"])
+        val.neg().backward()
+        optim.step()
+        return {"surrogate_value": val.item()}
 
     return optimize
 
@@ -137,7 +160,7 @@ def episode_stats(dataset: Replay) -> dict:
     }
 
 
-def total_timesteps(dataset: Sequence[data.Trajectory]) -> int:
+def total_timesteps(dataset: Replay) -> int:
     return sum(map(data.timesteps, dataset))
 
 
@@ -154,7 +177,7 @@ def prepopulate_(
 
 
 def collection_stats(
-    iteration: int, trajectories: data.Trajectory, dataset: Sequence[data.Trajectory]
+    iteration: int, trajectories: data.Trajectory, dataset: Replay
 ) -> dict:
     return {
         tune.result.TIMESTEPS_THIS_ITER: total_timesteps(dataset)
@@ -168,7 +191,7 @@ def policy_optimization_(
     lqg: LQGModule, policy: TVLinearPolicy, config: dict
 ) -> Generator[dict, None, None]:
     """Trains a policy via Stochastic Value Gradients."""
-    rng = np.random.default_rng(config["seed"])
+    rng = make_rng(config["seed"])
     model = make_model(lqg, policy, rng, config["model"])
 
     optimize_model_ = model_trainer(model, config["model"])
@@ -250,6 +273,9 @@ def base_config() -> dict:
             "horizon": 100,
             "passive_eigval_range": (0.9, 1.1),
         },
+        "learning_rate": 1e-4,
+        "svg_batch_size": 256,
+        "pred_horizon": 4,
         "replay_size": int(1e5),
         "learning_starts": 10,
         "trajs_per_iter": 1,
