@@ -109,12 +109,9 @@ def model_trainer(model: nn.Module, config: dict) -> Callable[[Replay, RNG], dic
     return train
 
 
-def all_obs(dataset: Replay) -> Tensor:
+def all_nonterminal_obs(dataset: Replay, horizon: int) -> Tensor:
     obs = torch.cat(tuple(t[0] for t in dataset), dim="B")
-    return data.merge_horizon_and_batch_dims(obs)
-
-
-def nonterminal(obs: Tensor, horizon: int) -> Tensor:
+    obs = data.merge_horizon_and_batch_dims(obs)
     time = nt.vector_to_scalar(lqr.unpack_obs(obs)[1])
     # noinspection PyArgumentList
     result = nt.unnamed(obs)[nt.unnamed(time < horizon).nonzero(as_tuple=True)]
@@ -128,7 +125,7 @@ def policy_trainer(
     surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
 
     def optimize(dataset: Replay, rng: RNG) -> dict:
-        obs = nonterminal(all_obs(dataset), policy.action_linear.horizon)
+        obs = all_nonterminal_obs(dataset, policy.action_linear.horizon)
         obs = sample_with_replacement(
             obs, size=config["svg_batch_size"], dim="B", rng=rng.torch
         )
@@ -140,28 +137,6 @@ def policy_trainer(
         return {"surrogate_value": val.item()}
 
     return optimize
-
-
-def episode_stats(dataset: Replay) -> dict:
-    batched = map(partial(torch.cat, dim="B"), zip(*dataset))
-    obs, act, rew, logp = (t.align_to("B", "H", ...)[-100:] for t in batched)
-
-    rets = rew.sum("H")
-    log_likelihoods = logp.sum("H")
-    return {
-        "obs_mean": obs.mean().item(),
-        "obs_std": obs.std().item(),
-        "act_mean": act.mean().item(),
-        "act_std": act.std().item(),
-        "episode_return_max": rets.max().item(),
-        "episode_return_mean": rets.mean().item(),
-        "episode_return_min": rets.min().item(),
-        "episode_logp_mean": log_likelihoods.mean().item(),
-    }
-
-
-def total_timesteps(dataset: Replay) -> int:
-    return sum(map(data.timesteps, dataset))
 
 
 @torch.no_grad()
@@ -179,11 +154,28 @@ def prepopulate_(
 def collection_stats(
     iteration: int, trajectories: data.Trajectory, dataset: Replay
 ) -> dict:
+    batched = map(partial(torch.cat, dim="B"), zip(*dataset))
+    obs, act, rew, logp = (t.align_to("B", "H", ...)[-100:] for t in batched)
+
+    rets = rew.sum("H")
+    log_likelihoods = logp.sum("H")
+    episode_stats = {
+        "obs_mean": obs.mean().item(),
+        "obs_std": obs.std().item(),
+        "act_mean": act.mean().item(),
+        "act_std": act.std().item(),
+        "episode_return_max": rets.max().item(),
+        "episode_return_mean": rets.mean().item(),
+        "episode_return_min": rets.min().item(),
+        "episode_logp_mean": log_likelihoods.mean().item(),
+    }
+
+    total_timesteps = sum(map(data.timesteps, dataset))
     return {
-        tune.result.TIMESTEPS_THIS_ITER: total_timesteps(dataset)
+        tune.result.TIMESTEPS_THIS_ITER: total_timesteps
         if iteration == 0
         else data.timesteps(trajectories),
-        **with_prefix("collect/", episode_stats(dataset)),
+        **with_prefix("collect/", episode_stats),
     }
 
 
@@ -214,18 +206,26 @@ def policy_optimization_(
         yield metrics
 
 
-def create_env(config: dict) -> LQGModule:
-    generator = lqr.LQGGenerator(
-        stationary=True, controllable=True, rng=config["seed"], **config["env_config"]
-    )
-    dynamics, cost, init = generator()
-    return LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
+def env_and_policy(config: dict) -> Tuple[LQGModule, TVLinearPolicy]:
+    def create_env(conf: dict) -> LQGModule:
+        generator = lqr.LQGGenerator(
+            stationary=True,
+            controllable=True,
+            rng=conf["seed"],
+            **conf["env_config"],
+        )
+        dynamics, cost, init = generator()
+        return LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
 
+    def init_policy(env: LQGModule, conf: dict) -> TVLinearPolicy:
+        return TVLinearPolicy(env.n_state, env.n_ctrl, env.horizon).stabilize_(
+            env.trans.standard_form(), rng=conf["seed"]
+        )
 
-def init_policy(lqg: LQGModule, config: dict) -> TVLinearPolicy:
-    return TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
-        lqg.trans.standard_form(), rng=config["seed"]
-    )
+    with nt.suppress_named_tensor_warning():
+        lqg = create_env(config)
+    policy = init_policy(lqg, config)
+    return lqg, policy
 
 
 class Experiment(tune.Trainable):
@@ -235,10 +235,7 @@ class Experiment(tune.Trainable):
     def setup(self, config: dict):
         lightning.suppress_info_logging()
         pl.seed_everything(config["seed"])
-
-        with nt.suppress_named_tensor_warning():
-            lqg = create_env(config)
-        policy = init_policy(lqg, config)
+        lqg, policy = env_and_policy(config)
         self.coroutine = policy_optimization_(lqg, policy, config)
 
     @property
