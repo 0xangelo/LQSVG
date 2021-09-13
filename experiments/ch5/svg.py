@@ -147,7 +147,8 @@ def policy_trainer(
 ) -> Callable[[Replay, RNG], dict]:
     # Ground-truth
     dynamics, cost, init = lqg.standard_form()
-    optimal = estimator.optimal_value(dynamics, cost, init)
+    with torch.no_grad():
+        optimal = estimator.optimal_value(dynamics, cost, init)
 
     optim = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
     surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
@@ -161,7 +162,10 @@ def policy_trainer(
         true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
 
         optim.zero_grad()
-        val = surrogate(obs, config["pred_horizon"])
+        if config["perfect_grad"]:
+            val = estimator.analytic_value(policy.standard_form(), init, dynamics, cost)
+        else:
+            val = surrogate(obs, config["pred_horizon"])
         val.neg().backward()
         optim.step()
         svg = lqr.Linear(-policy.K.grad, -policy.k.grad)
@@ -292,7 +296,7 @@ class Experiment(tune.Trainable):
         return next(self.coroutine)
 
     def log_result(self, result):
-        self.run.log(result)
+        self.run.log({k: v for k, v in result.items() if k != "config"})
         super().log_result(result)
 
     def cleanup(self):
@@ -320,6 +324,7 @@ def base_config() -> dict:
         "replay_size": int(1e5),
         "learning_starts": 10,
         "trajs_per_iter": 1,
+        "perfect_grad": False,
         "model": {"perfect_model": True},
     }
 
@@ -334,6 +339,7 @@ def sweep():
         "wandb": {"name": "SVG", "mode": "online"},
         "seed": tune.grid_search(list(range(780, 785))),
         "learning_rate": tune.loguniform(1e-4, 1e-2),
+        "perfect_grad": True,
     }
 
     tune.run(
