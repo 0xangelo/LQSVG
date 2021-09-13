@@ -318,11 +318,7 @@ def base_config() -> dict:
         "replay_size": int(1e5),
         "learning_starts": 10,
         "trajs_per_iter": 1,
-        "model": {
-            "perfect_model": True,
-            "dynamics": {},
-            "qvalue": {},
-        },
+        "model": {"perfect_model": True},
     }
 
 
@@ -333,14 +329,15 @@ def sweep():
 
     config = {
         **base_config(),
-        "wandb": {"name": "SVG", "mode": "enabled"},
+        "wandb": {"name": "SVG", "mode": "online"},
+        "seed": tune.grid_search(list(range(780, 800))),
     }
 
     tune.run(
         Experiment,
         config=config,
         num_samples=1,
-        stop={tune.result.TIMESTEPS_TOTAL: int(1e3)},
+        stop={tune.result.TIMESTEPS_TOTAL: int(1e5)},
         local_dir=WANDB_DIR,
     )
     ray.shutdown()
