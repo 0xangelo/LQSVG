@@ -229,7 +229,9 @@ def policy_optimization_(
     optimize_model_ = model_trainer(model, policy, config["model"])
     optimize_policy_ = policy_trainer(lqg, policy, model, config)
 
-    dataset = deque(maxlen=config["replay_size"] // lqg.horizon)
+    dataset = deque(
+        maxlen=config["replay_size"] // (lqg.horizon * config["trajs_per_iter"])
+    )
     collect = data.environment_sampler(lqg)
     prepopulate_(dataset, collect, policy, config)
 
@@ -331,7 +333,7 @@ def sweep():
 
     config = {
         **base_config(),
-        "wandb": {"name": "SVG", "mode": "disabled"},
+        "wandb": {"name": "SVG", "mode": "enabled"},
     }
 
     tune.run(
