@@ -289,9 +289,11 @@ class Experiment(tune.Trainable):
         return self._run
 
     def step(self) -> dict:
-        metrics = next(self.coroutine)
-        self.run.log(metrics)
-        return metrics
+        return next(self.coroutine)
+
+    def log_result(self, result):
+        self.run.log(result)
+        super().log_result(result)
 
     def cleanup(self):
         self.run.finish()
