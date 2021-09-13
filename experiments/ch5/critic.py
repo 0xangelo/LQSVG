@@ -28,7 +28,7 @@ from lqsvg.torch.random import default_generator_seed
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
 
 
-def value_learning(module: "LightningQValue", batch: TDBatch) -> Tensor:
+def value_learning(module: nn.Module, batch: TDBatch) -> Tensor:
     """Returns the temporal difference error induced by the value function."""
     module.qval: ClippedQValue
 
