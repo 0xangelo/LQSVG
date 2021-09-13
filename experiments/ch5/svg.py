@@ -164,7 +164,7 @@ def policy_trainer(
         val = surrogate(obs, config["pred_horizon"])
         val.neg().backward()
         optim.step()
-        svg = lqr.Linear(policy.K.grad, policy.k.grad)
+        svg = lqr.Linear(-policy.K.grad, -policy.k.grad)
 
         return {
             "surrogate_value": val.item(),
