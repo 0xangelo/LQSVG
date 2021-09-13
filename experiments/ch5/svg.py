@@ -338,7 +338,7 @@ def sweep():
         **base_config(),
         "wandb": {"name": "SVG", "mode": "online"},
         "seed": tune.grid_search(list(range(780, 785))),
-        "learning_rate": tune.loguniform(1e-4, 1e-2),
+        "learning_rate": tune.loguniform(1e-6, 1e-4),
         "perfect_grad": True,
     }
 
