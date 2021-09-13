@@ -14,8 +14,10 @@ import torch
 import wandb.sdk
 import yaml
 from critic import modules as critic_modules
+from critic import value_learning
 from model import make_model as dynamics_model
 from model import surrogate_fn
+from nnrl.nn.utils import update_polyak
 from ray import tune
 from ray.tune.logger import NoopLogger
 from torch import Tensor, nn
@@ -77,14 +79,28 @@ def reward_loss(reward: nn.Module) -> Callable[[RewardBatch], Tensor]:
     return loss
 
 
-def model_trainer(model: nn.Module, config: dict) -> Callable[[Replay, RNG], dict]:
+def model_trainer(
+    model: nn.Module, policy: TVLinearPolicy, config: dict
+) -> Callable[[Replay, RNG], dict]:
     if config["perfect_model"]:
-        return lambda *_: {}
+
+        def update(*_) -> dict:
+            model.qval.match_policy_(
+                policy.standard_form(),
+                model.dynamics.standard_form(),
+                model.reward.standard_form(),
+            )
+            return {}
+
+        return update
 
     pl_dynamics = lightning.Lightning(
         model.dynamics, dynamics_loss(model.dynamics), config
     )
     pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
+    q_optim = torch.optim.Adam(
+        model.qval.parameters(), lr=config["qvalue"]["learning_rate"]
+    )
 
     @lightning.suppress_dataloader_warnings(num_workers=True)
     @lightning.suppress_datamodule_warnings()
@@ -101,9 +117,17 @@ def model_trainer(model: nn.Module, config: dict) -> Callable[[Replay, RNG], dic
         )
         dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
         reward_info = lightning.train_lite(pl_reward, reward_dm, config)
+
+        q_optim.zero_grad()
+        mstd_error = value_learning(model, (obs, act, rew, next_obs))
+        mstd_error.backward()
+        q_optim.step()
+        update_polyak(model.qval, model.target_qval, config["qvalue"]["polyak"])
+
         return {
             **with_prefix("dynamics/", dynamics_info),
             **with_prefix("reward/", reward_info),
+            "mean_squared_td_error": mstd_error.item(),
         }
 
     return train
@@ -202,7 +226,7 @@ def policy_optimization_(
     rng = make_rng(config["seed"])
     model = make_model(lqg, policy, rng, config["model"])
 
-    optimize_model_ = model_trainer(model, config["model"])
+    optimize_model_ = model_trainer(model, policy, config["model"])
     optimize_policy_ = policy_trainer(lqg, policy, model, config)
 
     dataset = deque(maxlen=config["replay_size"] // lqg.horizon)
@@ -333,6 +357,8 @@ def debug():
             "dynamics": {"type": "linear"},
             "qvalue": {
                 "loss": "TD(1)",
+                "learning_rate": 1e-3,
+                "polyak": 0.995,
                 "model": {"type": "mlp", "hunits": (10, 10)},
             },
             "dynamics_dm": {
