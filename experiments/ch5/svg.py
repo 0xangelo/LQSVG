@@ -134,16 +134,19 @@ def policy_trainer(
             obs, size=config["svg_batch_size"], dim="B", rng=rng.torch
         )
 
+        true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
+
         optim.zero_grad()
         val = surrogate(obs, config["pred_horizon"])
         val.neg().backward()
         optim.step()
+        svg = lqr.Linear(policy.K.grad, policy.k.grad)
+
         return {
             "surrogate_value": val.item(),
-            "suboptimality_gap": analysis.relative_error(
-                optimal,
-                estimator.analytic_value(policy.standard_form(), init, dynamics, cost),
-            ).item(),
+            "true_value": true_val.item(),
+            "grad_acc": analysis.cosine_similarity(svg, true_svg).item(),
+            "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
 
     return optimize
