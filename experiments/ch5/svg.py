@@ -11,7 +11,6 @@ import click
 import pytorch_lightning as pl
 import ray
 import torch
-import wandb.sdk
 import yaml
 from critic import modules as critic_modules
 from critic import value_learning
@@ -19,10 +18,10 @@ from model import make_model as dynamics_model
 from model import surrogate_fn
 from nnrl.nn.utils import update_polyak
 from ray import tune
-from ray.tune.integration.wandb import _clean_log
+from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.logger import LoggerCallback, NoopLogger
 from torch import Tensor, nn
-from wandb_util import WANDB_DIR, wandb_init, with_prefix
+from wandb_util import WANDB_DIR, calver, with_prefix
 
 from lqsvg import analysis, data, estimator, lightning
 from lqsvg.envs import lqr
@@ -276,9 +275,20 @@ def env_and_policy(config: dict) -> Tuple[LQGModule, TVLinearPolicy]:
     return lqg, policy
 
 
-class Experiment(tune.Trainable):
+class SVG(tune.Trainable):
     coroutine: Generator[dict, None, None]
-    _run: wandb.sdk.wandb_run.Run = None
+
+    def setup(self, config: dict):
+        lightning.suppress_info_logging()
+        pl.seed_everything(config["seed"])
+        lqg, policy = env_and_policy(config)
+        self.coroutine = policy_optimization_(lqg, policy, config)
+
+    def step(self) -> dict:
+        return next(self.coroutine)
+
+    def cleanup(self):
+        self.coroutine.close()
 
     def _create_logger(
         self,
@@ -291,31 +301,6 @@ class Experiment(tune.Trainable):
             logger_creator = partial(NoopLogger, logdir=os.devnull)
         self._result_logger = logger_creator(config)
         self._logdir = self._result_logger.logdir
-
-    def setup(self, config: dict):
-        lightning.suppress_info_logging()
-        pl.seed_everything(config["seed"])
-        lqg, policy = env_and_policy(config)
-        self.coroutine = policy_optimization_(lqg, policy, config)
-
-    @property
-    def run(self) -> wandb.sdk.wandb_run.Run:
-        if self._run is None:
-            config = self.config.copy()
-            wandb_kwargs = config.pop("wandb")
-            self._run = wandb_init(config=config, **wandb_kwargs)
-        return self._run
-
-    def step(self) -> dict:
-        return next(self.coroutine)
-
-    def log_result(self, result: dict):
-        self.run.log(_clean_log({k: v for k, v in result.items() if k != "config"}))
-        super().log_result(result)
-
-    def cleanup(self):
-        self.run.finish()
-        self.coroutine.close()
 
 
 @click.group()
@@ -350,18 +335,21 @@ def sweep():
 
     config = {
         **base_config(),
-        "wandb": {"name": "SVG", "mode": "online"},
         "seed": tune.grid_search(list(range(780, 785))),
         "learning_rate": 3e-4,
         "perfect_grad": True,
     }
 
+    logger = WandbLoggerCallback(
+        project="ch5", entity="angelovtt", tags=[calver()], dir=WANDB_DIR
+    )
     tune.run(
-        Experiment,
+        SVG,
         config=config,
         num_samples=1,
         stop={tune.result.TIMESTEPS_TOTAL: int(1e6)},
         local_dir=WANDB_DIR,
+        callbacks=[logger],
     )
     ray.shutdown()
 
@@ -370,7 +358,6 @@ def sweep():
 def debug():
     config = {
         **base_config(),
-        "wandb": {"name": "DEBUG", "mode": "disabled"},
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
@@ -394,7 +381,7 @@ def debug():
             },
         },
     }
-    exp = Experiment(config)
+    exp = SVG(config)
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
 
 
