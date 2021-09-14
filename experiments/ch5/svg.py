@@ -341,7 +341,7 @@ def sweep():
     }
 
     logger = WandbLoggerCallback(
-        project="ch5", entity="angelovtt", tags=[calver()], dir=WANDB_DIR
+        name="SVG", project="ch5", entity="angelovtt", tags=[calver()], dir=WANDB_DIR
     )
     tune.run(
         SVG,
