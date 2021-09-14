@@ -5,7 +5,7 @@ import logging
 import os
 from collections import deque
 from functools import partial
-from typing import Callable, Generator, Sequence, Tuple
+from typing import Callable, Generator, Optional, Sequence, Tuple
 
 import click
 import pytorch_lightning as pl
@@ -20,7 +20,7 @@ from model import surrogate_fn
 from nnrl.nn.utils import update_polyak
 from ray import tune
 from ray.tune.integration.wandb import _clean_log
-from ray.tune.logger import NoopLogger
+from ray.tune.logger import LoggerCallback, NoopLogger
 from torch import Tensor, nn
 from wandb_util import WANDB_DIR, wandb_init, with_prefix
 
@@ -280,6 +280,18 @@ class Experiment(tune.Trainable):
     coroutine: Generator[dict, None, None]
     _run: wandb.sdk.wandb_run.Run = None
 
+    def _create_logger(
+        self,
+        config: dict,
+        logger_creator: Optional[Callable[[dict], LoggerCallback]] = None,
+    ):
+        # Override with no default logger creator.
+        # Avoids creating junk in ~/ray_results
+        if logger_creator is None:
+            logger_creator = partial(NoopLogger, logdir=os.devnull)
+        self._result_logger = logger_creator(config)
+        self._logdir = self._result_logger.logdir
+
     def setup(self, config: dict):
         lightning.suppress_info_logging()
         pl.seed_everything(config["seed"])
@@ -382,7 +394,7 @@ def debug():
             },
         },
     }
-    exp = Experiment(config, logger_creator=partial(NoopLogger, logdir=os.devnull))
+    exp = Experiment(config)
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
 
 
