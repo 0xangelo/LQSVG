@@ -338,15 +338,15 @@ def sweep():
         **base_config(),
         "wandb": {"name": "SVG", "mode": "online"},
         "seed": tune.grid_search(list(range(780, 785))),
-        "learning_rate": tune.loguniform(1e-6, 1e-4),
+        "learning_rate": 3e-4,
         "perfect_grad": True,
     }
 
     tune.run(
         Experiment,
         config=config,
-        num_samples=32,
-        stop={tune.result.TIMESTEPS_TOTAL: int(1e5)},
+        num_samples=1,
+        stop={tune.result.TIMESTEPS_TOTAL: int(1e6)},
         local_dir=WANDB_DIR,
     )
     ray.shutdown()
