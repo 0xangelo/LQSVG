@@ -335,9 +335,14 @@ def sweep():
 
     config = {
         **base_config(),
+        "env_config": {
+            "n_state": 8,
+            "n_ctrl": 2,
+            "horizon": 100,
+            "passive_eigval_range": (0.9, 1.1),
+        },
         "seed": tune.grid_search(list(range(780, 785))),
         "learning_rate": 3e-4,
-        "perfect_grad": True,
     }
 
     logger = WandbLoggerCallback(
@@ -347,7 +352,7 @@ def sweep():
         SVG,
         config=config,
         num_samples=1,
-        stop={tune.result.TIMESTEPS_TOTAL: int(1e6)},
+        stop={tune.result.TIMESTEPS_TOTAL: int(5e5)},
         local_dir=WANDB_DIR,
         callbacks=[logger],
     )
