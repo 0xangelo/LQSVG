@@ -123,7 +123,9 @@ def optimal_value(
     n_state, n_ctrl, horizon = lqr.dims_from_dynamics(dynamics)
     solver = lqr.NamedLQGControl(n_state, n_ctrl, horizon)
     _, _, vstar = solver(dynamics, cost)
-    return expected_value(init, lqr.Quadratic(*(t.select("H", 0) for t in vstar)))
+    vstar_0 = lqr.Quadratic(*(t.select("H", 0) for t in vstar))
+    # Have to negate here since vval predicts costs
+    return -expected_value(init, vstar_0)
 
 
 def policy_svg(
