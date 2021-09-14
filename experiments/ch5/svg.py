@@ -19,6 +19,7 @@ from model import make_model as dynamics_model
 from model import surrogate_fn
 from nnrl.nn.utils import update_polyak
 from ray import tune
+from ray.tune.integration.wandb import _clean_log
 from ray.tune.logger import NoopLogger
 from torch import Tensor, nn
 from wandb_util import WANDB_DIR, wandb_init, with_prefix
@@ -173,6 +174,7 @@ def policy_trainer(
         return {
             "surrogate_value": val.item(),
             "true_value": true_val.item(),
+            "optimal_value": optimal.item(),
             "grad_acc": analysis.cosine_similarity(svg, true_svg).item(),
             "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
@@ -295,8 +297,8 @@ class Experiment(tune.Trainable):
     def step(self) -> dict:
         return next(self.coroutine)
 
-    def log_result(self, result):
-        self.run.log({k: v for k, v in result.items() if k != "config"})
+    def log_result(self, result: dict):
+        self.run.log(_clean_log({k: v for k, v in result.items() if k != "config"}))
         super().log_result(result)
 
     def cleanup(self):
