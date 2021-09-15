@@ -336,8 +336,8 @@ def sweep():
     config = {
         **base_config(),
         "env_config": {
-            "n_state": 8,
-            "n_ctrl": 2,
+            "n_state": 2,
+            "n_ctrl": 8,
             "horizon": 100,
             "passive_eigval_range": (0.9, 1.1),
         },
