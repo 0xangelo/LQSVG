@@ -436,7 +436,7 @@ pyflakes = ">=2.3.0,<2.4.0"
 
 [[package]]
 name = "fsspec"
-version = "2021.8.1"
+version = "2021.9.0"
 description = "File-system specification"
 category = "main"
 optional = false
@@ -449,15 +449,20 @@ requests = {version = "*", optional = true, markers = "extra == \"http\""}
 [package.extras]
 abfs = ["adlfs"]
 adl = ["adlfs"]
+arrow = ["pyarrow (>=1)"]
 dask = ["dask", "distributed"]
 dropbox = ["dropboxdrivefs", "requests", "dropbox"]
 entrypoints = ["importlib-metadata"]
+fuse = ["fusepy"]
 gcs = ["gcsfs"]
 git = ["pygit2"]
 github = ["requests"]
 gs = ["gcsfs"]
+gui = ["panel"]
 hdfs = ["pyarrow (>=1)"]
 http = ["requests", "aiohttp"]
+libarchive = ["libarchive-c"]
+oci = ["ocifs"]
 s3 = ["s3fs"]
 sftp = ["paramiko"]
 smb = ["smbprotocol"]
@@ -899,7 +904,7 @@ test = ["coverage", "pytest (>=6.0)", "pytest-cov", "pytest-mock", "requests", "
 
 [[package]]
 name = "jupyterlab"
-version = "3.1.11"
+version = "3.1.13"
 description = "JupyterLab computational environment"
 category = "main"
 optional = false
@@ -2428,7 +2433,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "326dfdc09c540a1b7ac9146eab7ebe7ce5f6cd7ccdb5f233cfbc19f6fea0d641"
+content-hash = "f1cc43ea6afcd452936cf401c3ce4957e325e37b9fb56ad0f58273e83bd24592"
 
 [metadata.files]
 absl-py = [
@@ -2806,8 +2811,8 @@ flake8 = [
     {file = "flake8-3.9.2.tar.gz", hash = "sha256:07528381786f2a6237b061f6e96610a4167b226cb926e2aa2b6b1d78057c576b"},
 ]
 fsspec = [
-    {file = "fsspec-2021.8.1-py3-none-any.whl", hash = "sha256:30f27c059a414d1f434b14b2d0e75c8d9c3dd473ad8daeccb444d9d4069b9f03"},
-    {file = "fsspec-2021.8.1.tar.gz", hash = "sha256:af125917788b77782899bbd4484d29e5407f53d2bb04cdfa025fe4931201a555"},
+    {file = "fsspec-2021.9.0-py3-none-any.whl", hash = "sha256:fbddcce8dd2bf7ae348b6930b67a572ba36aa7b1d2a02b122f969e7e9819dd9a"},
+    {file = "fsspec-2021.9.0.tar.gz", hash = "sha256:b5bbe7846c571597e013a917483d561d712ef1e8a13b71629ea8a24c6ffbc3e9"},
 ]
 future = [
     {file = "future-0.18.2.tar.gz", hash = "sha256:b1bead90b70cf6ec3f0710ae53a525360fa360d306a86583adc6bf83a4db537d"},
@@ -3007,8 +3012,8 @@ jupyter-server = [
     {file = "jupyter_server-1.10.2.tar.gz", hash = "sha256:d3a3b68ebc6d7bfee1097f1712cf7709ee39c92379da2cc08724515bb85e72bf"},
 ]
 jupyterlab = [
-    {file = "jupyterlab-3.1.11-py3-none-any.whl", hash = "sha256:a2117c159baae40db09c34edf0659df5ff767d0ffc7ae2d74ab0b08d5663156b"},
-    {file = "jupyterlab-3.1.11.tar.gz", hash = "sha256:329b41d6d99bf4e40ab210b37387d32033ea9227e776aa1baf7817bf55423156"},
+    {file = "jupyterlab-3.1.13-py3-none-any.whl", hash = "sha256:7c8d3472bd1dccc256cd09d8a902621c6c6a97cff3858365fd8a78f76ef58a1c"},
+    {file = "jupyterlab-3.1.13.tar.gz", hash = "sha256:48a6214ba8310d8bdb3eb6bac8eedf449c77d1bbb6f81b586267c158ad00b899"},
 ]
 jupyterlab-code-formatter = [
     {file = "jupyterlab_code_formatter-1.4.10-py3-none-any.whl", hash = "sha256:10a7f2ab44a4539a44ec6bf3fc3b27e7ed22c7ab975e6503823e21d7e60abae7"},
