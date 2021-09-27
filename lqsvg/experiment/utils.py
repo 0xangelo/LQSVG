@@ -4,10 +4,13 @@ import functools
 import itertools
 import operator
 import os
-from typing import Callable, Iterable, List
+from collections import defaultdict
+from numbers import Number
+from typing import Callable, Iterable, List, Optional
 
 import pandas as pd
 import wandb
+from ray.tune.utils import flatten_dict
 
 from lqsvg.types import Directory
 
@@ -44,13 +47,45 @@ def crashed_experiments(rootdir: str) -> List[Directory]:
     ]
 
 
-def tagged_experiments_dataframe(tags: Iterable[str]) -> pd.DataFrame:
-    """Retrieve data from experiments with given tags as a dataframe."""
+def filtered_wandb_runs(path: str, filters: dict, state: str = "finished"):
+    """Returns wandb run objects matching the given filters and state."""
     api = wandb.Api()
-    runs = api.runs(
-        "angelovtt/LQG-SVG", filters={"$and": [{"tags": tag} for tag in tags]}
-    )
-    dfs = (run.history() for run in runs)
+    return (run for run in api.runs(path, filters=filters) if run.state == state)
+
+
+def wandb_runs_dataframe(
+    path: str,
+    configs: dict,
+    tags: Iterable[str] = (),
+    filters: Optional[dict] = None,
+    state: str = "finished",
+) -> pd.DataFrame:
+    """Retrieve data from experiments with given tags as a dataframe."""
+    filters = defaultdict(list, filters or {})
+    filters["$and"] += [{"tags": tag} for tag in tags]
+    filters["$and"] += [{"config." + k: v for k, v in configs.items()}]
+
+    def col_value(val):
+        if isinstance(val, (str, Number)):
+            return val
+        return str(val)
+
+    dfs = []
+    for run in filtered_wandb_runs(path, filters, state):
+        dataframe = run.history()
+
+        # Merge run history and configurations
+        for key, val in flatten_dict(run.config).items():
+            dataframe["config/" + key] = col_value(val)
+
+        # Merge run history and summary statistics
+        for key, val in run.summary.items():
+            if key.startswith("_"):
+                continue
+            dataframe["summary/" + key] = val
+
+        dfs += [dataframe]
+
     return pd.concat(dfs, ignore_index=True)
 
 
