@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import click
-import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
@@ -21,9 +20,9 @@ from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg import data, lightning
 from lqsvg.envs.lqr.generators import LQGGenerator
+from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
-from lqsvg.torch.random import numpy_to_torch_generator
 from lqsvg.types import DeterministicPolicy
 
 
@@ -117,21 +116,20 @@ class DataModule(pl.LightningDataModule):
 
 
 def gaussian_behavior(
-    policy: TVLinearPolicy, exploration: dict, rng: Generator
+    policy: TVLinearPolicy, exploration: dict, rng: torch.Generator
 ) -> DeterministicPolicy:
-    generator = numpy_to_torch_generator(rng)
     sigma = exploration["action_noise_sigma"]
 
     def behavior(obs: Tensor) -> Tensor:
         act = policy(obs)
-        noise = torch.randn(size=act.shape, generator=generator, device=act.device)
+        noise = torch.randn(size=act.shape, generator=rng, device=act.device)
         return act + noise * sigma
 
     return behavior
 
 
 def behavior_policy(
-    policy: TVLinearPolicy, exploration: dict, rng: Generator
+    policy: TVLinearPolicy, exploration: dict, rng: torch.Generator
 ) -> DeterministicPolicy:
     kind = exploration["type"]
     if kind is None:
@@ -142,19 +140,19 @@ def behavior_policy(
 
 
 def make_modules(
-    rng: Generator, hparams: dict
+    rng: RNG, hparams: dict
 ) -> Tuple[LQGModule, TVLinearPolicy, DeterministicPolicy, LightningModel]:
     generator = LQGGenerator(
-        stationary=True, controllable=True, rng=rng, **hparams["env_config"]
+        stationary=True, controllable=True, rng=rng.numpy, **hparams["env_config"]
     )
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
     lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
-        dynamics, rng=rng
+        dynamics, rng=rng.numpy
     )
-    behavior = behavior_policy(policy, hparams["exploration"], rng)
+    behavior = behavior_policy(policy, hparams["exploration"], rng.torch)
     model = LightningModel(lqg, policy, hparams)
     return lqg, policy, behavior, model
 
@@ -178,9 +176,11 @@ class Experiment(tune.Trainable):
         return self.run.config
 
     def step(self) -> dict:
-        rng = np.random.default_rng(self.hparams.seed)
+        rng = make_rng(self.hparams.seed)
         lqg, _, behavior, model = make_modules(rng, self.hparams.as_dict())
-        datamodule = DataModule(lqg, behavior, DataSpec(**self.hparams.datamodule), rng)
+        datamodule = DataModule(
+            lqg, behavior, DataSpec(**self.hparams.datamodule), rng.numpy
+        )
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
         )
