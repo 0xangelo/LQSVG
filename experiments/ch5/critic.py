@@ -15,17 +15,20 @@ from wandb_util import with_prefix
 
 from lqsvg import analysis, estimator
 from lqsvg.envs import lqr
+from lqsvg.random import RNG
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import (
     LQGModule,
     QuadQValue,
     QuadraticReward,
+    QuadRewardModel,
     QuadVValue,
     TVLinearPolicy,
 )
 from lqsvg.torch.random import default_generator_seed
 
 TDBatch = Tuple[Tensor, Tensor, Tensor, Tensor]
+RewardBatch = Tuple[Tensor, Tensor, Tensor]
 
 
 def value_learning(module: nn.Module, batch: TDBatch) -> Tensor:
@@ -281,3 +284,86 @@ def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
         "bootstrap/action_grad_acc": td_agrad_acc,
         "action_grad_acc": true_agrad_acc,
     }
+
+
+class LightningReward(pl.LightningModule):
+    # pylint:disable=too-many-ancestors,too-many-instance-attributes,arguments-differ
+    def __init__(self, lqg: LQGModule, policy: TVLinearPolicy, hparams: dict, rng: RNG):
+        super().__init__()
+        # Register modules to cast them to appropriate device
+        self.lqg = lqg
+        self.policy = policy
+        self.hparams.update(hparams)
+
+        # NN modules
+        self.rmodel = QuadRewardModel(
+            lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True, rng=rng.numpy
+        )
+
+        def reward_loss(reward: nn.Module) -> Callable[[RewardBatch], Tensor]:
+            def loss(batch: RewardBatch) -> Tensor:
+                obs, act, rew = batch
+                return torch.mean(0.5 * torch.square(reward(obs, act) - rew))
+
+            return loss
+
+        self.loss = reward_loss(self.rmodel)
+
+    def num_parameters(self) -> int:
+        """Returns the number of trainable parameters"""
+        return sum(p.numel() for p in self.rmodel.parameters() if p.requires_grad)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(
+            self.rmodel.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
+
+    def forward(self, batch: TDBatch) -> Tensor:
+        obs, act, rew, _ = batch
+        return self.loss((obs, act, rew))
+
+    def training_step(self, batch: TDBatch, batch_idx: int) -> Tensor:
+        del batch_idx
+        loss = self(batch)
+        self.log("train/loss", loss)
+        with torch.no_grad():
+            self.log_dict(with_prefix("train/", self._evaluate_on(batch)))
+        return loss
+
+    def validation_step(self, batch: TDBatch, batch_idx: int) -> None:
+        del batch_idx
+        self.log_dict(with_prefix("val/", self._evaluate_on(batch)))
+
+    def test_step(self, batch: TDBatch, batch_idx: int) -> None:
+        del batch_idx
+        self.log_dict(with_prefix("test/", self._evaluate_on(batch)))
+
+    def _evaluate_on(self, batch: TDBatch) -> TensorDict:
+        obs, act, rew, _ = batch
+        loss = self.loss((obs, act, rew))
+        with torch.enable_grad():
+            act.requires_grad_().retain_grad()
+            obs.requires_grad_().retain_grad()
+            targ = self.lqg.reward(obs, act).mean()
+            ograd = torch.autograd.grad(targ, obs, retain_graph=True)
+            agrad = torch.autograd.grad(targ, act)
+
+            pred = self.rmodel(obs, act).mean()
+            ograd_ = torch.autograd.grad(pred, obs, retain_graph=True)
+            agrad_ = torch.autograd.grad(pred, act)
+            obs_grad_acc = analysis.cosine_similarity(ograd, ograd_)
+            act_grad_acc = analysis.cosine_similarity(agrad, agrad_)
+
+        return {
+            "loss": loss,
+            "obs_grad_acc": obs_grad_acc,
+            "act_grad_acc": act_grad_acc,
+        }
+
+    def log_grad_norm(self, grad_norm_dict: TensorDict) -> None:
+        # Override original: set prog_bar=False to reduce clutter
+        self.log_dict(
+            grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True
+        )

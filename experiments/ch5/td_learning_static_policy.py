@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 import ray
 import torch
 from actor import behavior_policy
-from critic import LightningQValue, TDBatch
+from critic import LightningQValue, LightningReward, TDBatch
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
@@ -155,6 +155,67 @@ class Experiment(tune.Trainable):
         return {tune.result.DONE: True, **final_eval[0]}
 
 
+class RewardExperiment(tune.Trainable):
+    _run: wandb_run.Run = None
+
+    @property
+    def run(self) -> wandb_run.Run:
+        if self._run is None:
+            config = self.config.copy()
+            wandb_kwargs = config.pop("wandb")
+            self._run = wandb_init(config=config, **wandb_kwargs)
+        return self._run
+
+    @property
+    def hparams(self) -> wandb_config.Config:
+        return self.run.config
+
+    def step(self) -> dict:
+        # ===== MAKE MODELS =====
+        rng = make_rng(self.hparams.seed)
+        generator = lqr.LQGGenerator(
+            stationary=True,
+            controllable=True,
+            rng=rng.numpy,
+            **self.hparams["env_config"],
+        )
+        with nt.suppress_named_tensor_warning():
+            dynamics, cost, init = generator()
+
+        lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
+        policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
+            dynamics, rng.numpy
+        )
+        behavior = behavior_policy(policy, self.hparams["exploration"], rng.torch)
+        model = LightningReward(lqg, policy, self.hparams.as_dict(), rng)
+        # ===== =====
+
+        datamodule = DataModule(
+            lqg, behavior, DataSpec(**self.hparams.datamodule), rng.torch
+        )
+
+        logger = pl.loggers.WandbLogger(
+            save_dir=self.run.dir, log_model=False, experiment=self.run
+        )
+        trainer = pl.Trainer(
+            default_root_dir=self.run.dir,
+            logger=logger,
+            num_sanity_val_steps=0,  # avoid evaluating gradients in the beginning?
+            checkpoint_callback=False,  # don't save last model checkpoint
+            **self.hparams.trainer,
+        )
+
+        with self.run as run:
+            run.summary.update(env_info(lqg))
+            run.summary.update({"trainable_parameters": model.num_parameters()})
+            with lightning.suppress_dataloader_warnings(num_workers=True, shuffle=True):
+                trainer.validate(model, datamodule=datamodule)
+                trainer.fit(model, datamodule=datamodule)
+                final_eval = trainer.test(model, datamodule=datamodule)
+
+        return {tune.result.DONE: True, **final_eval[0]}
+
+
 @click.group()
 def main():
     pass
@@ -188,6 +249,49 @@ def base_config() -> dict:
             val_check_interval=0.5,
         ),
     }
+
+
+@main.command()
+def reward():
+    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
+    ray.init(logging_level=logging.WARNING)
+
+    config = {
+        "learning_rate": 1e-3,
+        "weight_decay": 0,
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+            "horizon": 50,
+            "passive_eigval_range": (0.9, 1.1),
+        },
+        "datamodule": {
+            "trajectories": 2000,
+            "train_batch_size": 128,
+            "val_batch_size": 256,
+        },
+        "trainer": dict(
+            max_epochs=40,
+            progress_bar_refresh_rate=0,  # don't show model training progress bar
+            weights_summary=None,  # don't print summary before training
+            # track_grad_norm=2,
+            val_check_interval=0.5,
+        ),
+        "wandb": {"name": "RewardLearning", "mode": "online"},
+        "exploration": {
+            "type": tune.grid_search(["gaussian", None]),
+            "action_noise_sigma": 0.3,
+        },
+        "seed": tune.grid_search(list(range(123, 133))),
+    }
+    tune.run(
+        RewardExperiment,
+        config=config,
+        num_samples=1,
+        local_dir=WANDB_DIR,
+        callbacks=[],
+    )
+    ray.shutdown()
 
 
 @main.command()
