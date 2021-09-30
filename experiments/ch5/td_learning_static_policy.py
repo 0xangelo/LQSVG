@@ -1,16 +1,16 @@
 # pylint:disable=missing-docstring
 import functools
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import click
-import numpy as np
 import pytorch_lightning as pl
 import ray
 import torch
+from actor import behavior_policy
 from critic import LightningQValue, TDBatch
-from numpy.random import Generator
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
@@ -19,25 +19,28 @@ from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg import data, lightning
 from lqsvg.envs import lqr
+from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
+from lqsvg.types import DeterministicPolicy
 
 
 def make_modules(
-    rng: Generator, hparams: dict
-) -> Tuple[LQGModule, TVLinearPolicy, LightningQValue]:
+    rng: RNG, hparams: dict
+) -> Tuple[LQGModule, TVLinearPolicy, DeterministicPolicy, LightningQValue]:
     generator = lqr.LQGGenerator(
-        stationary=True, controllable=True, rng=rng, **hparams["env_config"]
+        stationary=True, controllable=True, rng=rng.numpy, **hparams["env_config"]
     )
     with nt.suppress_named_tensor_warning():
         dynamics, cost, init = generator()
 
     lqg = LQGModule.from_existing(dynamics, cost, init).requires_grad_(False)
     policy = TVLinearPolicy(lqg.n_state, lqg.n_ctrl, lqg.horizon).stabilize_(
-        dynamics, rng
+        dynamics, rng.numpy
     )
+    behavior = behavior_policy(policy, hparams["exploration"], rng.torch)
     qvalue = LightningQValue(lqg, policy, hparams)
-    return lqg, policy, qvalue
+    return lqg, policy, behavior, qvalue
 
 
 @dataclass
@@ -54,7 +57,11 @@ class DataModule(pl.LightningDataModule):
     val_dataset: TensorDataset
 
     def __init__(
-        self, lqg: LQGModule, policy: TVLinearPolicy, spec: DataSpec, rng: Generator
+        self,
+        lqg: LQGModule,
+        policy: DeterministicPolicy,
+        spec: DataSpec,
+        rng: torch.Generator,
     ):
         super().__init__()
         self.spec = spec
@@ -120,9 +127,11 @@ class Experiment(tune.Trainable):
         return self.run.config
 
     def step(self) -> dict:
-        rng = np.random.default_rng(self.hparams.seed)
-        lqg, policy, qvalue = make_modules(rng, self.hparams.as_dict())
-        datamodule = DataModule(lqg, policy, DataSpec(**self.hparams.datamodule), rng)
+        rng = make_rng(self.hparams.seed)
+        lqg, _, behavior, qvalue = make_modules(rng, self.hparams.as_dict())
+        datamodule = DataModule(
+            lqg, behavior, DataSpec(**self.hparams.datamodule), rng.torch
+        )
 
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
@@ -164,7 +173,8 @@ def base_config() -> dict:
             "horizon": 50,
             "passive_eigval_range": (0.9, 1.1),
         },
-        "model": {"type": "mlp", "hunits": (10, 10)},
+        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
+        "model": {"type": "quad"},
         "datamodule": {
             "trajectories": 2000,
             "train_batch_size": 128,
@@ -174,7 +184,7 @@ def base_config() -> dict:
             max_epochs=40,
             progress_bar_refresh_rate=0,  # don't show model training progress bar
             weights_summary=None,  # don't print summary before training
-            track_grad_norm=2,
+            # track_grad_norm=2,
             val_check_interval=0.5,
         ),
     }
@@ -182,16 +192,24 @@ def base_config() -> dict:
 
 @main.command()
 def sweep():
+    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
     ray.init(logging_level=logging.WARNING)
 
     config = {
         **base_config(),
-        "wandb": {"name": "ValueGradientLearning", "mode": "online"},
+        "wandb": {"name": "ValueLearning", "mode": "online"},
+        "loss": "TD(1)",
         "polyak": tune.grid_search([0, 0.995]),
-        "seed": tune.grid_search(list(range(123, 128))),
-        "model": {"type": tune.grid_search(["mlp", "quad"]), "hunits": (10, 10)},
+        "exploration": {
+            "type": tune.grid_search(["gaussian", None]),
+            "action_noise_sigma": 0.3,
+        },
+        "seed": tune.grid_search(list(range(123, 133))),
+        "model": {"type": tune.grid_search(["quad"]), "hunits": (10, 10)},
     }
-    tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
+    tune.run(
+        Experiment, config=config, num_samples=1, local_dir=WANDB_DIR, callbacks=[]
+    )
     ray.shutdown()
 
 
@@ -199,7 +217,8 @@ def sweep():
 def debug():
     config = {
         **base_config(),
-        "wandb": {"name": "DEBUG", "mode": "offline"},
+        "wandb": {"name": "DEBUG", "mode": "disabled"},
+        "loss": "TD(1)",
         "trainer": dict(
             track_grad_norm=2,
             fast_dev_run=True,

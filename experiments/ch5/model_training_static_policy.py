@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 import ray
 import torch
 import wandb.sdk
+from actor import behavior_policy
 from model import LightningModel, ValBatch
 from numpy.random import Generator
 from ray import tune
@@ -113,30 +114,6 @@ class DataModule(pl.LightningDataModule):
             return tuple(t.refine_names("B", "H", "R") for t in batch)
 
         return tuple(t.refine_names("B", "R") for t in batch)
-
-
-def gaussian_behavior(
-    policy: TVLinearPolicy, exploration: dict, rng: torch.Generator
-) -> DeterministicPolicy:
-    sigma = exploration["action_noise_sigma"]
-
-    def behavior(obs: Tensor) -> Tensor:
-        act = policy(obs)
-        noise = torch.randn(size=act.shape, generator=rng, device=act.device)
-        return act + noise * sigma
-
-    return behavior
-
-
-def behavior_policy(
-    policy: TVLinearPolicy, exploration: dict, rng: torch.Generator
-) -> DeterministicPolicy:
-    kind = exploration["type"]
-    if kind is None:
-        return policy
-    if kind == "gaussian":
-        return gaussian_behavior(policy, exploration, rng)
-    raise ValueError(f"Unknown exploration type '{kind}'")
 
 
 def make_modules(
