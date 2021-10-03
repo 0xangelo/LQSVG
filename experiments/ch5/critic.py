@@ -65,10 +65,31 @@ def value_gradient_learning(module: "LightningQValue", batch: TDBatch) -> Tensor
     return loss
 
 
-LOSS = {
-    "TD(1)": value_learning,
-    "VGL(1)": value_gradient_learning,
-}
+def mage_loss(module: "LightningQValue", batch: TDBatch) -> Tensor:
+    """Returns the regularized bootstrapped action-gradient error."""
+    module.qval: ClippedQValue
+    policy: DeterministicPolicy = module.policy
+    dynamics: StochasticModel = module.lqg.trans
+    reward: QuadraticReward = module.lqg.reward
+    module.target_vval: HardValue
+
+    obs, _, _, _ = batch
+    act = policy(obs)
+    rew = reward(obs, act)
+    new_obs, _ = dynamics.rsample(dynamics(obs, act))
+
+    value = module.qval(obs, act)
+    target = rew + module.target_vval(new_obs)
+
+    delta = value - target
+    (act_grad,) = autograd.grad(
+        delta, act, grad_outputs=torch.ones_like(delta), create_graph=True
+    )
+    loss = torch.norm(act_grad, dim=-1).mean() + 0.05 * torch.square(delta).mean()
+    return loss
+
+
+LOSS = {"TD(1)": value_learning, "VGL(1)": value_gradient_learning, "MAGE": mage_loss}
 
 
 class ClippedQValue(QValue):
@@ -163,7 +184,7 @@ def modules(
 ) -> Tuple[QValue, QValue, VValue]:
     qval_fn = qval_constructor(policy, hparams["model"])
     loss = hparams["loss"]
-    if loss == "TD(1)":
+    if loss in {"TD(1)", "MAGE"}:
         return td_modules(policy, qval_fn, hparams["model"], rng)
     if loss == "VGL(1)":
         return vgl_modules(policy, qval_fn, {}, rng)

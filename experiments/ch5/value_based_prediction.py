@@ -148,9 +148,9 @@ class Experiment(tune.Trainable):
             run.summary.update(env_info(lqg))
             run.summary.update({"trainable_parameters": qvalue.num_parameters()})
             with lightning.suppress_dataloader_warnings(num_workers=True, shuffle=True):
-                trainer.validate(qvalue, datamodule=datamodule)
+                trainer.validate(qvalue, datamodule=datamodule, verbose=False)
                 trainer.fit(qvalue, datamodule=datamodule)
-                final_eval = trainer.test(qvalue, datamodule=datamodule)
+                final_eval = trainer.test(qvalue, datamodule=datamodule, verbose=False)
 
         return {tune.result.DONE: True, **final_eval[0]}
 
@@ -301,15 +301,26 @@ def sweep():
 
     config = {
         **base_config(),
-        "wandb": {"name": "ValueLearning", "mode": "online"},
-        "loss": "TD(1)",
-        "polyak": tune.grid_search([0, 0.995]),
+        "wandb": {
+            "name": "MAGEPrediction",
+            "mode": "online",
+            "tags": ["MAGEPrediction"],
+        },
+        "loss": "MAGE",
+        "learning_rate": 1e-2,
+        "polyak": 0.995,
         "exploration": {
             "type": tune.grid_search(["gaussian", None]),
             "action_noise_sigma": 0.3,
         },
         "seed": tune.grid_search(list(range(123, 133))),
-        "model": {"type": tune.grid_search(["quad"]), "hunits": (10, 10)},
+        "model": {"type": "quad"},
+        "trainer": dict(
+            max_epochs=40,
+            progress_bar_refresh_rate=0,  # don't show model training progress bar
+            weights_summary=None,  # don't print summary before training
+            track_grad_norm=2,
+        ),
     }
     tune.run(
         Experiment, config=config, num_samples=1, local_dir=WANDB_DIR, callbacks=[]
