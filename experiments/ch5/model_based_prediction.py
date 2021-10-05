@@ -12,7 +12,6 @@ import torch
 import wandb.sdk
 from actor import behavior_policy
 from model import LightningModel, ValBatch
-from numpy.random import Generator
 from ray import tune
 from ray.tune.logger import NoopLogger
 from torch import Tensor
@@ -51,7 +50,7 @@ class DataModule(pl.LightningDataModule):
         lqg: LQGModule,
         behavior: DeterministicPolicy,
         spec: DataSpec,
-        rng: Generator,
+        rng: torch.Generator,
     ):
         super().__init__()
         self.spec = spec
@@ -156,7 +155,7 @@ class Experiment(tune.Trainable):
         rng = make_rng(self.hparams.seed)
         lqg, _, behavior, model = make_modules(rng, self.hparams.as_dict())
         datamodule = DataModule(
-            lqg, behavior, DataSpec(**self.hparams.datamodule), rng.numpy
+            lqg, behavior, DataSpec(**self.hparams.datamodule), rng.torch
         )
         logger = pl.loggers.WandbLogger(
             save_dir=self.run.dir, log_model=False, experiment=self.run
@@ -164,7 +163,7 @@ class Experiment(tune.Trainable):
         trainer = pl.Trainer(
             default_root_dir=self.run.dir,
             logger=logger,
-            callbacks=[pl.callbacks.EarlyStopping("val/loss")],
+            # callbacks=[pl.callbacks.EarlyStopping("val/loss")],
             num_sanity_val_steps=0,  # avoid evaluating gradients in the beginning?
             checkpoint_callback=False,  # don't save last model checkpoint
             **self.hparams.trainer,
@@ -174,9 +173,9 @@ class Experiment(tune.Trainable):
             run.summary.update(env_info(lqg))
             run.summary.update({"trainable_parameters": model.num_parameters()})
             with lightning.suppress_dataloader_warnings(num_workers=True, shuffle=True):
-                trainer.validate(model, datamodule=datamodule)
+                trainer.validate(model, datamodule=datamodule, verbose=False)
                 trainer.fit(model, datamodule=datamodule)
-                final_eval = trainer.test(model, datamodule=datamodule)
+                final_eval = trainer.test(model, datamodule=datamodule, verbose=False)
 
         return {tune.result.DONE: True, **final_eval[0]}
 
@@ -220,6 +219,8 @@ def base_config() -> dict:
 @main.command()
 @click.option("--name", type=str)
 def sweep(name: str = "ModelSearch"):
+    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
+    os.environ["WANDB_SILENT"] = "true"
     ray.init(logging_level=logging.WARNING)
 
     models = [
@@ -229,15 +230,17 @@ def sweep(name: str = "ModelSearch"):
     ]
     config = {
         **base_config(),
-        "wandb": {"name": name},
-        "seed": tune.grid_search(list(range(128, 143))),
+        "wandb": {"name": name, "tags": ["ModelBasedPrediction"]},
+        "seed": tune.grid_search(list(range(138, 143))),
         "exploration": {
             "type": tune.grid_search([None, "gaussian"]),
             "action_noise_sigma": 0.3,
         },
         "model": tune.grid_search(models),
     }
-    tune.run(Experiment, config=config, num_samples=1, local_dir=WANDB_DIR)
+    tune.run(
+        Experiment, config=config, num_samples=1, local_dir=WANDB_DIR, callbacks=[]
+    )
     ray.shutdown()
 
 
