@@ -171,6 +171,9 @@ def policy_trainer(
         else:
             val = surrogate(obs, config["pred_horizon"])
         val.neg().backward()
+        grad_norm = nn.utils.clip_grad_norm_(
+            policy.parameters(), config["clip_grad_norm"]
+        )
         optim.step()
         svg = lqr.Linear(-policy.K.grad, -policy.k.grad)
 
@@ -179,7 +182,7 @@ def policy_trainer(
             "true_value": true_val.item(),
             "optimal_value": optimal.item(),
             "grad_acc": analysis.cosine_similarity(svg, true_svg).item(),
-            "grad_norm": analysis.total_norm(svg).item(),
+            "grad_norm": grad_norm.item(),
             "true_grad_norm": analysis.total_norm(true_svg).item(),
             "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
@@ -324,6 +327,7 @@ def base_config() -> dict:
             "passive_eigval_range": (0.9, 1.1),
         },
         "learning_rate": 1e-4,
+        "clip_grad_norm": 1_000,
         "svg_batch_size": 256,
         "pred_horizon": 4,
         "replay_size": int(1e5),
@@ -338,7 +342,8 @@ def base_config() -> dict:
 def sweep():
     os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
     os.environ["WANDB_SILENT"] = "true"
-    ray.init(logging_level=logging.WARNING)
+    with open(".local_ip", "rt") as file:  # pylint:disable=unspecified-encoding
+        ray.init(logging_level=logging.WARNING, _node_ip_address=file.read())
 
     config = {
         "env_config": {
