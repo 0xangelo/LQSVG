@@ -175,8 +175,8 @@ def policy_trainer(
             "true_value": true_val.item(),
             "optimal_value": optimal.item(),
             "grad_acc": analysis.cosine_similarity(svg, true_svg).item(),
-            "grad_norm": analysis.total_norm(svg),
-            "true_grad_norm": analysis.total_norm(true_svg),
+            "grad_norm": analysis.total_norm(svg).item(),
+            "true_grad_norm": analysis.total_norm(true_svg).item(),
             "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
 
