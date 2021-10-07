@@ -111,6 +111,7 @@ venv.bak/
 
 # temporary or local
 local/
+.local_ip
 
 # npm
 node_modules/
