@@ -10,13 +10,10 @@ import pytorch_lightning as pl
 import ray
 import torch
 import wandb.sdk
-from actor import behavior_policy
-from model import LightningModel, ValBatch
 from ray import tune
 from ray.tune.logger import NoopLogger
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg import data, lightning
 from lqsvg.envs.lqr.generators import LQGGenerator
@@ -24,6 +21,12 @@ from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 from lqsvg.types import DeterministicPolicy
+
+# isort: off
+# pylint:disable=wrong-import-order
+from actor import behavior_policy
+from model import LightningModel, ValBatch
+from wandb_util import WANDB_DIR, env_info, wandb_init
 
 
 @dataclass

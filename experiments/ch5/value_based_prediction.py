@@ -9,13 +9,10 @@ import click
 import pytorch_lightning as pl
 import ray
 import torch
-from actor import behavior_policy
-from critic import LightningQValue, LightningReward, TDBatch
 from ray import tune
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 from wandb.sdk import wandb_config, wandb_run
-from wandb_util import WANDB_DIR, env_info, wandb_init
 
 from lqsvg import data, lightning
 from lqsvg.envs import lqr
@@ -23,6 +20,12 @@ from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, TVLinearPolicy
 from lqsvg.types import DeterministicPolicy
+
+# isort: off
+# pylint:disable=wrong-import-order
+from actor import behavior_policy
+from critic import LightningQValue, LightningReward, TDBatch
+from wandb_util import WANDB_DIR, env_info, wandb_init
 
 
 def make_modules(

@@ -12,16 +12,11 @@ import pytorch_lightning as pl
 import ray
 import torch
 import yaml
-from critic import modules as critic_modules
-from critic import value_learning
-from model import make_model as dynamics_model
-from model import surrogate_fn
 from nnrl.nn.utils import update_polyak
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from ray.tune.logger import LoggerCallback, NoopLogger
 from torch import Tensor, nn
-from wandb_util import WANDB_DIR, calver, with_prefix
 
 from lqsvg import analysis, data, estimator, lightning
 from lqsvg.envs import lqr
@@ -31,6 +26,15 @@ from lqsvg.torch.nn import LQGModule, QuadQValue, QuadRewardModel, TVLinearPolic
 from lqsvg.torch.random import sample_with_replacement
 from lqsvg.torch.sequence import log_prob_fn
 from lqsvg.types import DeterministicPolicy
+
+# isort: off
+# pylint:disable=wrong-import-order
+from critic import modules as critic_modules
+from critic import value_learning
+from model import make_model as dynamics_model
+from model import surrogate_fn
+from wandb_util import WANDB_DIR, calver, with_prefix
+
 
 DynamicsBatch = Tuple[Tensor, Tensor, Tensor]
 RewardBatch = Tuple[Tensor, Tensor, Tensor]
@@ -321,7 +325,7 @@ def base_config() -> dict:
         },
         "learning_rate": 1e-4,
         "svg_batch_size": 256,
-        "pred_horizon": 8,
+        "pred_horizon": 4,
         "replay_size": int(1e5),
         "learning_starts": 10,
         "trajs_per_iter": 1,
@@ -333,29 +337,32 @@ def base_config() -> dict:
 @main.command()
 def sweep():
     os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
+    os.environ["WANDB_SILENT"] = "true"
     ray.init(logging_level=logging.WARNING)
 
     config = {
-        **base_config(),
         "env_config": {
             "n_state": tune.grid_search([2, 8]),
             "n_ctrl": tune.grid_search([2, 8]),
-            "horizon": 100,
-            "passive_eigval_range": (0.9, 1.1),
         },
         "perfect_grad": True,
         "seed": tune.grid_search(list(range(780, 785))),
         "learning_rate": 3e-4,
     }
+    config = tune.utils.merge_dicts(base_config(), config)
 
     logger = WandbLoggerCallback(
-        name="SVG", project="ch5", entity="angelovtt", tags=[calver()], dir=WANDB_DIR
+        name="ModelBasedControl",
+        project="ch5",
+        entity="angelovtt",
+        tags=[calver(), "ModelBasedControl"],
+        dir=WANDB_DIR,
     )
     tune.run(
         SVG,
         config=config,
         num_samples=1,
-        stop={tune.result.TRAINING_ITERATION: 4_000},
+        stop={tune.result.TRAINING_ITERATION: 2_000},
         local_dir=WANDB_DIR,
         callbacks=[logger],
     )
