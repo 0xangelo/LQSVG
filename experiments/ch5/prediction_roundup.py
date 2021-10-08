@@ -9,6 +9,8 @@ import click
 import pytorch_lightning as pl
 import ray
 import torch
+import yaml
+from nnrl.nn.utils import update_polyak
 from ray import tune
 from ray.tune.integration.wandb import WandbLoggerCallback
 from torch import Tensor, nn
@@ -144,10 +146,20 @@ class LightningModelPlus(lightning.Lightning):
         super().__init__(model, loss, config)
         self.val_loss = val_loss
 
+    def configure_optimizers(self) -> torch.optim.Optimizer:
+        return torch.optim.Adam(
+            self.model.qval.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
+
     def validation_step(self, batch: lightning.BatchType, _: int) -> Tensor:
         loss = self.val_loss(batch)
         self.log("val/loss", loss)
         return loss
+
+    def on_train_batch_end(self, *args, **kwargs):  # pylint:disable=unused-argument
+        update_polyak(self.model.qval, self.model.target_qval, self.hparams.polyak)
 
 
 def datamodules(
@@ -175,7 +187,7 @@ def datamodules(
     return dynamics_dm, reward_dm, qvalue_dm
 
 
-def grad_stats_fn(
+def maac_grad_stats(
     lqg: LQGModule,
     policy: TVLinearPolicy,
     dmodel: nn.Module,
@@ -183,7 +195,7 @@ def grad_stats_fn(
     qmodel: nn.Module,
 ) -> Callable[[pl.LightningDataModule], dict]:
     def stats(datamodule: pl.LightningDataModule) -> dict:
-        maac_estimator = estimator.maac_estimator(
+        maac = estimator.maac_estimator(
             policy,
             data.markovian_state_sampler(dmodel, dmodel.rsample),
             rmodel,
@@ -196,19 +208,46 @@ def grad_stats_fn(
         for batch in dataloader:
             (obs,) = batch
             obs = obs.refine_names(*datamodule.tensors[0].names)
-            svgs += [maac_estimator(obs, 4)[1]]
+            svgs += [maac(obs, 4)[1]]
 
         dynamics, cost, init = lqg.standard_form()
         _, target = estimator.analytic_svg(policy, init, dynamics, cost)
         return {
-            "grad_accuracy": analysis.gradient_accuracy(svgs, target),
-            "grad_precision": analysis.gradient_precision(svgs),
+            "grad_accuracy": analysis.gradient_accuracy(svgs, target).item(),
+            "grad_precision": analysis.gradient_precision(svgs).item(),
         }
 
     return stats
 
 
-class MAAC(tune.Trainable):
+def dpg_grad_stats(
+    lqg: LQGModule, policy: TVLinearPolicy, qmodel: nn.Module
+) -> Callable[[pl.LightningDataModule], dict]:
+    def stats(datamodule: pl.LightningDataModule) -> dict:
+        dpg = estimator.mfdpg_estimator(policy, qmodel.qval)
+        dataset = TensorDataset(nt.unnamed(datamodule.tensors[0]))
+        dataloader = DataLoader(dataset, batch_size=256, shuffle=True)
+
+        svgs = []
+        for batch in dataloader:
+            (obs,) = batch
+            obs = obs.refine_names(*datamodule.tensors[0].names)
+            svgs += [dpg(obs)[1]]
+
+        dynamics, cost, init = lqg.standard_form()
+        _, target = estimator.analytic_svg(policy, init, dynamics, cost)
+        return {
+            "grad_accuracy": analysis.gradient_accuracy(svgs, target).item(),
+            "grad_precision": analysis.gradient_precision(svgs).item(),
+        }
+
+    return stats
+
+
+class Experiment(tune.Trainable):
+    def setup(self, config: dict):
+        pl.seed_everything(config["seed"])
+
     def step(self) -> dict:
         # pylint:disable=too-many-locals
         config = self.config
@@ -222,8 +261,12 @@ class MAAC(tune.Trainable):
         pl_reward = lightning.Lightning(
             rmodel, reward_loss(rmodel), config["model"]["reward"]
         )
+        if "mage" in config["strategy"]:
+            qloss = mage_loss(qmodel, policy, dmodel, rmodel)
+        else:
+            qloss = td_mse(qmodel)
         pl_qvalue = LightningModelPlus(
-            qmodel, td_mse(qmodel), config["model"]["qvalue"], td_rerror(qmodel)
+            qmodel, qloss, config["model"]["qvalue"], td_rerror(qmodel)
         )
 
         dynamics_dm, reward_dm, qvalue_dm = datamodules(rng, lqg, behavior, config)
@@ -241,7 +284,10 @@ class MAAC(tune.Trainable):
                 pl_qvalue, qvalue_dm, config["model"]["qvalue"]
             )
 
-        grad_stats = grad_stats_fn(lqg, policy, dmodel, rmodel, qmodel)
+        if "maac" in config["strategy"]:
+            grad_stats = maac_grad_stats(lqg, policy, dmodel, rmodel, qmodel)
+        else:
+            grad_stats = dpg_grad_stats(lqg, policy, qmodel)
         return {
             "dynamics": dynamics_info,
             "reward": reward_info,
@@ -268,9 +314,70 @@ def main():
 
 @main.command()
 @logging_setup()
-def maac():
+def sweep():
     config = {
-        "seed": 124,
+        "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
+        "seed": tune.grid_search(list(range(120, 130))),
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+            "horizon": 100,
+            "passive_eigval_range": (0.9, 1.1),
+        },
+        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
+        "trajectories": 2_000,
+        "dynamics_dm": {
+            "train_batch_size": 128,
+            "val_batch_size": 128,
+            "seq_len": 8,
+        },
+        "reward_dm": {
+            "train_batch_size": 64,
+            "val_batch_size": 64,
+        },
+        "qvalue_dm": {
+            "train_batch_size": 128,
+            "val_batch_size": 128,
+        },
+        "model": {
+            "dynamics": {
+                "type": "linear",
+                "learning_rate": 1e-3,
+                "weight_decay": 0,
+                "max_epochs": 20,
+            },
+            "reward": {
+                "learning_rate": 1e-3,
+                "weight_decay": 0,
+                "max_epochs": 20,
+            },
+            "qvalue": {
+                "type": "quad",
+                "learning_rate": 1e-3,
+                "weight_decay": 0,
+                "max_epochs": 20,
+                "polyak": 0.995,
+            },
+        },
+    }
+
+    logger = WandbLoggerCallback(
+        name="PredictionFull",
+        project="ch5",
+        entity="angelovtt",
+        tags=[calver(), "PredictionFull"],
+        dir=WANDB_DIR,
+    )
+    tune.run(Experiment, config=config, local_dir=WANDB_DIR, callbacks=[logger])
+
+
+@main.command()
+@click.argument("strategy", type=str)
+@logging_setup()
+def debug(strategy: str):
+    config = {
+        "strategy": strategy,
+        "seed": 120,
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
@@ -313,35 +420,9 @@ def maac():
             },
         },
     }
-
-    logger = WandbLoggerCallback(
-        name="PredictionFull",
-        project="ch5",
-        entity="angelovtt",
-        tags=[calver(), "PredictionFull"],
-        dir=WANDB_DIR,
-        mode="disabled",
-    )
-    tune.run(
-        MAAC,
-        config=config,
-        num_samples=1,
-        stop={tune.result.TRAINING_ITERATION: 100},
-        local_dir=WANDB_DIR,
-        callbacks=[logger],
-    )
-
-
-@main.command()
-@logging_setup()
-def mage():
-    pass
-
-
-@main.command()
-@logging_setup()
-def maac_mage():
-    pass
+    out = Experiment(config).train()
+    del out["config"]
+    print(yaml.dump(out))
 
 
 if __name__ == "__main__":
