@@ -22,7 +22,7 @@ from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, QuadQValue, QuadRewardModel, TVLinearPolicy
 from lqsvg.torch.random import sample_with_replacement
-from lqsvg.types import DeterministicPolicy
+from lqsvg.types import DeterministicPolicy, Transition
 
 # isort: off
 # pylint:disable=wrong-import-order
@@ -69,9 +69,54 @@ def make_model(
     return model
 
 
+def env_model_trainer(model: nn.Module, config: dict) -> Callable[[RNG, Replay], dict]:
+    if config["perfect_model"]:
+        return lambda *_: {}
+
+    pl_dynamics = lightning.Lightning(
+        model.dynamics, dynamics_loss(model.dynamics), config
+    )
+    pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
+
+    @lightning.suppress_dataloader_warnings(num_workers=True)
+    @lightning.suppress_datamodule_warnings()
+    def train(rng: RNG, dataset: Replay) -> dict:
+        obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
+        obs, new_obs = data.obs_trajectory_to_transitions(obs)
+        dynamics_dm = data.SequenceDataModule(
+            obs, act, new_obs, spec=config["dynamics_dm"], rng=rng.torch
+        )
+        reward_dm = data.TensorDataModule(
+            *data.merge_horizon_and_batch_dims(obs, act, rew),
+            spec=config["reward_dm"],
+            rng=rng.torch,
+        )
+        dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
+        reward_info = lightning.train_lite(pl_reward, reward_dm, config)
+
+        return {
+            **with_prefix("dynamics/", dynamics_info),
+            **with_prefix("reward/", reward_info),
+        }
+
+    return train
+
+
 def critic_updater(
     model: nn.Module, policy: TVLinearPolicy, config: dict
-) -> Callable[[RNG, Tensor, Tensor, Tensor, Tensor], Tensor]:
+) -> Callable[[RNG, Transition], dict]:
+    if config["perfect_model"]:
+
+        def match(*_) -> dict:
+            model.qval.match_policy_(
+                policy.standard_form(),
+                model.dynamics.standard_form(),
+                model.reward.standard_form(),
+            )
+            return {}
+
+        return match
+
     q_optim = torch.optim.Adam(
         model.qval.parameters(), lr=config["qvalue"]["learning_rate"]
     )
@@ -82,9 +127,8 @@ def critic_updater(
     )
     batch_size = config["qvalue"]["batch_size"]
 
-    def update(
-        rng: RNG, obs: Tensor, act: Tensor, rew: Tensor, new_obs: Tensor
-    ) -> Tensor:
+    def update(rng: RNG, transition: Transition) -> dict:
+        obs, act, rew, new_obs = transition
         # noinspection PyArgumentList
         weights = torch.ones(obs.size("B"))
         idxs = torch.multinomial(
@@ -100,67 +144,9 @@ def critic_updater(
         q_optim.step()
         update_polyak(model.qval, model.target_qval, config["qvalue"]["polyak"])
 
-        return critic_loss
+        return {"critic_loss": critic_loss.item()}
 
     return update
-
-
-def model_trainer(
-    model: nn.Module, policy: TVLinearPolicy, config: dict
-) -> Callable[[Replay, RNG], dict]:
-    if config["perfect_model"]:
-
-        def update(*_) -> dict:
-            model.qval.match_policy_(
-                policy.standard_form(),
-                model.dynamics.standard_form(),
-                model.reward.standard_form(),
-            )
-            return {}
-
-        return update
-
-    pl_dynamics = lightning.Lightning(
-        model.dynamics, dynamics_loss(model.dynamics), config
-    )
-    pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
-
-    critic_update = critic_updater(model, policy, config)
-
-    @lightning.suppress_dataloader_warnings(num_workers=True)
-    @lightning.suppress_datamodule_warnings()
-    def train(dataset: Replay, rng: RNG) -> dict:
-        obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
-        obs, new_obs = data.obs_trajectory_to_transitions(obs)
-        dynamics_dm = data.SequenceDataModule(
-            obs, act, new_obs, spec=config["dynamics_dm"], rng=rng.torch
-        )
-        reward_dm = data.TensorDataModule(
-            *data.merge_horizon_and_batch_dims(obs, act, rew),
-            spec=config["reward_dm"],
-            rng=rng.torch,
-        )
-        dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
-        reward_info = lightning.train_lite(pl_reward, reward_dm, config)
-
-        critic_loss = critic_update(rng, obs, act, rew, new_obs)
-
-        return {
-            **with_prefix("dynamics/", dynamics_info),
-            **with_prefix("reward/", reward_info),
-            "critic_loss": critic_loss.item(),
-        }
-
-    return train
-
-
-def all_nonterminal_obs(dataset: Replay, horizon: int) -> Tensor:
-    obs = torch.cat(tuple(t[0] for t in dataset), dim="B")
-    obs = data.merge_horizon_and_batch_dims(obs)
-    time = nt.vector_to_scalar(lqr.unpack_obs(obs)[1])
-    # noinspection PyArgumentList
-    result = nt.unnamed(obs)[nt.unnamed(time < horizon).nonzero(as_tuple=True)]
-    return result.refine_names(*obs.names)
 
 
 def actor_obj(
@@ -179,9 +165,9 @@ def actor_obj(
     return estimator.mfdpg_surrogate(policy, model.qval)
 
 
-def policy_trainer(
+def policy_updater(
     lqg: LQGModule, policy: TVLinearPolicy, model: nn.Module, config: dict
-) -> Callable[[Replay, RNG], dict]:
+) -> Callable[[RNG, Transition], dict]:
     # Ground-truth
     dynamics, cost, init = lqg.standard_form()
     with torch.no_grad():
@@ -190,8 +176,8 @@ def policy_trainer(
     optim = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
     obj_fn = actor_obj(lqg, policy, model, config)
 
-    def optimize(dataset: Replay, rng: RNG) -> dict:
-        obs = all_nonterminal_obs(dataset, policy.action_linear.horizon)
+    def update(rng: RNG, transition: Transition) -> dict:
+        obs = transition[0]
         obs = sample_with_replacement(
             obs, size=config["svg_batch_size"], dim="B", rng=rng.torch
         )
@@ -217,7 +203,7 @@ def policy_trainer(
             "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
 
-    return optimize
+    return update
 
 
 @torch.no_grad()
@@ -263,6 +249,19 @@ def collection_stats(
     }
 
 
+def timesteps_in(trajectories: data.Trajectory) -> int:
+    actions = trajectories[1]
+    # noinspection PyArgumentList
+    return actions.size("B") * actions.size("H")
+
+
+def all_transitions(dataset: Replay) -> Transition:
+    obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
+    obs, new_obs = data.obs_trajectory_to_transitions(obs)
+    obs, act, rew, new_obs = data.merge_horizon_and_batch_dims(obs, act, rew, new_obs)
+    return obs, act, rew, new_obs
+
+
 def policy_optimization_(
     lqg: LQGModule, policy: TVLinearPolicy, config: dict
 ) -> Generator[dict, None, None]:
@@ -270,8 +269,9 @@ def policy_optimization_(
     rng = make_rng(config["seed"])
     model = make_model(lqg, policy, rng, config["model"])
 
-    optimize_model_ = model_trainer(model, policy, config["model"])
-    optimize_policy_ = policy_trainer(lqg, policy, model, config)
+    optimize_model_ = env_model_trainer(model, config["model"])
+    update_critic_ = critic_updater(model, policy, config["model"])
+    update_policy_ = policy_updater(lqg, policy, model, config)
 
     dataset = deque(
         maxlen=config["replay_size"] // (lqg.horizon * config["trajs_per_iter"])
@@ -285,8 +285,11 @@ def policy_optimization_(
         dataset.append(trajectories)
 
         metrics = {}
-        metrics.update(optimize_model_(dataset, rng))
-        metrics.update(optimize_policy_(dataset, rng))
+        metrics.update(optimize_model_(rng, dataset))
+        transitions = all_transitions(dataset)
+        for _ in range(timesteps_in(trajectories)):
+            metrics.update(update_critic_(rng, transitions))
+            metrics.update(update_policy_(rng, transitions))
 
         metrics.update(collection_stats(i, trajectories, dataset))
         yield metrics
@@ -321,6 +324,7 @@ class SVG(tune.Trainable):
         lightning.suppress_info_logging()
         pl.seed_everything(config["seed"])
         lqg, policy = env_and_policy(config)
+        config["model"]["strategy"] = config["strategy"]
         self.coroutine = policy_optimization_(lqg, policy, config)
 
     def step(self) -> dict:
@@ -386,7 +390,7 @@ def sweep():
             "max_epochs": 20,
             "dynamics": {"type": "linear"},
             "qvalue": {
-                "learning_rate": 1e-3,
+                "learning_rate": 3e-4,
                 "batch_size": 128,
                 "polyak": 0.995,
                 "model": {"type": "quad"},
@@ -415,7 +419,7 @@ def sweep():
         SVG,
         config=config,
         num_samples=1,
-        stop={tune.result.TRAINING_ITERATION: 2_000},
+        stop={tune.result.TRAINING_ITERATION: 1_000},
         local_dir=WANDB_DIR,
         callbacks=[logger],
     )
