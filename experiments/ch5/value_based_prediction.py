@@ -1,13 +1,10 @@
 # pylint:disable=missing-docstring
 import functools
-import logging
-import os
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import click
 import pytorch_lightning as pl
-import ray
 import torch
 from ray import tune
 from torch import Tensor
@@ -25,6 +22,7 @@ from lqsvg.types import DeterministicPolicy
 # pylint:disable=wrong-import-order
 from actor import behavior_policy
 from critic import LightningQValue, LightningReward, TDBatch
+from prediction_roundup import logging_setup
 from wandb_util import WANDB_DIR, env_info, wandb_init
 
 
@@ -255,10 +253,8 @@ def base_config() -> dict:
 
 
 @main.command()
+@logging_setup()
 def reward():
-    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
-    ray.init(logging_level=logging.WARNING)
-
     config = {
         "learning_rate": 1e-3,
         "weight_decay": 0,
@@ -294,44 +290,35 @@ def reward():
         local_dir=WANDB_DIR,
         callbacks=[],
     )
-    ray.shutdown()
 
 
 @main.command()
+@logging_setup()
 def sweep():
-    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
-    ray.init(logging_level=logging.WARNING)
-
     config = {
-        **base_config(),
         "wandb": {
-            "name": "MAGEPrediction",
+            "name": "ValueBasedPrediction",
             "mode": "online",
-            "tags": ["MAGEPrediction"],
+            "tags": ["ValueBasedPrediction"],
         },
-        "loss": "MAGE",
+        "loss": tune.grid_search(["MAGE", "TD(1)"]),
         "learning_rate": 1e-2,
-        "polyak": 0.995,
-        "exploration": {
-            "type": tune.grid_search(["gaussian", None]),
-            "action_noise_sigma": 0.3,
-        },
+        "exploration": {"type": tune.grid_search(["gaussian", None])},
         "seed": tune.grid_search(list(range(123, 133))),
         "model": {"type": "quad"},
-        "trainer": dict(
-            max_epochs=40,
-            progress_bar_refresh_rate=0,  # don't show model training progress bar
-            weights_summary=None,  # don't print summary before training
-            track_grad_norm=2,
-        ),
+        "trainer": dict(max_epochs=30),
     }
     tune.run(
-        Experiment, config=config, num_samples=1, local_dir=WANDB_DIR, callbacks=[]
+        Experiment,
+        config=tune.utils.merge_dicts(base_config(), config),
+        num_samples=1,
+        local_dir=WANDB_DIR,
+        callbacks=[],
     )
-    ray.shutdown()
 
 
 @main.command()
+@logging_setup()
 def debug():
     config = {
         **base_config(),
