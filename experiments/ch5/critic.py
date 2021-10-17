@@ -67,6 +67,7 @@ def value_gradient_learning(module: "LightningQValue", batch: TDBatch) -> Tensor
 
 def mage_loss(module: "LightningQValue", batch: TDBatch) -> Tensor:
     """Returns the regularized bootstrapped action-gradient error."""
+    # pylint:disable=too-many-locals
     module.qval: ClippedQValue
     policy: DeterministicPolicy = module.policy
     dynamics: StochasticModel = module.lqg.trans
@@ -82,9 +83,8 @@ def mage_loss(module: "LightningQValue", batch: TDBatch) -> Tensor:
     target = rew + module.target_vval(new_obs)
 
     delta = value - target
-    (act_grad,) = autograd.grad(
-        delta, act, grad_outputs=torch.ones_like(delta), create_graph=True
-    )
+    grad_out = nt.unnamed(torch.ones_like(delta))
+    (act_grad,) = autograd.grad(delta, act, grad_outputs=grad_out, create_graph=True)
     loss = torch.norm(act_grad, dim=-1).mean() + 0.05 * torch.square(delta).mean()
     return loss
 
