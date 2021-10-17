@@ -1,7 +1,6 @@
 """Full policy optimization via Stochastic Value Gradients."""
 # pylint:disable=missing-docstring
 import itertools
-import logging
 import os
 from collections import deque
 from functools import partial
@@ -9,7 +8,6 @@ from typing import Callable, Generator, Optional, Sequence, Tuple
 
 import click
 import pytorch_lightning as pl
-import ray
 import torch
 import yaml
 from nnrl.nn.utils import update_polyak
@@ -24,15 +22,20 @@ from lqsvg.random import RNG, make_rng
 from lqsvg.torch import named as nt
 from lqsvg.torch.nn import LQGModule, QuadQValue, QuadRewardModel, TVLinearPolicy
 from lqsvg.torch.random import sample_with_replacement
-from lqsvg.torch.sequence import log_prob_fn
 from lqsvg.types import DeterministicPolicy
 
 # isort: off
 # pylint:disable=wrong-import-order
-from critic import modules as critic_modules
-from critic import value_learning
+from critic import qval_constructor, td_modules
 from model import make_model as dynamics_model
 from model import surrogate_fn
+from prediction_roundup import (
+    dynamics_loss,
+    reward_loss,
+    td_mse,
+    mage_loss,
+    logging_setup,
+)
 from wandb_util import WANDB_DIR, calver, with_prefix
 
 
@@ -59,28 +62,47 @@ def make_model(
         model.reward = QuadRewardModel(
             lqg.n_state, lqg.n_ctrl, lqg.horizon, stationary=True, rng=rng.numpy
         )
-        model.qval, model.target_qval, model.target_vval = critic_modules(
-            policy, config["qvalue"], rng.numpy
+        qval_fn = qval_constructor(policy, config["qvalue"]["model"])
+        model.qval, model.target_qval, model.target_vval = td_modules(
+            policy, qval_fn, config["qvalue"]["model"], rng.numpy
         )
     return model
 
 
-def dynamics_loss(dynamics: nn.Module) -> Callable[[DynamicsBatch], Tensor]:
-    log_prob = log_prob_fn(dynamics, dynamics.dist)
+def critic_updater(
+    model: nn.Module, policy: TVLinearPolicy, config: dict
+) -> Callable[[RNG, Tensor, Tensor, Tensor, Tensor], Tensor]:
+    q_optim = torch.optim.Adam(
+        model.qval.parameters(), lr=config["qvalue"]["learning_rate"]
+    )
+    q_loss = (
+        mage_loss(model, policy, model.dynamics, model.reward)
+        if "mage" in config["strategy"]
+        else td_mse(model)
+    )
+    batch_size = config["qvalue"]["batch_size"]
 
-    def loss(batch: DynamicsBatch) -> Tensor:
-        obs, act, new_obs = batch
-        return -log_prob(obs, act, new_obs).mean()
+    def update(
+        rng: RNG, obs: Tensor, act: Tensor, rew: Tensor, new_obs: Tensor
+    ) -> Tensor:
+        # noinspection PyArgumentList
+        weights = torch.ones(obs.size("B"))
+        idxs = torch.multinomial(
+            weights, num_samples=batch_size, replacement=True, generator=rng.torch
+        ).int()
+        obs, act, rew, new_obs = (
+            nt.index_select(x, dim="B", index=idxs) for x in (obs, act, rew, new_obs)
+        )
 
-    return loss
+        q_optim.zero_grad()
+        critic_loss = q_loss((obs, act, rew, new_obs))
+        critic_loss.backward()
+        q_optim.step()
+        update_polyak(model.qval, model.target_qval, config["qvalue"]["polyak"])
 
+        return critic_loss
 
-def reward_loss(reward: nn.Module) -> Callable[[RewardBatch], Tensor]:
-    def loss(batch: RewardBatch) -> Tensor:
-        obs, act, rew = batch
-        return torch.mean(0.5 * torch.square(reward(obs, act) - rew))
-
-    return loss
+    return update
 
 
 def model_trainer(
@@ -102,17 +124,16 @@ def model_trainer(
         model.dynamics, dynamics_loss(model.dynamics), config
     )
     pl_reward = lightning.Lightning(model.reward, reward_loss(model.reward), config)
-    q_optim = torch.optim.Adam(
-        model.qval.parameters(), lr=config["qvalue"]["learning_rate"]
-    )
+
+    critic_update = critic_updater(model, policy, config)
 
     @lightning.suppress_dataloader_warnings(num_workers=True)
     @lightning.suppress_datamodule_warnings()
     def train(dataset: Replay, rng: RNG) -> dict:
         obs, act, rew, _ = map(partial(torch.cat, dim="B"), zip(*dataset))
-        obs, next_obs = data.obs_trajectory_to_transitions(obs)
+        obs, new_obs = data.obs_trajectory_to_transitions(obs)
         dynamics_dm = data.SequenceDataModule(
-            obs, act, next_obs, spec=config["dynamics_dm"], rng=rng.torch
+            obs, act, new_obs, spec=config["dynamics_dm"], rng=rng.torch
         )
         reward_dm = data.TensorDataModule(
             *data.merge_horizon_and_batch_dims(obs, act, rew),
@@ -122,16 +143,12 @@ def model_trainer(
         dynamics_info = lightning.train_lite(pl_dynamics, dynamics_dm, config)
         reward_info = lightning.train_lite(pl_reward, reward_dm, config)
 
-        q_optim.zero_grad()
-        mstd_error = value_learning(model, (obs, act, rew, next_obs))
-        mstd_error.backward()
-        q_optim.step()
-        update_polyak(model.qval, model.target_qval, config["qvalue"]["polyak"])
+        critic_loss = critic_update(rng, obs, act, rew, new_obs)
 
         return {
             **with_prefix("dynamics/", dynamics_info),
             **with_prefix("reward/", reward_info),
-            "mean_squared_td_error": mstd_error.item(),
+            "critic_loss": critic_loss.item(),
         }
 
     return train
@@ -146,6 +163,22 @@ def all_nonterminal_obs(dataset: Replay, horizon: int) -> Tensor:
     return result.refine_names(*obs.names)
 
 
+def actor_obj(
+    lqg: LQGModule, policy: TVLinearPolicy, model: nn.Module, config: dict
+) -> Callable[[Tensor], Tensor]:
+    if config["strategy"] == "perfect_grad":
+        dynamics, cost, init = lqg.standard_form()
+        return lambda _: estimator.analytic_value(
+            policy.standard_form(), init, dynamics, cost
+        )
+
+    if "maac" in config["strategy"]:
+        surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
+        return partial(surrogate, n_steps=config["pred_horizon"])
+
+    return estimator.mfdpg_surrogate(policy, model.qval)
+
+
 def policy_trainer(
     lqg: LQGModule, policy: TVLinearPolicy, model: nn.Module, config: dict
 ) -> Callable[[Replay, RNG], dict]:
@@ -155,7 +188,7 @@ def policy_trainer(
         optimal = estimator.optimal_value(dynamics, cost, init)
 
     optim = torch.optim.Adam(policy.parameters(), lr=config["learning_rate"])
-    surrogate = surrogate_fn(model.dynamics, policy, model.reward, model.qval)
+    obj_fn = actor_obj(lqg, policy, model, config)
 
     def optimize(dataset: Replay, rng: RNG) -> dict:
         obs = all_nonterminal_obs(dataset, policy.action_linear.horizon)
@@ -166,10 +199,7 @@ def policy_trainer(
         true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
 
         optim.zero_grad()
-        if config["perfect_grad"]:
-            val = estimator.analytic_value(policy.standard_form(), init, dynamics, cost)
-        else:
-            val = surrogate(obs, config["pred_horizon"])
+        val = obj_fn(obs)
         val.neg().backward()
         grad_norm = nn.utils.clip_grad_norm_(
             policy.parameters(), config["clip_grad_norm"]
@@ -329,30 +359,48 @@ def base_config() -> dict:
         "learning_rate": 1e-4,
         "clip_grad_norm": 1_000,
         "svg_batch_size": 256,
+        "strategy": "maac",
         "pred_horizon": 4,
         "replay_size": int(1e5),
         "learning_starts": 10,
         "trajs_per_iter": 1,
-        "perfect_grad": False,
         "model": {"perfect_model": True},
     }
 
 
 @main.command()
+@logging_setup()
 def sweep():
-    os.environ["TUNE_DISABLE_AUTO_CALLBACK_LOGGERS"] = "1"
-    os.environ["WANDB_SILENT"] = "true"
-    with open(".local_ip", "rt") as file:  # pylint:disable=unspecified-encoding
-        ray.init(logging_level=logging.WARNING, _node_ip_address=file.read())
-
     config = {
         "env_config": {
-            "n_state": tune.grid_search([2, 8]),
-            "n_ctrl": tune.grid_search([2, 8]),
+            "n_state": 2,
+            "n_ctrl": 2,
         },
-        "perfect_grad": True,
-        "seed": tune.grid_search(list(range(780, 785))),
+        "seed": tune.grid_search(list(range(780, 800))),
+        "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
         "learning_rate": 3e-4,
+        "model": {
+            "perfect_model": False,
+            "learning_rate": 1e-3,
+            "weight_decay": 0,
+            "max_epochs": 20,
+            "dynamics": {"type": "linear"},
+            "qvalue": {
+                "learning_rate": 1e-3,
+                "batch_size": 128,
+                "polyak": 0.995,
+                "model": {"type": "quad"},
+            },
+            "dynamics_dm": {
+                "train_batch_size": 128,
+                "val_batch_size": 128,
+                "seq_len": 8,
+            },
+            "reward_dm": {
+                "train_batch_size": 64,
+                "val_batch_size": 64,
+            },
+        },
     }
     config = tune.utils.merge_dicts(base_config(), config)
 
@@ -371,13 +419,11 @@ def sweep():
         local_dir=WANDB_DIR,
         callbacks=[logger],
     )
-    ray.shutdown()
 
 
 @main.command()
 def debug():
     config = {
-        **base_config(),
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
@@ -387,6 +433,7 @@ def debug():
             "qvalue": {
                 "loss": "TD(1)",
                 "learning_rate": 1e-3,
+                "batch_size": 128,
                 "polyak": 0.995,
                 "model": {"type": "mlp", "hunits": (10, 10)},
             },
@@ -401,7 +448,7 @@ def debug():
             },
         },
     }
-    exp = SVG(config)
+    exp = SVG(tune.utils.merge_dicts(base_config(), config))
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
 
 
