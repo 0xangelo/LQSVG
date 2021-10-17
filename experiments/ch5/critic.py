@@ -277,7 +277,7 @@ class LightningQValue(pl.LightningModule):
 @torch.enable_grad()
 def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
     # pylint:disable=too-many-locals
-    obs = batch[0].requires_grad_()  # (B, O)
+    obs = batch[0].clone().requires_grad_()  # (B, O)
     act = module.policy(obs)  # (B, A)
     rew = module.lqg.reward(obs, act)  # (B,)
     new_obs, _ = module.lqg.trans.rsample(module.lqg.trans(obs, act))  # (B, O)
