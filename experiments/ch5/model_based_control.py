@@ -273,9 +273,7 @@ def policy_optimization_(
     update_critic_ = critic_updater(model, policy, config["model"])
     update_policy_ = policy_updater(lqg, policy, model, config)
 
-    dataset = deque(
-        maxlen=config["replay_size"] // (lqg.horizon * config["trajs_per_iter"])
-    )
+    dataset = deque(maxlen=config["replay_size_trajs"])
     collect = data.environment_sampler(lqg)
     prepopulate_(dataset, collect, policy, config)
 
@@ -365,7 +363,7 @@ def base_config() -> dict:
         "svg_batch_size": 256,
         "strategy": "maac",
         "pred_horizon": 4,
-        "replay_size": int(1e5),
+        "replay_size_trajs": 2_000,
         "learning_starts": 10,
         "trajs_per_iter": 1,
         "model": {"perfect_model": True},
