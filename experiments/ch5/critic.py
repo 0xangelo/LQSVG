@@ -282,28 +282,42 @@ def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
     rew = module.lqg.reward(obs, act)  # (B,)
     new_obs, _ = module.lqg.trans.rsample(module.lqg.trans(obs, act))  # (B, O)
 
-    pred = module.qval(obs, act)  # (B,)
-    target = rew + module.target_vval(new_obs)  # (B,)
+    pred_qval = module.qval(obs, act)  # (B,)
+    boot_qval = rew + module.target_vval(new_obs)  # (B,)
     true_qval = module.true_qval(obs, act)  # (B,)
 
-    td_error = analysis.relative_error(pred, target).mean()  # ()
+    td_rel_error = analysis.relative_error(boot_qval, pred_qval).mean()  # ()
+    rel_error = analysis.relative_error(true_qval, pred_qval)
 
-    grad_out = torch.ones_like(pred)  # (B,)
-    # (B, A)
-    pred_agrad = autograd.grad(pred, act, grad_outputs=grad_out, retain_graph=True)[0]
-    # (B, A)
-    target_agrad = autograd.grad(target, act, grad_outputs=grad_out, retain_graph=True)
-    target_agrad = target_agrad[0]
-    # (B, A)
-    true_agrad = autograd.grad(true_qval, act, grad_outputs=grad_out)[0]
+    grad_out = torch.ones_like(pred_qval)  # (B,)
+    # (B, O), (B, A)
+    (true_ograd,) = torch.autograd.grad(
+        true_qval, obs, grad_outputs=grad_out, retain_graph=True
+    )
+    (true_agrad,) = torch.autograd.grad(true_qval, act, grad_outputs=grad_out)
+    (pred_ograd,) = torch.autograd.grad(
+        pred_qval, obs, grad_outputs=grad_out, retain_graph=True
+    )
+    (pred_agrad,) = torch.autograd.grad(
+        pred_qval, act, grad_outputs=grad_out, retain_graph=True
+    )
+    (boot_ograd,) = torch.autograd.grad(
+        boot_qval, obs, grad_outputs=grad_out, retain_graph=True
+    )
+    (boot_agrad,) = torch.autograd.grad(boot_qval, act, grad_outputs=grad_out)
 
-    td_agrad_acc = analysis.cosine_similarity(pred_agrad, target_agrad, dim=-1).mean()
-    true_agrad_acc = analysis.cosine_similarity(pred_agrad, true_agrad, dim=-1).mean()
+    td_ograd_acc = analysis.cosine_similarity(pred_ograd, boot_ograd, dim=-1).mean()
+    td_agrad_acc = analysis.cosine_similarity(pred_agrad, boot_agrad, dim=-1).mean()
+    ograd_acc = analysis.cosine_similarity(pred_ograd, true_ograd, dim=-1).mean()
+    agrad_acc = analysis.cosine_similarity(pred_agrad, true_agrad, dim=-1).mean()
 
     return {
-        "bootstrap/relative_qval_err": td_error,
+        "bootstrap/relative_qval_err": td_rel_error,
+        "bootstrap/obs_grad_acc": td_ograd_acc,
         "bootstrap/action_grad_acc": td_agrad_acc,
-        "action_grad_acc": true_agrad_acc,
+        "relative_qval_err": rel_error,
+        "obs_grad_acc": ograd_acc,
+        "action_grad_acc": agrad_acc,
     }
 
 
