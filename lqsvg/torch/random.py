@@ -1,6 +1,6 @@
 """Random tensor generation tooling."""
 import contextlib
-from typing import Optional, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -158,10 +158,18 @@ def unit_vector(
 
 
 def sample_with_replacement(
-    tensor: Tensor, size: int, dim: Union[int, str], rng: torch.Generator
-) -> Tensor:
-    """Subsamples a tensor along a dimension with replacement."""
+    inputs: Union[Tensor, Sequence[Tensor]],
+    size: int,
+    dim: Union[int, str],
+    rng: torch.Generator,
+) -> Union[Tensor, Sequence[Tensor]]:
+    """Subsamples tensor inputs along a dimension with replacement."""
+    if torch.is_tensor(inputs):
+        inputs = [inputs]
     # noinspection PyArgumentList
-    weights = torch.ones(tensor.size(dim))
+    weights = torch.ones(inputs[0].size(dim))
     idxs = torch.multinomial(weights, num_samples=size, replacement=True, generator=rng)
-    return nt.index_select(tensor, dim=dim, index=idxs.int())
+    outputs = tuple(nt.index_select(t, dim=dim, index=idxs.int()) for t in inputs)
+    if len(outputs) == 1:
+        outputs = outputs[0]
+    return outputs
