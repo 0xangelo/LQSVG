@@ -9,6 +9,7 @@ from lqsvg.torch.types import SampleShape
 State = Tensor
 Action = Tensor
 Trajectory = Tuple[Tensor, Tensor, Tensor, Tensor]
+Transition = Tuple[Tensor, Tensor, Tensor, Tensor]
 
 InitStateFn = Callable[[SampleShape], SampleLogp]
 StateDynamics = Callable[[State, Action], SampleLogp]
