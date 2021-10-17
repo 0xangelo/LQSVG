@@ -319,8 +319,8 @@ def sweep():
         "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
         "seed": tune.grid_search(list(range(120, 140))),
         "env_config": {
-            "n_state": 4,
-            "n_ctrl": 4,
+            "n_state": 6,
+            "n_ctrl": 6,
             "horizon": 100,
             "passive_eigval_range": (0.9, 1.1),
         },
