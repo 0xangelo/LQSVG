@@ -277,7 +277,7 @@ class LightningQValue(pl.LightningModule):
 @torch.enable_grad()
 def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
     # pylint:disable=too-many-locals
-    obs = batch[0].clone().requires_grad_()  # (B, O)
+    obs = batch[0].requires_grad_()  # (B, O)
     act = module.policy(obs)  # (B, A)
     rew = module.lqg.reward(obs, act)  # (B,)
     new_obs, _ = module.lqg.trans.rsample(module.lqg.trans(obs, act))  # (B, O)
@@ -287,14 +287,16 @@ def qval_metrics(module: "LightningQValue", batch: TDBatch) -> TensorDict:
     true_qval = module.true_qval(obs, act)  # (B,)
 
     td_rel_error = analysis.relative_error(boot_qval, pred_qval).mean()  # ()
-    rel_error = analysis.relative_error(true_qval, pred_qval)
+    rel_error = analysis.relative_error(true_qval, pred_qval).mean()
 
-    grad_out = torch.ones_like(pred_qval)  # (B,)
+    grad_out = nt.unnamed(torch.ones_like(pred_qval))  # (B,)
     # (B, O), (B, A)
     (true_ograd,) = torch.autograd.grad(
         true_qval, obs, grad_outputs=grad_out, retain_graph=True
     )
-    (true_agrad,) = torch.autograd.grad(true_qval, act, grad_outputs=grad_out)
+    (true_agrad,) = torch.autograd.grad(
+        true_qval, act, grad_outputs=grad_out, retain_graph=True
+    )
     (pred_ograd,) = torch.autograd.grad(
         pred_qval, obs, grad_outputs=grad_out, retain_graph=True
     )
