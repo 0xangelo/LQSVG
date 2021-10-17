@@ -318,19 +318,19 @@ def sweep():
 
 
 @main.command()
-@logging_setup()
-def debug():
+@click.option("--loss", type=click.Choice(["MAGE", "TD(1)"]))
+def debug(loss: str):
     config = {
-        **base_config(),
         "wandb": {"name": "DEBUG", "mode": "disabled"},
-        "loss": "TD(1)",
-        "trainer": dict(
-            track_grad_norm=2,
-            fast_dev_run=True,
-            weights_summary="full",
-        ),
+        "loss": loss,
+        "learning_rate": 1e-2,
+        "exploration": {"type": "gaussian"},
+        "seed": 123,
+        "model": {"type": "quad"},
+        "trainer": dict(fast_dev_run=True),
     }
-    Experiment(config).train()
+    with logging_setup():
+        Experiment(tune.utils.merge_dicts(base_config(), config)).train()
 
 
 if __name__ == "__main__":
