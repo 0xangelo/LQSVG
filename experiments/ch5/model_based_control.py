@@ -406,7 +406,7 @@ def base_config() -> dict:
         "strategy": "maac",
         "pred_horizon": 4,
         "replay_size_trajs": 2_000,
-        "learning_starts": 10,
+        "learning_starts": 20,
         "trajs_per_iter": 1,
         "model": {"perfect_model": True},
     }
@@ -421,13 +421,14 @@ def sweep():
             "n_ctrl": 2,
         },
         "seed": tune.grid_search(list(range(780, 800))),
-        "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
+        # "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
+        "strategy": "maac",
         "learning_rate": 3e-4,
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
             "weight_decay": 0,
-            "max_epochs": 20,
+            "max_epochs": 40,
             "dynamics": {"type": "linear"},
             "qvalue": {
                 "learning_rate": 3e-4,
