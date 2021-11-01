@@ -128,14 +128,8 @@ def critic_updater(
     batch_size = config["qvalue"]["batch_size"]
 
     def update(rng: RNG, transition: Transition) -> dict:
-        obs, act, rew, new_obs = transition
-        # noinspection PyArgumentList
-        weights = torch.ones(obs.size("B"))
-        idxs = torch.multinomial(
-            weights, num_samples=batch_size, replacement=True, generator=rng.torch
-        ).int()
-        obs, act, rew, new_obs = (
-            nt.index_select(x, dim="B", index=idxs) for x in (obs, act, rew, new_obs)
+        obs, act, rew, new_obs = sample_with_replacement(
+            transition, size=batch_size, dim="B", rng=rng.torch
         )
 
         q_optim.zero_grad()
@@ -177,9 +171,8 @@ def policy_updater(
     obj_fn = actor_obj(lqg, policy, model, config)
 
     def update(rng: RNG, transition: Transition) -> dict:
-        obs = transition[0]
         obs = sample_with_replacement(
-            obs, size=config["svg_batch_size"], dim="B", rng=rng.torch
+            transition[0], size=config["svg_batch_size"], dim="B", rng=rng.torch
         )
 
         true_val, true_svg = estimator.analytic_svg(policy, init, dynamics, cost)
@@ -262,6 +255,50 @@ def all_transitions(dataset: Replay) -> Transition:
     return obs, act, rew, new_obs
 
 
+@torch.enable_grad()
+def diagnostics(
+    rng: RNG,
+    transitions: Transition,
+    lqg: LQGModule,
+    policy: TVLinearPolicy,
+    model: nn.Module,
+) -> dict:
+    # pylint:disable=too-many-locals
+    obs, act, _, _ = sample_with_replacement(
+        transitions, size=256, dim="B", rng=rng.torch
+    )
+    dynamics, cost, _ = lqg.standard_form()
+
+    obs.requires_grad_()
+    act.requires_grad_()
+    true_qval_fn = QuadQValue.from_policy(policy.standard_form(), dynamics, cost)
+    true_qval = true_qval_fn(obs, act)
+    pred_qval = model.qval(obs, act)
+
+    grad_out = nt.unnamed(torch.ones_like(true_qval))
+    (true_ograd,) = torch.autograd.grad(
+        true_qval, obs, grad_outputs=grad_out, retain_graph=True
+    )
+    (true_agrad,) = torch.autograd.grad(
+        true_qval, act, grad_outputs=grad_out, retain_graph=True
+    )
+    (pred_ograd,) = torch.autograd.grad(
+        pred_qval, obs, grad_outputs=grad_out, retain_graph=True
+    )
+    (pred_agrad,) = torch.autograd.grad(pred_qval, act, grad_outputs=grad_out)
+
+    logs = {
+        "relative_err": analysis.relative_error(true_qval, pred_qval).mean().item(),
+        "obs_grad_acc": analysis.cosine_similarity(true_ograd, pred_ograd, dim=-1)
+        .mean()
+        .item(),
+        "act_grad_acc": analysis.cosine_similarity(true_agrad, pred_agrad, dim=-1)
+        .mean()
+        .item(),
+    }
+    return with_prefix("qval/", logs)
+
+
 def policy_optimization_(
     lqg: LQGModule, policy: TVLinearPolicy, config: dict
 ) -> Generator[dict, None, None]:
@@ -290,6 +327,7 @@ def policy_optimization_(
             metrics.update(update_policy_(rng, transitions))
 
         metrics.update(collection_stats(i, trajectories, dataset))
+        metrics.update(diagnostics(rng, transitions, lqg, policy, model))
         yield metrics
 
 
@@ -417,7 +455,7 @@ def sweep():
         SVG,
         config=config,
         num_samples=1,
-        stop={tune.result.TRAINING_ITERATION: 1_000},
+        stop={tune.result.TRAINING_ITERATION: 100},
         local_dir=WANDB_DIR,
         callbacks=[logger],
     )
@@ -426,6 +464,13 @@ def sweep():
 @main.command()
 def debug():
     config = {
+        "env_config": {
+            "n_state": 2,
+            "n_ctrl": 2,
+        },
+        "seed": 780,
+        "strategy": "maac+mage",
+        "learning_rate": 3e-4,
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
@@ -433,11 +478,10 @@ def debug():
             "max_epochs": 20,
             "dynamics": {"type": "linear"},
             "qvalue": {
-                "loss": "TD(1)",
-                "learning_rate": 1e-3,
+                "learning_rate": 3e-4,
                 "batch_size": 128,
                 "polyak": 0.995,
-                "model": {"type": "mlp", "hunits": (10, 10)},
+                "model": {"type": "quad"},
             },
             "dynamics_dm": {
                 "train_batch_size": 128,
@@ -450,6 +494,7 @@ def debug():
             },
         },
     }
+    config = tune.utils.merge_dicts(base_config(), config)
     exp = SVG(tune.utils.merge_dicts(base_config(), config))
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
 
