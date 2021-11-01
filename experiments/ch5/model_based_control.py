@@ -267,36 +267,40 @@ def diagnostics(
     obs, act, _, _ = sample_with_replacement(
         transitions, size=256, dim="B", rng=rng.torch
     )
-    dynamics, cost, _ = lqg.standard_form()
-
     obs.requires_grad_()
     act.requires_grad_()
+
+    # Q-value
+    dynamics, cost, _ = lqg.standard_form()
     true_qval_fn = QuadQValue.from_policy(policy.standard_form(), dynamics, cost)
-    true_qval = true_qval_fn(obs, act)
-    pred_qval = model.qval(obs, act)
 
-    grad_out = nt.unnamed(torch.ones_like(true_qval))
-    (true_ograd,) = torch.autograd.grad(
-        true_qval, obs, grad_outputs=grad_out, retain_graph=True
-    )
-    (true_agrad,) = torch.autograd.grad(
-        true_qval, act, grad_outputs=grad_out, retain_graph=True
-    )
-    (pred_ograd,) = torch.autograd.grad(
-        pred_qval, obs, grad_outputs=grad_out, retain_graph=True
-    )
-    (pred_agrad,) = torch.autograd.grad(pred_qval, act, grad_outputs=grad_out)
-
-    logs = {
-        "relative_err": analysis.relative_error(true_qval, pred_qval).mean().item(),
-        "obs_grad_acc": analysis.cosine_similarity(true_ograd, pred_ograd, dim=-1)
-        .mean()
-        .item(),
-        "act_grad_acc": analysis.cosine_similarity(true_agrad, pred_agrad, dim=-1)
-        .mean()
-        .item(),
+    qval = true_qval_fn(obs, act)
+    grad_out = nt.unnamed(torch.ones_like(qval))
+    ograd = torch.autograd.grad(qval, obs, grad_outputs=grad_out, retain_graph=True)
+    agrad = torch.autograd.grad(qval, act, grad_outputs=grad_out)
+    qval_ = model.qval(obs, act)
+    ograd_ = torch.autograd.grad(qval_, obs, grad_outputs=grad_out, retain_graph=True)
+    agrad_ = torch.autograd.grad(qval_, act, grad_outputs=grad_out)
+    qval_logs = {
+        "relative_err": analysis.relative_error(qval, qval_).mean().item(),
+        "obs_grad_acc": analysis.cosine_similarity(ograd, ograd_, dim=-1).mean().item(),
+        "act_grad_acc": analysis.cosine_similarity(agrad, agrad_, dim=-1).mean().item(),
     }
-    return with_prefix("qval/", logs)
+
+    # Reward
+    reward = lqg.reward(obs, act)
+    ograd = torch.autograd.grad(reward, obs, grad_outputs=grad_out, retain_graph=True)
+    agrad = torch.autograd.grad(reward, act, grad_outputs=grad_out)
+    reward_ = model.reward(obs, act)
+    ograd_ = torch.autograd.grad(reward_, obs, grad_outputs=grad_out, retain_graph=True)
+    agrad_ = torch.autograd.grad(reward_, act, grad_outputs=grad_out)
+    reward_logs = {
+        "relative_err": analysis.relative_error(reward, reward_).mean().item(),
+        "obs_grad_acc": analysis.cosine_similarity(ograd, ograd_, dim=-1).mean().item(),
+        "act_grad_acc": analysis.cosine_similarity(agrad, agrad_, dim=-1).mean().item(),
+    }
+
+    return {**with_prefix("qval/", qval_logs), **with_prefix("reward/", reward_logs)}
 
 
 def policy_optimization_(
