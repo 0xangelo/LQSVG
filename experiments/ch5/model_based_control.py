@@ -26,6 +26,7 @@ from lqsvg.types import DeterministicPolicy, Transition
 
 # isort: off
 # pylint:disable=wrong-import-order
+from actor import behavior_policy
 from critic import qval_constructor, td_modules
 from model import make_model as dynamics_model
 from model import surrogate_fn
@@ -317,6 +318,7 @@ def policy_optimization_(
     lqg: LQGModule, policy: TVLinearPolicy, config: dict
 ) -> Generator[dict, None, None]:
     """Trains a policy via Stochastic Value Gradients."""
+    # pylint:disable=too-many-locals
     rng = make_rng(config["seed"])
     model = make_model(lqg, policy, rng, config["model"])
 
@@ -326,11 +328,12 @@ def policy_optimization_(
 
     dataset = deque(maxlen=config["replay_size_trajs"])
     collect = data.environment_sampler(lqg)
-    prepopulate_(dataset, collect, policy, config)
+    behavior = behavior_policy(policy, config["exploration"], rng.torch)
+    prepopulate_(dataset, collect, behavior, config)
 
     for i in itertools.count():
         with torch.no_grad():
-            trajectories = collect(policy, config["trajs_per_iter"])
+            trajectories = collect(behavior, config["trajs_per_iter"])
         dataset.append(trajectories)
 
         metrics = {}
@@ -410,6 +413,7 @@ def base_config() -> dict:
             "horizon": 100,
             "passive_eigval_range": (0.9, 1.1),
         },
+        "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
         "learning_rate": 1e-4,
         "clip_grad_norm": 1_000,
         "svg_batch_size": 256,
