@@ -265,7 +265,7 @@ def diagnostics(
     model: nn.Module,
 ) -> dict:
     # pylint:disable=too-many-locals
-    obs, act, _, _ = sample_with_replacement(
+    obs, act, _, new_obs = sample_with_replacement(
         transitions, size=256, dim="B", rng=rng.torch
     )
     obs.requires_grad_()
@@ -301,7 +301,16 @@ def diagnostics(
         "act_grad_acc": analysis.cosine_similarity(agrad, agrad_, dim=-1).mean().item(),
     }
 
-    return {**with_prefix("qval/", qval_logs), **with_prefix("reward/", reward_logs)}
+    # Model
+    with torch.no_grad():
+        logp = lqg.trans.log_prob(new_obs, lqg.trans(obs, act))
+        logp_ = model.dynamics.log_prob(new_obs, model.dynamics(obs, act))
+        dynamics_logs = {"empirical_kl": torch.mean(logp - logp_).mean().item()}
+    return {
+        **with_prefix("qval/", qval_logs),
+        **with_prefix("reward/", reward_logs),
+        **with_prefix("dynamics/", dynamics_logs),
+    }
 
 
 def policy_optimization_(
