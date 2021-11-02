@@ -406,7 +406,7 @@ def main():
 
 def base_config() -> dict:
     return {
-        "seed": 124,
+        "seed": tune.grid_search(list(range(780, 800))),
         "env_config": {
             "n_state": 2,
             "n_ctrl": 2,
@@ -414,30 +414,15 @@ def base_config() -> dict:
             "passive_eigval_range": (0.9, 1.1),
         },
         "exploration": {"type": "gaussian", "action_noise_sigma": 0.3},
-        "learning_rate": 1e-4,
+        "learning_rate": 3e-4,
         "clip_grad_norm": 1_000,
         "svg_batch_size": 256,
+        # "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
         "strategy": "maac",
         "pred_horizon": 4,
         "replay_size_trajs": 2_000,
         "learning_starts": 20,
         "trajs_per_iter": 1,
-        "model": {"perfect_model": True},
-    }
-
-
-@main.command()
-@logging_setup()
-def sweep():
-    config = {
-        "env_config": {
-            "n_state": 2,
-            "n_ctrl": 2,
-        },
-        "seed": tune.grid_search(list(range(780, 800))),
-        # "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
-        "strategy": "maac",
-        "learning_rate": 3e-4,
         "model": {
             "perfect_model": False,
             "learning_rate": 1e-3,
@@ -461,8 +446,11 @@ def sweep():
             },
         },
     }
-    config = tune.utils.merge_dicts(base_config(), config)
 
+
+@main.command()
+@logging_setup()
+def sweep():
     logger = WandbLoggerCallback(
         name="ModelBasedControl",
         project="ch5",
@@ -472,7 +460,7 @@ def sweep():
     )
     tune.run(
         SVG,
-        config=config,
+        config=base_config(),
         num_samples=1,
         stop={tune.result.TRAINING_ITERATION: 100},
         local_dir=WANDB_DIR,
@@ -480,40 +468,25 @@ def sweep():
     )
 
 
+def replace_grids(dic: dict) -> dict:
+    new = {}
+    for key, val in dic.items():
+        if isinstance(val, dict):
+            if "grid_search" in val:
+                new[key] = val["grid_search"][0]
+            else:
+                new[key] = replace_grids(val)
+        else:
+            new[key] = val
+    return new
+
+
 @main.command()
 def debug():
-    config = {
-        "env_config": {
-            "n_state": 2,
-            "n_ctrl": 2,
-        },
-        "seed": 780,
-        "strategy": "maac+mage",
-        "learning_rate": 3e-4,
-        "model": {
-            "perfect_model": False,
-            "learning_rate": 1e-3,
-            "weight_decay": 0,
-            "max_epochs": 20,
-            "dynamics": {"type": "linear"},
-            "qvalue": {
-                "learning_rate": 3e-4,
-                "batch_size": 128,
-                "polyak": 0.995,
-                "model": {"type": "quad"},
-            },
-            "dynamics_dm": {
-                "train_batch_size": 128,
-                "val_batch_size": 128,
-                "seq_len": 8,
-            },
-            "reward_dm": {
-                "train_batch_size": 64,
-                "val_batch_size": 64,
-            },
-        },
-    }
-    config = tune.utils.merge_dicts(base_config(), config)
+    config = replace_grids(base_config())
+    print("CONFIG:")
+    print(yaml.dump(config))
+
     exp = SVG(tune.utils.merge_dicts(base_config(), config))
     print(yaml.dump({k: v for k, v in exp.train().items() if k != "config"}))
 
