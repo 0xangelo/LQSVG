@@ -138,7 +138,7 @@ def critic_updater(
         q_optim.step()
         update_polyak(model.qval, model.target_qval, config["qvalue"]["polyak"])
 
-        return {"critic_loss": critic_loss.item()}
+        return with_prefix("qval/", {"loss": critic_loss.item()})
 
     return update
 
@@ -186,7 +186,7 @@ def policy_updater(
         optim.step()
         svg = lqr.Linear(-policy.K.grad, -policy.k.grad)
 
-        return {
+        logs = {
             "surrogate_value": val.item(),
             "true_value": true_val.item(),
             "optimal_value": optimal.item(),
@@ -195,6 +195,7 @@ def policy_updater(
             "true_grad_norm": analysis.total_norm(true_svg).item(),
             "suboptimality_gap": analysis.relative_error(optimal, true_val).item(),
         }
+        return with_prefix("policy/", logs)
 
     return update
 
