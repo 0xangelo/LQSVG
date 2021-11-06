@@ -408,8 +408,8 @@ def base_config() -> dict:
     return {
         "seed": tune.grid_search(list(range(780, 800))),
         "env_config": {
-            "n_state": 2,
-            "n_ctrl": 2,
+            "n_state": 4,
+            "n_ctrl": 4,
             "horizon": 100,
             "passive_eigval_range": (0.9, 1.1),
         },
@@ -417,8 +417,7 @@ def base_config() -> dict:
         "learning_rate": 3e-4,
         "clip_grad_norm": 1_000,
         "svg_batch_size": 256,
-        "strategy": tune.grid_search(["mage", "maac+mage"]),
-        # "strategy": "maac",
+        "strategy": tune.grid_search(["maac", "mage", "maac+mage"]),
         "pred_horizon": 4,
         "replay_size_trajs": 2_000,
         "learning_starts": 20,
